@@ -6,6 +6,11 @@ All notable public changes to `mdx-rust` are documented here.
 
 Plan-first guardrailed refactoring for Rust crates and service modules.
 
+This release moves mdx-rust from scoped hardening into an executable
+plan-first refactoring workflow. The new plan path is intentionally more
+ambitious than previous releases, but executable candidates remain limited to
+low-risk work that can pass through existing hardening transactions.
+
 ### Added
 
 - `mdx-rust plan [target]` for refactor impact analysis without mutating the

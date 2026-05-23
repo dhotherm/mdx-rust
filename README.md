@@ -54,6 +54,26 @@ Today it supports:
 - Human CLI output plus machine-parseable `--json` output.
 - Deterministic static audit checks for risky agent surfaces.
 
+## What v0.5 Adds
+
+`v0.5` is the first release where mdx-rust becomes a guardrailed refactoring
+workflow instead of only a scoped hardening tool.
+
+- Run `mdx-rust plan <target>` to produce a non-mutating refactor plan.
+- Review impact before editing: public items, module edges, file size, long
+  functions, policy references, behavior eval references, source snapshots, and
+  candidate risk.
+- Execute approved low-risk candidates with `mdx-rust apply-plan --candidate
+  <id>`.
+- Execute the whole safe queue with `mdx-rust apply-plan --all`.
+- Get JSON artifacts for every plan and apply run so humans and agents can
+  audit what happened.
+
+The aggressive part is that `apply-plan --all` can now apply multiple approved
+low-risk changes from one plan. The disciplined part is that every real edit
+still goes through freshness checks, isolated validation, final validation, and
+the hardening transaction path.
+
 Not yet supported:
 
 - Arbitrary multi-file accepted edits outside the hardening transaction model.
@@ -99,6 +119,7 @@ hashes, surfaces public API impact, and identifies which candidates are
 executable. `mdx-rust apply-plan` can review or execute approved low-risk
 candidates, but it rejects stale source snapshots and still routes real edits
 through the existing hardening transaction gates.
+
 For higher-leverage cleanup, `mdx-rust apply-plan --all` builds an execution
 queue from the saved plan, de-duplicates executable candidates by file, checks
 freshness before each step, and validates each applied step before continuing.

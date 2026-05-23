@@ -55,6 +55,36 @@ Wait for the crates.io index to update between dependent publishes.
 Use [docs/release-readiness.md](./docs/release-readiness.md) as the source of
 truth for `v0.5.0` release validation.
 
+## What Is New In v0.5.0
+
+`v0.5.0` turns mdx-rust into a plan-first guardrailed refactoring workflow:
+
+- `mdx-rust plan [target]` writes a non-mutating refactor plan with source
+  snapshots, public API pressure, module edges, candidate risk, policy
+  references, behavior eval references, and required gates.
+- `mdx-rust apply-plan <plan> --candidate <id>` reviews or applies one
+  executable low-risk candidate from a saved plan.
+- `mdx-rust apply-plan <plan> --all` reviews or applies a bounded queue of all
+  executable low-risk candidates in a saved plan.
+- `refactor-plan`, `refactor-apply-run`, and `refactor-batch-apply-run` schemas
+  are available for agents and automation.
+- Every executable refactor candidate still routes through the existing
+  hardening transaction and validation path.
+
+## Known Limitations
+
+- v0.5 does not perform arbitrary autonomous refactors.
+- v0.5 executable candidates are intentionally narrow. Today they cover
+  contextual error hardening routed through the hardening engine.
+- Split-module, extract-function, public API, and boundary validation
+  candidates are still plan or design artifacts.
+- Static analysis is syntactic and file/module oriented. It is not yet a type
+  graph, ownership analysis, semantic call graph, or semver proof.
+- `apply-plan --all` de-duplicates by file because the current hardening
+  transaction applies all patchable findings in a target file.
+- Behavior evals are deterministic command gates, not coverage or mutation
+  testing.
+
 ## Public Claims To Avoid
 
 - Do not call the tool generally production-ready.
