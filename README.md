@@ -15,9 +15,15 @@ An early, safety-first optimizer for Rust LLM agents, with compile-time validati
 - **Observable** — First-class trace records plus experiment ledgers, hook decisions, validation command records, score deltas, and provenance fields for accepted changes.
 - **Disciplined lifecycle** — Built-in hook stages for pre-edit, pre-command, post-validation, and pre-accept decisions.
 - **Audit aware** — Deterministic static audit checks surface risky agent surfaces like process execution, secret literals, unsafe code, and MCP/A2A-style integration boundaries.
-- **Single binary path** — install from this repo today with `cargo install --git https://github.com/dhotherm/mdx-rust --package mdx-rust`; crates.io publication is prepared but not yet published.
+- **Single binary path** — install from crates.io with `cargo install mdx-rust`, or from this repo with `cargo install --git https://github.com/dhotherm/mdx-rust --package mdx-rust`.
 
 ## Quick Start
+
+Install the CLI:
+
+```bash
+cargo install mdx-rust
+```
 
 Clone the repo and try the built-in example (the fastest way to see mdx-rust in action):
 
@@ -97,7 +103,7 @@ v1 is deliberately conservative:
 - Current edit strategies cover prompts and common echo-style fallback behavior.
 - `eval` can load and hash datasets, but scored standalone evaluation is still being built.
 - Native Rust contracts currently execute through the process harness; richer in-process harnesses are future work.
-- crates.io publication requires publishing the workspace crates in order, so install from GitHub for now. See [RELEASE.md](./RELEASE.md).
+- Published crates are available for `mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis`. See [RELEASE.md](./RELEASE.md).
 
 ## Status
 

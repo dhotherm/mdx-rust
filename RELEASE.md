@@ -1,10 +1,15 @@
 # Release Readiness
 
 `mdx-rust` is currently ready for private beta use from the GitHub repository.
-The manifests are prepared for crates.io publication once the owner is ready to
-publish the three workspace crates in dependency order.
+Version `0.1.0` is also published on crates.io for all three workspace crates.
 
 ## Supported Install Paths Today
+
+Install the CLI from crates.io:
+
+```bash
+cargo install mdx-rust
+```
 
 Install the CLI from GitHub:
 
@@ -18,12 +23,12 @@ Install from a local checkout:
 cargo install --path crates/mdx-rust
 ```
 
-Both paths keep the current three-crate workspace intact and are the release
-paths we should validate before sharing the repository with early users.
+The crates.io path is the normal user install path. The GitHub and local paths
+remain useful for dogfooding unreleased changes.
 
-## Crates.io Publish Order
+## Crates.io Publish Order For Future Versions
 
-The workspace currently has internal path dependencies:
+The workspace has internal path dependencies:
 
 - `mdx-rust`
 - `mdx-rust-core`
@@ -49,7 +54,7 @@ cargo publish -p mdx-rust-core --dry-run
 cargo publish -p mdx-rust --dry-run
 ```
 
-Publish in the same order:
+Publish future versions in the same order:
 
 ```bash
 cargo publish -p mdx-rust-analysis
@@ -89,8 +94,7 @@ test -f .mdx-rust/config.toml
 
 - Do not call the tool generally production-ready.
 - Do not claim arbitrary multi-file rollback.
-- Do not claim crates.io installation until all three crates are published.
 - Do not imply scored standalone `mdx-rust eval` is complete.
 
 The honest public phrase is: private beta, safety-first, single-file
-prompt/fallback optimization for Rust agents, installable from GitHub.
+prompt/fallback optimization for Rust agents, installable from crates.io.
