@@ -2,6 +2,13 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.1.1 - 2026-05-23
+
+### Fixed
+
+- Added a small library facade to the CLI crate so docs.rs can build
+  documentation for the published package.
+
 ## 0.1.0 - 2026-05-23
 
 Initial public release.
