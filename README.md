@@ -15,26 +15,34 @@ A production-grade, policy-driven optimizer for Rust LLM agents, with compile-ti
 - **Observable** — Full tracing of LLM calls, tool invocations, and decisions. Export to Jaeger, local files, or JSONL.
 - **Single binary** — `cargo install mdx-rust` and you’re done.
 
-## Quick Start (Planned)
+## Quick Start
+
+Clone the repo and try the built-in example (the fastest way to see mdx-rust in action):
 
 ```bash
-# Install (once published)
-cargo install mdx-rust
+git clone https://github.com/dhotherm/mdx-rust
+cd mdx-rust
 
-# In your Rust agent project
-mdx-rust init
+# The example rig-minimal-agent starts in a deliberately weak state
+cargo run -p mdx-rust -- register example
+cargo run -p mdx-rust -- optimize example --iterations 2
 
-# Register your agent
-mdx-rust register my-agent
-
-# Generate aligned policy + eval spec + dataset
-mdx-rust spec my-agent
-
-# Run the optimization loop
-mdx-rust optimize my-agent --iterations 5
+# See the improvement
+cargo run -p mdx-rust -- invoke example --input '{"query":"What is 9 + 10?"}'
 ```
 
-Artifacts live in `.mdx-rust/agents/<name>/` (experiments, traces, reports, best version, etc.).
+You should see the optimizer detect the weak echo behavior, strengthen the system prompt with explicit reasoning instructions, validate the change safely, and produce a measurable lift in score.
+
+Full flow for your own agent:
+
+```bash
+cd your-rust-agent
+/path/to/mdx-rust init
+/path/to/mdx-rust register my-agent
+/path/to/mdx-rust optimize my-agent --iterations 5 --review
+```
+
+Artifacts (traces, diagnoses, candidates, reports, diffs) live under `.mdx-rust/agents/<name>/`.
 
 ## How It Works
 
@@ -45,13 +53,20 @@ Artifacts live in `.mdx-rust/agents/<name>/` (experiments, traces, reports, best
 
 ## Status
 
-This is an active build in progress (May 2026).
+**Active and usable (May 2026).**
 
-Current focus:
-- Solid CLI foundation (`init`, `register`, `spec`, `optimize`, `doctor`)
-- Safe editing + validation pipeline for Rust code
-- Rig-first agent support + generic JSON fallback
-- Excellent tracing and reporting
+mdx-rust can already:
+- Register Rig and generic agents
+- Run them with tracing
+- Perform deep Rust analysis (prompts, tools, entrypoints)
+- Run LLM-driven diagnosis with structured candidates
+- Safely propose, validate (cargo check + clippy in isolation), and accept improvements
+- Support human review (`--review`)
+- Produce experiment reports and artifacts
+
+The built-in example demonstrates a real before/after optimization win.
+
+See [PROGRESS.md](./PROGRESS.md) for the detailed build log.
 
 ## Contributing
 
