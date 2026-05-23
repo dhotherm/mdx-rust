@@ -95,6 +95,11 @@ evidence layers:
 - Optional behavior eval specs run deterministic commands after isolated
   validation and again after final validation when `--apply` is used.
 
+Behavior eval commands are trusted local project commands. They are intentionally
+simple and auditable: teams can wire in `cargo test`, golden CLI checks, service
+contract smoke tests, or their own scripts, but should review eval specs with
+the same care as CI scripts.
+
 Hardening transactions snapshot every touched file, validate in isolation,
 require `--apply` before landing, run final validation, run final behavior evals
 when supplied, and roll back on failure. General multi-file refactoring remains

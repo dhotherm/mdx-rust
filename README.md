@@ -130,6 +130,11 @@ mdx-rust improve src/api/config.rs --eval-spec .mdx-rust/evals.json --apply
 
 Hardening artifacts are written under `.mdx-rust/hardening/`.
 
+Behavior eval specs execute local commands from your repository. Treat them as
+trusted project code, review changes to them like test scripts, and prefer
+deterministic commands such as `cargo test`, golden CLI checks, or service
+contract smoke tests.
+
 ## Key Commands
 
 ```bash

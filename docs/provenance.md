@@ -111,6 +111,10 @@ Hardening reports record:
 - transaction status
 - rollback status and rollback error when rollback is attempted
 
+Behavior eval command records include malformed command and bad working
+directory failures as structured records, rather than treating them as accepted
+behavior evidence.
+
 Print the hardening schema with:
 
 ```bash

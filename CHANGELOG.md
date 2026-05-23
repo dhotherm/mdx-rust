@@ -2,7 +2,7 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
-## 0.4.0 - Unreleased
+## 0.4.0 - 2026-05-23
 
 Behavior and policy-driven hardening for Rust services and ordinary crates.
 

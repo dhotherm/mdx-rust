@@ -181,28 +181,40 @@ pub fn run_behavior_evals(root: &Path, spec_path: &Path) -> anyhow::Result<Behav
 
 fn run_behavior_command(root: &Path, spec: &BehaviorCommand) -> BehaviorCommandRecord {
     let started = std::time::Instant::now();
+    if spec.command.trim().is_empty() {
+        return failed_behavior_record(spec, started, false, "command is empty");
+    }
+
+    let cwd = spec
+        .cwd
+        .as_ref()
+        .map(|cwd| root.join(cwd))
+        .unwrap_or_else(|| root.to_path_buf());
+    if !cwd.is_dir() {
+        return failed_behavior_record(
+            spec,
+            started,
+            false,
+            format!(
+                "cwd does not exist or is not a directory: {}",
+                cwd.display()
+            ),
+        );
+    }
+
     let mut command = std::process::Command::new(&spec.command);
     command.args(&spec.args);
-    if let Some(cwd) = &spec.cwd {
-        command.current_dir(root.join(cwd));
-    } else {
-        command.current_dir(root);
-    }
+    command.current_dir(&cwd);
 
     let timeout = Duration::from_secs(spec.timeout_seconds.unwrap_or(120));
     let Some(output) = mdx_rust_analysis::editing::run_command_with_timeout(&mut command, timeout)
     else {
-        return BehaviorCommandRecord {
-            id: spec.id.clone(),
-            command: command_label(spec),
-            success: false,
-            timed_out: true,
-            status_code: None,
-            duration_ms: elapsed_millis_u64(started),
-            stdout: String::new(),
-            stderr: String::new(),
-            failure_reason: Some("command timed out".to_string()),
-        };
+        return failed_behavior_record(
+            spec,
+            started,
+            false,
+            "command could not be started or observed",
+        );
     };
 
     let mut failure_reason = None;
@@ -242,6 +254,25 @@ fn run_behavior_command(root: &Path, spec: &BehaviorCommand) -> BehaviorCommandR
         stdout: output.stdout,
         stderr: output.stderr,
         failure_reason,
+    }
+}
+
+fn failed_behavior_record(
+    spec: &BehaviorCommand,
+    started: std::time::Instant,
+    timed_out: bool,
+    reason: impl Into<String>,
+) -> BehaviorCommandRecord {
+    BehaviorCommandRecord {
+        id: spec.id.clone(),
+        command: command_label(spec),
+        success: false,
+        timed_out,
+        status_code: None,
+        duration_ms: elapsed_millis_u64(started),
+        stdout: String::new(),
+        stderr: String::new(),
+        failure_reason: Some(reason.into()),
     }
 }
 
@@ -354,5 +385,35 @@ mod tests {
         assert!(report.passed());
         assert_eq!(report.total, 1);
         assert_eq!(report.command_records[0].id, "hello");
+    }
+
+    #[test]
+    fn behavior_eval_reports_malformed_commands_without_process_errors() {
+        let dir = tempdir().unwrap();
+        let spec_path = dir.path().join("evals.json");
+        std::fs::write(
+            &spec_path,
+            r#"{
+  "version": "v1",
+  "commands": [
+    {
+      "id": "empty",
+      "command": "",
+      "timeout_seconds": 30
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        let report = run_behavior_evals(dir.path(), &spec_path).unwrap();
+
+        assert!(!report.passed());
+        assert_eq!(report.failed, 1);
+        assert_eq!(
+            report.command_records[0].failure_reason.as_deref(),
+            Some("command is empty")
+        );
+        assert!(!report.command_records[0].timed_out);
     }
 }

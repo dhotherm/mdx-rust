@@ -1,8 +1,8 @@
 //! Safe scoped hardening for ordinary Rust modules.
 //!
-//! This is the v0.3 path for non-agent Rust code. It reuses the same boring
-//! safety philosophy as the optimizer: analyze, propose, validate in isolation,
-//! and only touch the real tree when explicitly requested.
+//! This is the safe hardening path for non-agent Rust code. It reuses the same
+//! boring safety philosophy as the optimizer: analyze, propose, validate in
+//! isolation, and only touch the real tree when explicitly requested.
 
 use crate::eval::{run_behavior_evals, stable_hash_hex, BehaviorEvalReport};
 use crate::policy::{load_project_policy, PolicyCategory, ProjectPolicy};
