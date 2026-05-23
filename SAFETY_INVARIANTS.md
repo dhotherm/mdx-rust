@@ -77,6 +77,10 @@ the user's source tree.
   `mdx-rust improve`.
 - `mdx-rust apply-plan` must re-run the appropriate safety pipeline or
   hardening transaction. It must not trust stale plan evidence.
+- `mdx-rust apply-plan --all` may execute a queue only for candidates already
+  marked executable in the plan. It must verify the plan hash once, reject an
+  initially stale plan, de-duplicate executable candidates by file, check the
+  target file snapshot before each step, and stop applying if a step fails.
 - Broad multi-file refactors require explicit transaction design, plan hashes,
   rollback evidence, and dedicated invariant tests before they can apply.
 
@@ -157,6 +161,8 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
   parseable and does not mutate the source tree.
 - At least one CLI integration test proves `apply-plan` can review and apply an
   executable candidate through hardening gates.
+- At least one CLI integration test proves `apply-plan --all` can review and
+  apply an executable queue while preserving review mode as non-mutating.
 - At least one CLI integration test proves `apply-plan` rejects stale source
   snapshots before mutation.
 

@@ -63,6 +63,8 @@ Guardrailed Rust refactoring assistant with impact analysis.
 
 - Plan-first workflow: `mdx-rust plan`, human review, then
   `mdx-rust apply-plan` for supported low-risk candidates.
+- Execution queue workflow: `mdx-rust apply-plan --all` can review or apply all
+  executable low-risk candidates from a plan with per-step validation.
 - Crate/module graph, touched-area model, and public API impact detection.
 - Safe refactor recipe candidates such as extract function, split oversized
   module, consolidate error handling, isolate boundary validation, and apply
@@ -73,11 +75,18 @@ Guardrailed Rust refactoring assistant with impact analysis.
 - Versioned refactor plan artifacts with plan hashes, required gates, risk
   summaries, and explicit non-goals.
 
-## v0.6.0 Direction
+## Pulled Into v0.5
 
 Apply reviewed refactor plans through dedicated transactions.
 
 - Plan hash verification before applying a reviewed plan.
+- Batch plan execution for supported low-risk candidates.
+- Per-candidate freshness checks and validation records during queued apply.
+
+## v0.6.0 Direction
+
+Broader recipe execution with stronger semantic analysis.
+
 - Narrow multi-file recipe support with full transaction snapshots and rollback
   evidence.
 - Public API compatibility checks for crates that opt in.

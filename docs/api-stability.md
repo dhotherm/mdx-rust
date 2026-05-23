@@ -59,5 +59,6 @@ optional behavior evals, and final validation before reporting applied success.
 Refactor planning records are stable enough for CLI automation through
 `mdx-rust plan --json`, `mdx-rust apply-plan --json`,
 `mdx-rust schema refactor-plan --json`, and
-`mdx-rust schema refactor-apply-run --json`. The Rust types and module paths
-that produce those records remain unstable before `1.0`.
+`mdx-rust schema refactor-apply-run --json`, and
+`mdx-rust schema refactor-batch-apply-run --json`. The Rust types and module
+paths that produce those records remain unstable before `1.0`.

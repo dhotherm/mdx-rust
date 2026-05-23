@@ -46,6 +46,15 @@ pub struct RefactorApplyConfig {
     pub validation_timeout: Duration,
 }
 
+#[derive(Debug, Clone)]
+pub struct RefactorBatchApplyConfig {
+    pub plan_path: PathBuf,
+    pub apply: bool,
+    pub allow_public_api_impact: bool,
+    pub validation_timeout: Duration,
+    pub max_candidates: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RefactorPlan {
     pub schema_version: String,
@@ -142,10 +151,50 @@ pub struct RefactorApplyRun {
     pub artifact_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RefactorBatchApplyRun {
+    pub schema_version: String,
+    pub root: String,
+    pub plan_path: String,
+    pub plan_id: String,
+    pub plan_hash: String,
+    pub mode: RefactorApplyMode,
+    pub status: RefactorBatchApplyStatus,
+    pub public_api_impact_allowed: bool,
+    pub max_candidates: usize,
+    pub requested_candidates: usize,
+    pub executed_candidates: usize,
+    pub skipped_candidates: usize,
+    pub steps: Vec<RefactorBatchCandidateRun>,
+    pub note: String,
+    pub artifact_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RefactorBatchCandidateRun {
+    pub candidate_id: String,
+    pub candidate_hash: Option<String>,
+    pub file: String,
+    pub status: RefactorApplyStatus,
+    pub stale_file: Option<StaleSourceFile>,
+    pub hardening_run: Option<HardeningRun>,
+    pub note: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum RefactorApplyMode {
     Review,
     Apply,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum RefactorBatchApplyStatus {
+    Reviewed,
+    Applied,
+    PartiallyApplied,
+    Rejected,
+    StalePlan,
+    NoExecutableCandidates,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -363,6 +412,174 @@ pub fn apply_refactor_plan_candidate(
     );
     run.hardening_run = Some(hardening);
     persist_apply_run(artifact_root, run)
+}
+
+pub fn apply_refactor_plan_batch(
+    root: &Path,
+    artifact_root: Option<&Path>,
+    config: &RefactorBatchApplyConfig,
+) -> anyhow::Result<RefactorBatchApplyRun> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let plan_content = std::fs::read_to_string(&config.plan_path)?;
+    let plan: RefactorPlan = serde_json::from_str(&plan_content)?;
+    let mode = if config.apply {
+        RefactorApplyMode::Apply
+    } else {
+        RefactorApplyMode::Review
+    };
+    let mut run = RefactorBatchApplyRun {
+        schema_version: "0.5".to_string(),
+        root: root.display().to_string(),
+        plan_path: config.plan_path.display().to_string(),
+        plan_id: plan.plan_id.clone(),
+        plan_hash: plan.plan_hash.clone(),
+        mode,
+        status: RefactorBatchApplyStatus::Rejected,
+        public_api_impact_allowed: config.allow_public_api_impact,
+        max_candidates: config.max_candidates,
+        requested_candidates: 0,
+        executed_candidates: 0,
+        skipped_candidates: 0,
+        steps: Vec::new(),
+        note: String::new(),
+        artifact_path: None,
+    };
+
+    let actual_plan_hash = refactor_plan_hash(&plan);
+    if actual_plan_hash != plan.plan_hash {
+        run.status = RefactorBatchApplyStatus::Rejected;
+        run.note = format!(
+            "plan hash mismatch: expected {} but recomputed {}",
+            plan.plan_hash, actual_plan_hash
+        );
+        return persist_batch_apply_run(artifact_root, run);
+    }
+
+    let initial_stale_files = stale_source_files(&root, &plan.source_snapshots)?;
+    if !initial_stale_files.is_empty() {
+        run.status = RefactorBatchApplyStatus::StalePlan;
+        run.steps = initial_stale_files
+            .into_iter()
+            .map(|stale| RefactorBatchCandidateRun {
+                candidate_id: String::new(),
+                candidate_hash: None,
+                file: stale.file.clone(),
+                status: RefactorApplyStatus::StalePlan,
+                stale_file: Some(stale),
+                hardening_run: None,
+                note: "source snapshot no longer matches the workspace".to_string(),
+            })
+            .collect();
+        run.note =
+            "plan source snapshots no longer match the workspace; re-run mdx-rust plan".to_string();
+        return persist_batch_apply_run(artifact_root, run);
+    }
+
+    let queue = executable_candidate_queue(&plan, config);
+    run.requested_candidates = queue.len();
+    if queue.is_empty() {
+        run.status = RefactorBatchApplyStatus::NoExecutableCandidates;
+        run.note = "no executable low-risk candidates were available in the plan".to_string();
+        return persist_batch_apply_run(artifact_root, run);
+    }
+
+    for candidate in queue {
+        let mut step = RefactorBatchCandidateRun {
+            candidate_id: candidate.id.clone(),
+            candidate_hash: Some(candidate.candidate_hash.clone()),
+            file: candidate.file.clone(),
+            status: RefactorApplyStatus::Rejected,
+            stale_file: None,
+            hardening_run: None,
+            note: String::new(),
+        };
+
+        let actual_candidate_hash = candidate_hash(candidate);
+        if actual_candidate_hash != candidate.candidate_hash {
+            step.note = format!(
+                "candidate hash mismatch: expected {} but recomputed {}",
+                candidate.candidate_hash, actual_candidate_hash
+            );
+            run.skipped_candidates += 1;
+            run.steps.push(step);
+            if config.apply {
+                break;
+            }
+            continue;
+        }
+
+        if let Some(stale) = stale_file_for_candidate(&root, &plan, &candidate.file)? {
+            step.status = RefactorApplyStatus::StalePlan;
+            step.stale_file = Some(stale);
+            step.note =
+                "candidate source file changed after planning; re-run mdx-rust plan".to_string();
+            run.skipped_candidates += 1;
+            run.steps.push(step);
+            if config.apply {
+                break;
+            }
+            continue;
+        }
+
+        let hardening = run_hardening(
+            &root,
+            artifact_root,
+            &HardeningConfig {
+                target: Some(PathBuf::from(&candidate.file)),
+                policy_path: plan
+                    .policy
+                    .as_ref()
+                    .map(|policy| PathBuf::from(policy.path.clone())),
+                behavior_spec_path: plan.behavior_spec.as_ref().map(PathBuf::from),
+                apply: config.apply,
+                max_files: 1,
+                validation_timeout: config.validation_timeout,
+            },
+        )?;
+
+        step.status = if config.apply {
+            if hardening.outcome.applied {
+                RefactorApplyStatus::Applied
+            } else {
+                RefactorApplyStatus::Rejected
+            }
+        } else if hardening.changes.is_empty() {
+            RefactorApplyStatus::Rejected
+        } else {
+            RefactorApplyStatus::Reviewed
+        };
+        step.note = format!(
+            "executed candidate through hardening transaction; hardening status: {:?}",
+            hardening.outcome.status
+        );
+        step.hardening_run = Some(hardening);
+
+        if matches!(
+            step.status,
+            RefactorApplyStatus::Reviewed | RefactorApplyStatus::Applied
+        ) {
+            run.executed_candidates += 1;
+        } else {
+            run.skipped_candidates += 1;
+        }
+
+        let failed_apply_step = config.apply && step.status != RefactorApplyStatus::Applied;
+        run.steps.push(step);
+        if failed_apply_step {
+            break;
+        }
+    }
+
+    run.status = batch_status(
+        config.apply,
+        run.executed_candidates,
+        run.requested_candidates,
+    );
+    run.note = format!(
+        "processed {} executable candidate(s); executed {}, skipped {}",
+        run.requested_candidates, run.executed_candidates, run.skipped_candidates
+    );
+    persist_batch_apply_run(artifact_root, run)
 }
 
 fn summarize_impact(
@@ -632,6 +849,76 @@ fn stale_source_files(
     Ok(stale)
 }
 
+fn stale_file_for_candidate(
+    root: &Path,
+    plan: &RefactorPlan,
+    file: &str,
+) -> anyhow::Result<Option<StaleSourceFile>> {
+    let Some(snapshot) = plan
+        .source_snapshots
+        .iter()
+        .find(|snapshot| snapshot.file == file)
+    else {
+        return Ok(Some(StaleSourceFile {
+            file: file.to_string(),
+            expected_hash: "<missing-snapshot>".to_string(),
+            actual_hash: "<unknown>".to_string(),
+        }));
+    };
+    let rel = safe_relative_path(&snapshot.file)?;
+    let actual_hash = std::fs::read(root.join(&rel))
+        .map(|content| stable_hash_hex(&content))
+        .unwrap_or_else(|_| "<missing>".to_string());
+    if actual_hash == snapshot.hash {
+        Ok(None)
+    } else {
+        Ok(Some(StaleSourceFile {
+            file: snapshot.file.clone(),
+            expected_hash: snapshot.hash.clone(),
+            actual_hash,
+        }))
+    }
+}
+
+fn executable_candidate_queue<'a>(
+    plan: &'a RefactorPlan,
+    config: &RefactorBatchApplyConfig,
+) -> Vec<&'a RefactorCandidate> {
+    let mut queue = Vec::new();
+    let mut seen_files = std::collections::BTreeSet::new();
+    for candidate in &plan.candidates {
+        if queue.len() >= config.max_candidates {
+            break;
+        }
+        if candidate.status != RefactorCandidateStatus::ApplyViaImprove
+            || candidate.recipe != RefactorRecipe::ContextualErrorHardening
+        {
+            continue;
+        }
+        if candidate.public_api_impact && !config.allow_public_api_impact {
+            continue;
+        }
+        if seen_files.insert(candidate.file.clone()) {
+            queue.push(candidate);
+        }
+    }
+    queue
+}
+
+fn batch_status(apply: bool, executed: usize, requested: usize) -> RefactorBatchApplyStatus {
+    if requested == 0 {
+        RefactorBatchApplyStatus::NoExecutableCandidates
+    } else if executed == 0 {
+        RefactorBatchApplyStatus::Rejected
+    } else if !apply {
+        RefactorBatchApplyStatus::Reviewed
+    } else if executed == requested {
+        RefactorBatchApplyStatus::Applied
+    } else {
+        RefactorBatchApplyStatus::PartiallyApplied
+    }
+}
+
 fn safe_relative_path(value: &str) -> anyhow::Result<PathBuf> {
     let path = PathBuf::from(value);
     if path.is_absolute()
@@ -681,6 +968,27 @@ fn persist_apply_run(
             "apply-plan-{millis}-{}-{}.json",
             sanitize_id(&run.plan_id),
             sanitize_id(&run.candidate_id)
+        ));
+        run.artifact_path = Some(path.display().to_string());
+        std::fs::write(&path, serde_json::to_string_pretty(&run)?)?;
+    }
+    Ok(run)
+}
+
+fn persist_batch_apply_run(
+    artifact_root: Option<&Path>,
+    mut run: RefactorBatchApplyRun,
+) -> anyhow::Result<RefactorBatchApplyRun> {
+    if let Some(artifact_root) = artifact_root {
+        let dir = artifact_root.join("plans");
+        std::fs::create_dir_all(&dir)?;
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0);
+        let path = dir.join(format!(
+            "apply-plan-batch-{millis}-{}.json",
+            sanitize_id(&run.plan_id)
         ));
         run.artifact_path = Some(path.display().to_string());
         std::fs::write(&path, serde_json::to_string_pretty(&run)?)?;

@@ -142,6 +142,11 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     let apply_plan = assert_machine_pure_json(&["schema", "refactor-apply-run", "--json"]);
     assert_eq!(apply_plan["title"], "RefactorApplyRun");
     assert!(apply_plan["properties"]["candidate_id"].is_object());
+
+    let batch_apply_plan =
+        assert_machine_pure_json(&["schema", "refactor-batch-apply-run", "--json"]);
+    assert_eq!(batch_apply_plan["title"], "RefactorBatchApplyRun");
+    assert!(batch_apply_plan["properties"]["executed_candidates"].is_object());
 }
 
 #[test]
@@ -511,6 +516,105 @@ anyhow = "1"
         .as_str()
         .unwrap()
         .contains("plan hash mismatch"));
+}
+
+#[test]
+fn apply_plan_all_json_mode_reviews_then_applies_executable_queue() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-apply-plan-all-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    let config = src.join("config.rs");
+    std::fs::write(
+        &lib,
+        r#"mod config;
+
+pub fn load_root() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("root.toml").unwrap();
+    Ok(format!("{}{}", content, config::load_config()?))
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        &config,
+        r#"pub fn load_config() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("config.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before_lib = std::fs::read_to_string(&lib).unwrap();
+    let before_config = std::fs::read_to_string(&config).unwrap();
+
+    let plan = assert_machine_pure_json_in(&["plan", "src", "--json"], dir.path());
+    let artifact_path = plan["artifact_path"]
+        .as_str()
+        .expect("plan should persist artifact");
+    assert!(
+        plan["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|candidate| candidate["status"] == "ApplyViaImprove")
+            .count()
+            >= 2
+    );
+
+    let reviewed = assert_machine_pure_json_in(
+        &["apply-plan", artifact_path, "--all", "--json"],
+        dir.path(),
+    );
+    assert_eq!(reviewed["schema_version"], "0.5");
+    assert_eq!(reviewed["status"], "Reviewed");
+    assert_eq!(reviewed["executed_candidates"], 2);
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before_lib);
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), before_config);
+
+    let applied = assert_machine_pure_json_in(
+        &[
+            "apply-plan",
+            artifact_path,
+            "--all",
+            "--apply",
+            "--max-candidates",
+            "10",
+            "--timeout-seconds",
+            "90",
+            "--json",
+        ],
+        dir.path(),
+    );
+    assert_eq!(applied["status"], "Applied");
+    assert_eq!(applied["executed_candidates"], 2);
+    assert_eq!(
+        applied["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|step| step["status"] == "Applied")
+            .count(),
+        2
+    );
+    let after_lib = std::fs::read_to_string(&lib).unwrap();
+    let after_config = std::fs::read_to_string(&config).unwrap();
+    assert!(after_lib.contains("use anyhow::Context;"));
+    assert!(after_config.contains("use anyhow::Context;"));
+    assert!(!after_lib.contains(".unwrap()"));
+    assert!(!after_config.contains(".unwrap()"));
 }
 
 #[test]

@@ -74,10 +74,12 @@ pub use optimizer::{
 pub use policy::{load_project_policy, PolicyCategory, PolicyRule, PolicySeverity, ProjectPolicy};
 /// Plan-first refactor records used by v0.5. Unstable before `1.0`.
 pub use refactor::{
-    apply_refactor_plan_candidate, build_refactor_plan, RefactorApplyConfig, RefactorApplyMode,
-    RefactorApplyRun, RefactorApplyStatus, RefactorCandidate, RefactorCandidateStatus,
-    RefactorImpactSummary, RefactorPlan, RefactorPlanConfig, RefactorRecipe, RefactorRiskLevel,
-    SourceSnapshot, StaleSourceFile,
+    apply_refactor_plan_batch, apply_refactor_plan_candidate, build_refactor_plan,
+    RefactorApplyConfig, RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus,
+    RefactorBatchApplyConfig, RefactorBatchApplyRun, RefactorBatchApplyStatus,
+    RefactorBatchCandidateRun, RefactorCandidate, RefactorCandidateStatus, RefactorImpactSummary,
+    RefactorPlan, RefactorPlanConfig, RefactorRecipe, RefactorRiskLevel, SourceSnapshot,
+    StaleSourceFile,
 };
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};

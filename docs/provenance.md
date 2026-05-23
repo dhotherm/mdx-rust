@@ -164,6 +164,14 @@ Apply-plan reports record:
 - embedded hardening run when an executable candidate is reviewed or applied
 - final status: reviewed, applied, rejected, stale, or unsupported
 
+Batch apply-plan reports additionally record the execution queue shape:
+
+- max candidate budget
+- requested, executed, and skipped candidate counts
+- one step record per executable candidate selected from the plan
+- per-step candidate hash, file, stale-file evidence, hardening report, and
+  final status
+
 Print the refactor plan schema with:
 
 ```bash

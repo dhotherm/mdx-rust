@@ -49,6 +49,7 @@ first-run-smoke:
     cargo run -p mdx-rust -- schema project-policy --json
     cargo run -p mdx-rust -- schema refactor-plan --json
     cargo run -p mdx-rust -- schema refactor-apply-run --json
+    cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
     cargo run -p mdx-rust -- register example examples/rig-minimal-agent
     cargo run -p mdx-rust -- doctor example --json
 
@@ -63,6 +64,7 @@ hardening-smoke:
     cargo run -p mdx-rust -- improve crates/mdx-rust-analysis/src/hardening.rs --eval-spec examples/evals/cargo-check.json --json
 
 plan-smoke:
-    tmpdir="$(mktemp -d)"; mkdir -p "$tmpdir/src"; printf '[package]\nname = "mdx-plan-smoke"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nanyhow = "1"\n' > "$tmpdir/Cargo.toml"; printf 'pub fn load() -> anyhow::Result<String> {\n    let value = std::fs::read_to_string("missing.toml").unwrap();\n    Ok(value)\n}\n' > "$tmpdir/src/lib.rs"; cd "$tmpdir" && plan_json="$(cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- plan src/lib.rs --json)" && plan_path="$(printf '%s' "$plan_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["artifact_path"])')" && candidate="$(printf '%s' "$plan_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(c["id"] for c in data["candidates"] if c["status"] == "ApplyViaImprove"))')" && cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- apply-plan "$plan_path" --candidate "$candidate" --json && cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- apply-plan "$plan_path" --candidate "$candidate" --apply --json
+    tmpdir="$(mktemp -d)"; mkdir -p "$tmpdir/src"; printf '[package]\nname = "mdx-plan-smoke"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nanyhow = "1"\n' > "$tmpdir/Cargo.toml"; printf 'mod config;\n\npub fn load() -> anyhow::Result<String> {\n    let value = std::fs::read_to_string("missing.toml").unwrap();\n    Ok(format!("{}{}", value, config::load_config()?))\n}\n' > "$tmpdir/src/lib.rs"; printf 'pub fn load_config() -> anyhow::Result<String> {\n    let value = std::fs::read_to_string("config.toml").unwrap();\n    Ok(value)\n}\n' > "$tmpdir/src/config.rs"; cd "$tmpdir" && plan_json="$(cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- plan src --json)" && plan_path="$(printf '%s' "$plan_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["artifact_path"])')" && candidate="$(printf '%s' "$plan_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(c["id"] for c in data["candidates"] if c["status"] == "ApplyViaImprove"))')" && cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- apply-plan "$plan_path" --candidate "$candidate" --json && cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- apply-plan "$plan_path" --all --json && cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- apply-plan "$plan_path" --all --apply --json
     cargo run -p mdx-rust -- schema refactor-plan --json
     cargo run -p mdx-rust -- schema refactor-apply-run --json
+    cargo run -p mdx-rust -- schema refactor-batch-apply-run --json

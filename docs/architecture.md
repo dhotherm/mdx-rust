@@ -128,6 +128,13 @@ routed through the existing hardening engine. That keeps real edits,
 validation, optional behavior eval gates, final validation, and rollback in one
 place.
 
+`mdx-rust apply-plan --all` builds a bounded execution queue from the same saved
+plan. The queue includes only executable low-risk candidates, de-duplicates by
+file because the hardening transaction applies all patchable findings in a
+target file, checks the target file snapshot before each step, and stops apply
+mode if a step fails. This pulls the refactoring workflow closer to batch
+execution without creating a second mutation engine.
+
 Plan-only candidates such as extracting a function, splitting a module, or
 reviewing public API pressure are still human-reviewed design work in `v0.5`.
 Public API-impacting candidates require explicit allowance before execution.

@@ -121,7 +121,11 @@ enum Commands {
 
         /// Candidate id from the plan artifact
         #[arg(long)]
-        candidate: String,
+        candidate: Option<String>,
+
+        /// Review or apply every executable low-risk candidate in the plan
+        #[arg(long, conflicts_with = "candidate")]
+        all: bool,
 
         /// Apply the candidate to the real tree. Without this, review mode is used.
         #[arg(long)]
@@ -134,6 +138,10 @@ enum Commands {
         /// Validation timeout in seconds
         #[arg(long, default_value = "180")]
         timeout_seconds: u64,
+
+        /// Maximum executable candidates to process with --all
+        #[arg(long, default_value = "25")]
+        max_candidates: usize,
     },
 
     /// Evaluate a registered agent or run behavior evals for the current workspace
@@ -162,8 +170,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, refactor-plan, refactor-apply-run
-        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "refactor-plan", "refactor-apply-run"])]
+        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, refactor-plan, refactor-apply-run, refactor-batch-apply-run
+        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run"])]
         kind: String,
     },
 
@@ -262,18 +270,22 @@ fn main() {
         Commands::ApplyPlan {
             plan,
             candidate,
+            all,
             apply,
             allow_public_api_impact,
             timeout_seconds,
+            max_candidates,
         } => {
-            if let Err(e) = cmd_apply_plan(
-                &plan,
-                &candidate,
+            if let Err(e) = cmd_apply_plan(ApplyPlanCommand {
+                plan_path: &plan,
+                candidate_id: candidate.as_deref(),
+                all,
                 apply,
                 allow_public_api_impact,
                 timeout_seconds,
-                cli.json,
-            ) {
+                max_candidates,
+                json: cli.json,
+            }) {
                 emit_error(cli.json, "apply-plan", &e);
                 std::process::exit(1);
             }
@@ -1118,37 +1130,85 @@ fn cmd_plan(
     Ok(())
 }
 
-fn cmd_apply_plan(
-    plan_path: &str,
-    candidate_id: &str,
+struct ApplyPlanCommand<'a> {
+    plan_path: &'a str,
+    candidate_id: Option<&'a str>,
+    all: bool,
     apply: bool,
     allow_public_api_impact: bool,
     timeout_seconds: u64,
+    max_candidates: usize,
     json: bool,
-) -> anyhow::Result<()> {
+}
+
+fn cmd_apply_plan(args: ApplyPlanCommand<'_>) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let config = Config::load_from_project(&cwd).unwrap_or_default();
     let artifact_root = cwd.join(&config.artifact_dir);
+    if args.all {
+        let run = mdx_rust_core::apply_refactor_plan_batch(
+            &cwd,
+            Some(&artifact_root),
+            &mdx_rust_core::RefactorBatchApplyConfig {
+                plan_path: std::path::PathBuf::from(args.plan_path),
+                apply: args.apply,
+                allow_public_api_impact: args.allow_public_api_impact,
+                validation_timeout: std::time::Duration::from_secs(args.timeout_seconds),
+                max_candidates: args.max_candidates,
+            },
+        )?;
+
+        if args.json {
+            println!("{}", serde_json::to_string_pretty(&run)?);
+            return Ok(());
+        }
+
+        println!(
+            "🧰 mdx-rust apply-plan --all — {}",
+            if args.apply { "apply" } else { "review" }
+        );
+        println!("   Plan: {}", run.plan_id);
+        println!("   Status: {:?}", run.status);
+        println!("   Requested candidates: {}", run.requested_candidates);
+        println!("   Executed candidates: {}", run.executed_candidates);
+        println!("   Skipped candidates: {}", run.skipped_candidates);
+        println!("   Note: {}", run.note);
+        for step in &run.steps {
+            println!("   - {}: {:?}", step.candidate_id, step.status);
+            if !step.note.is_empty() {
+                println!("     {}", step.note);
+            }
+        }
+        if let Some(path) = &run.artifact_path {
+            println!("   Report: {}", path);
+        }
+        return Ok(());
+    }
+
+    let Some(candidate_id) = args.candidate_id else {
+        anyhow::bail!("pass --candidate <id> or --all");
+    };
+
     let run = mdx_rust_core::apply_refactor_plan_candidate(
         &cwd,
         Some(&artifact_root),
         &mdx_rust_core::RefactorApplyConfig {
-            plan_path: std::path::PathBuf::from(plan_path),
+            plan_path: std::path::PathBuf::from(args.plan_path),
             candidate_id: candidate_id.to_string(),
-            apply,
-            allow_public_api_impact,
-            validation_timeout: std::time::Duration::from_secs(timeout_seconds),
+            apply: args.apply,
+            allow_public_api_impact: args.allow_public_api_impact,
+            validation_timeout: std::time::Duration::from_secs(args.timeout_seconds),
         },
     )?;
 
-    if json {
+    if args.json {
         println!("{}", serde_json::to_string_pretty(&run)?);
         return Ok(());
     }
 
     println!(
         "🧰 mdx-rust apply-plan — {}",
-        if apply { "apply" } else { "review" }
+        if args.apply { "apply" } else { "review" }
     );
     println!("   Plan: {}", run.plan_id);
     println!("   Candidate: {}", run.candidate_id);
@@ -1288,6 +1348,9 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         }
         "refactor-apply-run" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorApplyRun))?
+        }
+        "refactor-batch-apply-run" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorBatchApplyRun))?
         }
         other => anyhow::bail!("unknown schema kind: {other}"),
     };

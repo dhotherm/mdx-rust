@@ -41,6 +41,8 @@ Today it supports:
 - `apply-plan` execution for approved low-risk refactor candidates, with stale
   source snapshot rejection and all real edits routed through hardening
   transactions.
+- `apply-plan --all` execution queues for reviewing or applying every
+  executable low-risk candidate in a saved plan, with per-step validation.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -97,6 +99,9 @@ hashes, surfaces public API impact, and identifies which candidates are
 executable. `mdx-rust apply-plan` can review or execute approved low-risk
 candidates, but it rejects stale source snapshots and still routes real edits
 through the existing hardening transaction gates.
+For higher-leverage cleanup, `mdx-rust apply-plan --all` builds an execution
+queue from the saved plan, de-duplicates executable candidates by file, checks
+freshness before each step, and validates each applied step before continuing.
 
 ## Quick Start
 
@@ -142,6 +147,8 @@ mdx-rust improve src/api/config.rs
 mdx-rust plan src/api
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate <id>
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate <id> --apply
+mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --all
+mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --all --apply
 mdx-rust improve src/api/config.rs --eval-spec .mdx-rust/evals.json --apply
 ```
 
@@ -168,6 +175,8 @@ mdx-rust plan src/lib.rs
 mdx-rust plan src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate plan-hardening-src-lib-rs-2
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate plan-hardening-src-lib-rs-2 --apply
+mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --all --max-candidates 10
+mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --all --apply --max-candidates 10
 mdx-rust improve src/lib.rs --eval-spec .mdx-rust/evals.json --apply
 mdx-rust eval --spec .mdx-rust/evals.json
 mdx-rust eval my-agent --dataset .mdx-rust/agents/my-agent/dataset.json
@@ -178,6 +187,7 @@ mdx-rust schema behavior-eval-report --json
 mdx-rust schema project-policy --json
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
+mdx-rust schema refactor-batch-apply-run --json
 ```
 
 Every command intended for automation supports `--json`.
@@ -210,8 +220,8 @@ with impact summaries, source snapshot hashes, public API pressure, module
 edges, required gates, policy/eval references, and candidate actions. Plan
 artifacts are evidence for review and orchestration; they are not proof that a
 change has been applied. `apply-plan` reports are also written under
-`.mdx-rust/plans/` and record whether the candidate was reviewed, applied,
-rejected, stale, or unsupported.
+`.mdx-rust/plans/` and record whether a candidate or execution queue was
+reviewed, applied, rejected, stale, partially applied, or unsupported.
 
 Print the current JSON Schemas with:
 
@@ -221,6 +231,7 @@ mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
+mdx-rust schema refactor-batch-apply-run --json
 ```
 
 ## API Stability

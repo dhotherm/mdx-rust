@@ -53,6 +53,7 @@ mdx-rust schema behavior-eval-report --json >/tmp/mdx-rust-behavior-schema.json
 mdx-rust schema project-policy --json >/tmp/mdx-rust-policy-schema.json
 mdx-rust schema refactor-plan --json >/tmp/mdx-rust-refactor-schema.json
 mdx-rust schema refactor-apply-run --json >/tmp/mdx-rust-refactor-apply-schema.json
+mdx-rust schema refactor-batch-apply-run --json >/tmp/mdx-rust-refactor-batch-apply-schema.json
 mdx-rust eval --json >/tmp/mdx-rust-eval.json
 mdx-rust doctor --json >/tmp/mdx-rust-doctor.json
 ```
@@ -97,6 +98,7 @@ From a clean checkout:
 cargo run -p mdx-rust -- plan crates/mdx-rust-core/src/refactor.rs --json
 cargo run -p mdx-rust -- schema refactor-plan --json
 cargo run -p mdx-rust -- schema refactor-apply-run --json
+cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
 ```
 
 Confirm that the plan writes an artifact under `.mdx-rust/plans/`, reports
@@ -108,11 +110,15 @@ From a throwaway crate with a patchable candidate, also confirm:
 mdx-rust plan src/lib.rs --json
 mdx-rust apply-plan .mdx-rust/plans/<plan>.json --candidate <candidate-id> --json
 mdx-rust apply-plan .mdx-rust/plans/<plan>.json --candidate <candidate-id> --apply --json
+mdx-rust apply-plan .mdx-rust/plans/<plan>.json --all --json
+mdx-rust apply-plan .mdx-rust/plans/<plan>.json --all --apply --json
 ```
 
 The review run must not mutate source files. The apply run must route through
 the hardening transaction, reject stale source snapshots, and write an
-apply-plan report.
+apply-plan report. The `--all` run must process only executable low-risk
+candidates, preserve review mode as non-mutating, and stop apply mode on the
+first failed step.
 
 ## Performance Sanity
 
