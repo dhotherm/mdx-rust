@@ -40,6 +40,11 @@ The `v0.2` public safety contract is intentionally single-file.
 - Hooks can only add gates. They must never skip isolated validation, net-positive scoring, landing validation, or rollback.
 - Budgets can only reduce candidate count or split evaluation data. They must never reduce the validation requirements for a candidate that is executed.
 - Ledgers are records only. A `PromptVariantRecord` means "considered", not "validated", "landed", or "accepted".
+- The safety pipeline must keep stage-specific internal records for scoped,
+  isolated-validated, and net-positive edits. A raw `ProposedEdit` is never
+  enough to land or accept a change.
+- Rejected candidates must carry a typed rejection reason in addition to any
+  human note string.
 - Security audits are advisory unless explicitly wired as a hook. Audit findings must not imply acceptance or rejection by themselves.
 - JSON output must remain machine-parseable. Human progress output belongs outside `--json` mode.
 - Any code path that lands a change must have a rollback path.
@@ -67,6 +72,10 @@ Accepted runs must record enough evidence for another engineer or agent to inspe
 - isolated and final validation command records, including status, timeout flag, duration, stdout, and stderr
 - train score, accepted patched score, score delta, and holdout score when available
 - rollback status and error when rollback is attempted
+
+Agent-facing provenance, hook, trace, candidate, eval, and audit records should
+derive JSON Schema so external agents can validate the contract before
+depending on it.
 
 For `v0.2`, every accepted change must also emit a versioned JSON audit packet
 under `.mdx-rust/agents/<name>/experiments/`. See
@@ -99,8 +108,5 @@ model config edits, MCP/A2A support, or richer security gates, first make sure
 the acceptance loop above remains mechanically obvious in code and green under:
 
 ```bash
-cargo fmt --all -- --check
-cargo check --workspace
-cargo test --workspace
-cargo clippy --workspace -- -D warnings
+just ci
 ```

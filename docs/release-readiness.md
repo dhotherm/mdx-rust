@@ -5,17 +5,11 @@ This document is the release checklist for `v0.2.0`.
 ## Required Automated Gates
 
 ```bash
-cargo fmt --all -- --check
-cargo check --workspace --locked
-cargo test --workspace --locked
-cargo clippy --workspace --locked -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
-cargo build --workspace --release --locked
-cargo package -p mdx-rust-analysis --locked
+just release-candidate
 ```
 
-GitHub CI also runs a lightweight supply-chain check with `cargo-deny` for
-advisories, duplicate/version bans, and source restrictions.
+GitHub CI also runs supply-chain and quality checks with `cargo-deny`,
+`cargo-machete`, codespell, docs warnings, and OpenSSF Scorecard.
 
 Before publishing, only `mdx-rust-analysis` can be fully package-verified because
 it has no internal unpublished dependency. During the actual publish sequence,

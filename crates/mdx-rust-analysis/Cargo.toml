@@ -15,14 +15,12 @@ publish = true
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
-tokio.workspace = true
-tracing.workspace = true
+schemars.workspace = true
 ignore.workspace = true
 tempfile.workspace = true
 
 # Code analysis
 syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
-quote = "1"
 tree-sitter = "0.20"
 tree-sitter-rust = "0.20"
 

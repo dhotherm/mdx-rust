@@ -29,6 +29,8 @@ Today it supports:
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
 - Net-positive scoring, final real-tree validation, and rollback on failure.
 - Versioned audit packets for accepted changes.
+- JSON Schema derivations for agent-facing records such as candidates, hooks,
+  traces, eval datasets, audit packets, and validation command records.
 - Human CLI output plus machine-parseable `--json` output.
 - Deterministic static audit checks for risky agent surfaces.
 
@@ -59,6 +61,10 @@ The acceptance contract is the center of the project:
 
 The full non-bypass contract lives in
 [SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md).
+
+The implementation also uses typed rejection records and internal stage
+wrappers so accepted changes cannot be represented the same way as proposed or
+rejected candidates.
 
 ## Quick Start
 
@@ -148,6 +154,20 @@ See [docs/api-stability.md](./docs/api-stability.md).
 - [docs/release-readiness.md](./docs/release-readiness.md) - release gates and manual checks.
 - [ROADMAP.md](./ROADMAP.md) - current scope and next work.
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - development and safety expectations.
+
+## Contributor Rails
+
+This repo uses a `Justfile` as the canonical local command surface:
+
+```bash
+just ci
+just audit
+just machete
+just release-candidate
+```
+
+These commands mirror the public CI expectations and keep coding agents from
+guessing which checks matter.
 
 ## Status
 

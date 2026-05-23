@@ -8,6 +8,11 @@ targets = [
 [advisories]
 version = 2
 yanked = "deny"
+# Advisory ignores must be rare and temporary. Every entry must include:
+# - review date
+# - affected dependency path
+# - reason this project is not affected or why the risk is accepted
+# - exact condition for removal
 ignore = []
 
 [licenses]
@@ -27,6 +32,8 @@ allow = [
 multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
+# Do not add duplicate-version skips casually. If a skip becomes necessary,
+# include the dependency path, impact, and removal condition in the PR.
 
 [sources]
 unknown-registry = "deny"

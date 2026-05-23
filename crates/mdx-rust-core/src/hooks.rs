@@ -4,9 +4,10 @@
 //! decisions, no shell execution. External hook runners can come later, after
 //! the built-in contract has proven stable.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum HookStage {
     PreEdit,
     PostEdit,
@@ -15,14 +16,14 @@ pub enum HookStage {
     PreAccept,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum HookAction {
     Allow,
     Warn,
     Deny,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct HookContext {
     pub stage: HookStage,
     pub agent_name: String,
@@ -38,7 +39,7 @@ pub struct HookContext {
     pub score_delta: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct HookDecision {
     pub stage: HookStage,
     pub action: HookAction,
@@ -75,7 +76,7 @@ impl HookDecision {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct HookPolicy {
     pub max_patch_bytes: usize,
     pub require_positive_delta: bool,

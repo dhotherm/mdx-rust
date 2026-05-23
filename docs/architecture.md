@@ -36,6 +36,23 @@ The optimizer may choose candidates, but it does not get to bypass:
 - Final validation.
 - Rollback on failure.
 
+Inside the pipeline, stage-specific records separate proposed, scoped,
+isolated-validated, and net-positive edits. This keeps the code honest: a
+candidate cannot be handled as accept-ready until it has passed the earlier
+stages.
+
+Rejected candidates carry typed rejection reasons. The human `notes` field is
+for readability only and should not be used as the source of truth by
+automation.
+
+## Schema Boundaries
+
+Types that cross CLI JSON, audit packet, hook, trace, strategy, eval, or future
+LLM boundaries derive `schemars::JsonSchema` alongside serde traits. This keeps
+agent-facing contracts inspectable and gives future MCP or hook integrations a
+stable validation target without making the Rust library API stable before
+`1.0`.
+
 ## v0.2 Edit Scope
 
 `v0.2` hard-enforces single-file accepted edits. A diff that touches a file other

@@ -2,12 +2,14 @@
 //
 //! This module now has real (early) support for git worktrees + patch application + validation.
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 /// A proposed change to the agent's source code.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProposedEdit {
     pub file: PathBuf,
     pub description: String,
@@ -26,7 +28,7 @@ pub struct ValidationResult {
 }
 
 /// Auditable record for a validation command.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ValidationCommandRecord {
     pub command: String,
     pub success: bool,

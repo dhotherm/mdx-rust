@@ -3,10 +3,11 @@
 //! This module intentionally starts with deterministic static checks. The goal
 //! is to surface risky agent surfaces early without executing untrusted code.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AuditSeverity {
     Info,
     Low,
@@ -14,7 +15,7 @@ pub enum AuditSeverity {
     High,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditFinding {
     pub id: String,
     pub severity: AuditSeverity,
@@ -26,7 +27,7 @@ pub struct AuditFinding {
     pub line: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SecurityAuditReport {
     pub root: String,
     pub findings: Vec<AuditFinding>,

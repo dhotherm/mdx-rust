@@ -6,9 +6,10 @@
 //! candidate edit strategies.
 
 use crate::runner::AgentRunResult;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum FailureKind {
     Timeout,
     ProcessError,
@@ -19,7 +20,7 @@ pub enum FailureKind {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FailureSignal {
     pub kind: FailureKind,
     pub severity: u8,
@@ -28,7 +29,7 @@ pub struct FailureSignal {
     pub span_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct TraceDiagnosis {
     pub signals: Vec<FailureSignal>,
     #[serde(default)]

@@ -30,15 +30,17 @@ This document exists because `mdx-rust` is itself a tool designed to be used by 
 
 ### Setup
 ```bash
-cargo build
-cargo test
-cargo clippy -- -D warnings
+just ci
 ```
+
+If `just` is not installed, run the commands from the `ci` recipe in
+`Justfile` directly.
 
 ### Testing Changes to the Optimizer
 When modifying the core loop, analysis, or editing logic:
 - Always add or update a test that exercises the safety path (i.e., a bad patch must be rejected).
 - Preserve the invariant tests in `crates/mdx-rust-core/src/safety_pipeline.rs`: deny hooks cannot accept, net-negative candidates cannot land, and final validation failures roll back.
+- Add or update property/invariant coverage when the change touches patch scope parsing, hook decisions, rollback, timeouts, path handling, or acceptance counters.
 - Use the `examples/` directory or `tests/fixtures/` for small Rig agents you can optimize against.
 
 ### Running the CLI during development
@@ -51,6 +53,32 @@ cargo run -- doctor my-test-agent
 ### Commit Style
 - Use conventional commits or clear imperative style.
 - Large refactors should be broken into reviewable steps.
+
+## Rust Idioms We Enforce
+
+- Make invalid safety states unrepresentable where practical. Prefer small
+  newtypes or stage-specific structs over passing raw patches through the
+  acceptance path.
+- Library crates should expose typed errors for stable domains. `anyhow` is
+  acceptable at CLI edges and for unstable internal orchestration.
+- Any type that crosses a CLI JSON, audit packet, hook, strategy, trace, or
+  future LLM boundary should derive `Serialize`, `Deserialize`, and
+  `schemars::JsonSchema`.
+- Public types in the documented facade require rustdoc explaining their role
+  and stability posture.
+- Use structured records for validation, provenance, and rejections instead of
+  relying only on human note strings.
+
+## Required Rails
+
+- Use `just ci` before claiming a branch is ready.
+- Use `just release-candidate` before a release tag or crates.io publish.
+- Run `just audit` after dependency changes.
+- Run `just machete` after adding or removing dependencies.
+- Add dependencies with `cargo add` when working interactively, then review the
+  exact `Cargo.toml` and `Cargo.lock` diff.
+- Keep generated artifacts out of commits unless a documented release process
+  says otherwise.
 
 ## Code Organization (Current)
 

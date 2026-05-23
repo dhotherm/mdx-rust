@@ -20,12 +20,13 @@ anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+schemars = { version = "0.8", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 thiserror = "1"
 tempfile = "3"
 toml = "0.8"
-wait-timeout = "0.2"
 ignore = "0.4"
-rig-core = "0.10"
+proptest = "1"
+rig = { package = "rig-core", version = "0.10" }

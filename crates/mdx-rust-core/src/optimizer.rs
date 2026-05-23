@@ -25,6 +25,7 @@ use crate::{
 use mdx_rust_analysis::editing::ProposedEdit;
 use mdx_rust_analysis::editing::ValidationCommandRecord;
 use mdx_rust_analysis::AgentBundle;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -96,7 +97,7 @@ fn generate_preamble_patch(file_path: &Path, source: &str, old: &str, new: &str)
 }
 
 /// Configuration for a single optimization run.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizeConfig {
     pub max_iterations: u32,
     pub candidates_per_iteration: u32,
@@ -112,11 +113,12 @@ pub struct OptimizeConfig {
     #[serde(default)]
     pub quiet: bool,
     #[serde(skip, default = "default_candidate_timeout")]
+    #[schemars(skip)]
     pub candidate_timeout: Duration,
 }
 
 /// A single optimization experiment / iteration result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationRun {
     pub iteration: u32,
     pub scores: Vec<f32>,
@@ -187,7 +189,7 @@ pub struct OptimizationRun {
     pub audit_packet: Option<AuditPacket>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ModelProvenance {
     pub role: String,
     pub provider: String,
@@ -200,7 +202,7 @@ pub struct ModelProvenance {
 /// Audit packets are designed for agents, reviewers, and compliance tooling.
 /// They intentionally duplicate the most important run fields so a single JSON
 /// file can be reviewed without reconstructing state from several reports.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditPacket {
     pub schema_version: String,
     pub agent_name: String,
@@ -218,7 +220,7 @@ pub struct AuditPacket {
 }
 
 /// Summary of the accepted source edit.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AcceptedEditSummary {
     pub description: String,
     pub changed_file: String,
@@ -227,7 +229,7 @@ pub struct AcceptedEditSummary {
 }
 
 /// Provenance fields that identify what inputs and tools produced the change.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AuditProvenance {
     pub git_sha_before: Option<String>,
     pub git_sha_after: Option<String>,
@@ -242,7 +244,7 @@ pub struct AuditProvenance {
 }
 
 /// Score evidence for the accepted change.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ScoreProvenance {
     pub baseline_score: f32,
     pub patched_score: f32,
@@ -251,7 +253,7 @@ pub struct ScoreProvenance {
 }
 
 /// A proposed improvement generated during an optimization iteration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Candidate {
     pub focus: String, // e.g. "system_prompt", "tool_descriptions", "reasoning_step"
     pub description: String,
@@ -260,7 +262,7 @@ pub struct Candidate {
     pub strategy: Option<EditStrategy>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum EditStrategy {
     SystemPrompt,
     ToolDescription,
@@ -1376,5 +1378,37 @@ mod tests {
 
         assert_eq!(edit.file, main);
         assert!(edit.patch.contains("Best-effort answer after reasoning"));
+    }
+
+    #[test]
+    fn agent_facing_records_have_json_schemas() {
+        let audit_schema = schemars::schema_for!(AuditPacket);
+        let candidate_schema = schemars::schema_for!(Candidate);
+        let config_schema = schemars::schema_for!(OptimizeConfig);
+
+        assert_eq!(
+            audit_schema
+                .schema
+                .metadata
+                .as_ref()
+                .and_then(|m| m.title.as_deref()),
+            Some("AuditPacket")
+        );
+        assert_eq!(
+            candidate_schema
+                .schema
+                .metadata
+                .as_ref()
+                .and_then(|m| m.title.as_deref()),
+            Some("Candidate")
+        );
+        assert_eq!(
+            config_schema
+                .schema
+                .metadata
+                .as_ref()
+                .and_then(|m| m.title.as_deref()),
+            Some("OptimizeConfig")
+        );
     }
 }

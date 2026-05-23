@@ -61,7 +61,7 @@ pub use runner::{run_agent, AgentRunResult, TraceEvent};
 /// Candidate safety pipeline. Direct use is unstable before `1.0`.
 pub use safety_pipeline::{
     execute_candidate_edit, CandidateExecutionConfig, CandidateExecutionContext,
-    CandidateExecutionOutcome,
+    CandidateExecutionOutcome, SafetyRejection, SafetyRejectionKind,
 };
 /// Deterministic static audit reports.
 pub use security::{audit_agent, AuditFinding, AuditSeverity, SecurityAuditReport};

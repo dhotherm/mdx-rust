@@ -9,11 +9,11 @@ usual safety bar.
 ## Development Setup
 
 ```bash
-cargo build --workspace
-cargo test --workspace
-cargo clippy --workspace -- -D warnings
-cargo fmt --all -- --check
+just ci
 ```
+
+If you do not have `just`, read the `ci` recipe in `Justfile` and run those
+commands directly.
 
 ## Pull Request Expectations
 
@@ -35,6 +35,9 @@ For changes touching candidate edits or acceptance:
 - Preserve the `v0.2` single-file accepted edit contract unless the change also
   adds transaction rollback support and updates `SAFETY_INVARIANTS.md`.
 - Preserve complete audit packets for every accepted change.
+- Preserve typed rejection reasons for every rejected candidate.
+- Preserve JSON Schema derivations for structs that cross CLI, hook, trace,
+  strategy, audit, or future LLM boundaries.
 
 ## API Changes
 
@@ -42,6 +45,13 @@ The CLI is the supported surface before `1.0`. Library APIs in
 `mdx-rust-core` and `mdx-rust-analysis` are unstable. If a PR adds a new public
 type, explain why it needs to be public and whether automation should consume it
 through the CLI instead.
+
+## Dependency Hygiene
+
+- Run `just audit` after dependency updates.
+- Run `just machete` after adding, removing, or moving dependencies.
+- Advisory ignores in `deny.toml` must include a review date, affected path,
+  reason, and removal condition.
 
 ## Release Flow
 

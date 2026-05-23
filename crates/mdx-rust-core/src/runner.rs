@@ -5,13 +5,14 @@
 //! while collecting rich traces for diagnosis and optimization.
 
 use crate::registry::{AgentContract, RegisteredAgent};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 /// A single trace event captured during an agent run.
 /// Made first-class for trace-to-patch optimization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TraceEvent {
     pub timestamp_ms: u64,
     pub event_type: String, // "llm_call", "tool_call", "error", "decision", etc.
@@ -63,7 +64,7 @@ impl TraceEvent {
 }
 
 /// The result of running an agent on a single input, including traces.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgentRunResult {
     pub output: serde_json::Value,
     pub duration_ms: u64,

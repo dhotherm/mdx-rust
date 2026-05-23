@@ -1,0 +1,70 @@
+name: Quality
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dependency-hygiene:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cargo cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install cargo-machete
+      uses: taiki-e/install-action@cargo-machete
+
+    - name: Check unused dependencies
+      run: cargo machete
+
+  spelling:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Codespell
+      uses: codespell-project/actions-codespell@v2
+      with:
+        skip: ./target,./Cargo.lock,./examples/*/target
+
+  scorecard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+      with:
+        persist-credentials: false
+
+    - name: OpenSSF Scorecard
+      uses: ossf/scorecard-action@v2.4.2
+      with:
+        results_file: scorecard.sarif
+        results_format: sarif
+        publish_results: true
+
+    - name: Upload Scorecard results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: scorecard.sarif

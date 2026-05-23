@@ -8,6 +8,8 @@ use crate::hooks::{evaluate_builtin_hook, HookContext, HookDecision, HookPolicy,
 use crate::registry::{AgentContract, RegisteredAgent};
 use crate::runner::AgentRunResult;
 use mdx_rust_analysis::editing::{ProposedEdit, ValidationCommandRecord};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -19,7 +21,35 @@ pub struct CandidateExecutionConfig<'a> {
     pub candidate_timeout: Duration,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, thiserror::Error, PartialEq, Eq)]
+pub enum SafetyRejectionKind {
+    #[error("edit scope rejected")]
+    EditScope,
+    #[error("hook denied candidate")]
+    HookDenied,
+    #[error("validation failed")]
+    ValidationFailed,
+    #[error("candidate was not net positive")]
+    NetNegative,
+    #[error("review mode prevented landing")]
+    ReviewOnly,
+    #[error("snapshot failed")]
+    SnapshotFailed,
+    #[error("landing failed")]
+    LandingFailed,
+    #[error("final validation failed")]
+    FinalValidationFailed,
+    #[error("candidate timed out")]
+    Timeout,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SafetyRejection {
+    pub kind: SafetyRejectionKind,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CandidateExecutionOutcome {
     pub validated: u32,
     pub landed: u32,
@@ -35,6 +65,8 @@ pub struct CandidateExecutionOutcome {
     pub rollback_succeeded: Option<bool>,
     pub rollback_error: Option<String>,
     pub timed_out: bool,
+    #[serde(default)]
+    pub rejection: Option<SafetyRejection>,
 }
 
 impl CandidateExecutionOutcome {
@@ -54,8 +86,39 @@ impl CandidateExecutionOutcome {
             rollback_succeeded: None,
             rollback_error: None,
             timed_out: false,
+            rejection: None,
         }
     }
+
+    fn rejected(
+        kind: SafetyRejectionKind,
+        message: impl Into<String>,
+        hook_decisions: Vec<HookDecision>,
+    ) -> Self {
+        let message = message.into();
+        Self {
+            rejection: Some(SafetyRejection {
+                kind,
+                message: message.clone(),
+            }),
+            ..Self::empty(message, hook_decisions)
+        }
+    }
+}
+
+struct ScopedEdit<'a> {
+    edit: &'a ProposedEdit,
+}
+
+struct IsolatedValidatedEdit<'a> {
+    scoped: ScopedEdit<'a>,
+    validation_commands: Vec<ValidationCommandRecord>,
+}
+
+struct NetPositiveEdit<'a> {
+    validated: IsolatedValidatedEdit<'a>,
+    patched_score: f32,
+    delta: f32,
 }
 
 pub struct CandidateExecutionContext<'a> {
@@ -78,7 +141,8 @@ pub async fn execute_candidate_edit(
         Ok(outcome) => outcome,
         Err(_) => CandidateExecutionOutcome {
             timed_out: true,
-            ..CandidateExecutionOutcome::empty(
+            ..CandidateExecutionOutcome::rejected(
+                SafetyRejectionKind::Timeout,
                 format!(" (candidate timed out after {}s)", timeout.as_secs()),
                 Vec::new(),
             )
@@ -95,11 +159,13 @@ async fn execute_candidate_edit_inner(
     let deadline_start = Instant::now();
 
     if let Err(err) = ensure_single_file_patch_scope(&agent.path, edit) {
-        return CandidateExecutionOutcome::empty(
+        return CandidateExecutionOutcome::rejected(
+            SafetyRejectionKind::EditScope,
             format!(" (edit scope rejected: {err})"),
             hook_decisions,
         );
     }
+    let scoped_edit = ScopedEdit { edit };
 
     if deadline_start.elapsed() >= context.config.candidate_timeout {
         return timed_out_outcome(context.config.candidate_timeout, hook_decisions);
@@ -120,7 +186,8 @@ async fn execute_candidate_edit_inner(
     let denied = pre_edit.denied();
     hook_decisions.push(pre_edit);
     if denied {
-        return CandidateExecutionOutcome::empty(
+        return CandidateExecutionOutcome::rejected(
+            SafetyRejectionKind::HookDenied,
             " (pre-edit hook denied candidate)",
             hook_decisions,
         );
@@ -141,7 +208,8 @@ async fn execute_candidate_edit_inner(
     let denied = pre_command.denied();
     hook_decisions.push(pre_command);
     if denied {
-        return CandidateExecutionOutcome::empty(
+        return CandidateExecutionOutcome::rejected(
+            SafetyRejectionKind::HookDenied,
             " (pre-command hook denied validation)",
             hook_decisions,
         );
@@ -164,7 +232,11 @@ async fn execute_candidate_edit_inner(
         if !context.config.quiet {
             println!("     [Safe Apply] Validation in isolated workspace failed to run.");
         }
-        return CandidateExecutionOutcome::empty(" (validation failed to run)", hook_decisions);
+        return CandidateExecutionOutcome::rejected(
+            SafetyRejectionKind::ValidationFailed,
+            " (validation failed to run)",
+            hook_decisions,
+        );
     };
     if !validation.passed {
         let validation_commands = validation.command_records;
@@ -188,7 +260,8 @@ async fn execute_candidate_edit_inner(
         return CandidateExecutionOutcome {
             validation_commands,
             timed_out: validation_timed_out,
-            ..CandidateExecutionOutcome::empty(
+            ..CandidateExecutionOutcome::rejected(
+                SafetyRejectionKind::ValidationFailed,
                 format!(
                     " (validation rejected candidate: {})",
                     validation
@@ -202,7 +275,12 @@ async fn execute_candidate_edit_inner(
         };
     }
     let validation_commands = validation.command_records;
+    let validated_edit = IsolatedValidatedEdit {
+        scoped: scoped_edit,
+        validation_commands,
+    };
     if deadline_start.elapsed() >= context.config.candidate_timeout {
+        let validation_commands = validated_edit.validation_commands;
         return CandidateExecutionOutcome {
             validated: 1,
             validation_commands,
@@ -225,10 +303,12 @@ async fn execute_candidate_edit_inner(
     let denied = post_validation.denied();
     hook_decisions.push(post_validation);
     if denied {
+        let validation_commands = validated_edit.validation_commands;
         return CandidateExecutionOutcome {
             validated: 1,
             validation_commands,
-            ..CandidateExecutionOutcome::empty(
+            ..CandidateExecutionOutcome::rejected(
+                SafetyRejectionKind::HookDenied,
                 " (post-validation hook denied candidate)",
                 hook_decisions,
             )
@@ -261,6 +341,7 @@ async fn execute_candidate_edit_inner(
         }
     };
     if deadline_start.elapsed() >= context.config.candidate_timeout {
+        let validation_commands = validated_edit.validation_commands;
         return CandidateExecutionOutcome {
             validated: 1,
             patched_score: Some(patched_score),
@@ -286,12 +367,14 @@ async fn execute_candidate_edit_inner(
     let denied = pre_accept.denied();
     hook_decisions.push(pre_accept);
     if denied {
+        let validation_commands = validated_edit.validation_commands;
         return CandidateExecutionOutcome {
             validated: 1,
             patched_score: Some(patched_score),
             delta: Some(delta),
             validation_commands,
-            ..CandidateExecutionOutcome::empty(
+            ..CandidateExecutionOutcome::rejected(
+                SafetyRejectionKind::HookDenied,
                 format!(" (pre-accept hook denied delta {delta:.2})"),
                 hook_decisions,
             )
@@ -299,6 +382,7 @@ async fn execute_candidate_edit_inner(
     }
 
     if delta <= 0.0 {
+        let validation_commands = validated_edit.validation_commands;
         if !context.config.quiet {
             println!(
                 "     [Net-Negative] Patched score {:.2} vs baseline {:.2} (delta {:.2}) - change rejected.",
@@ -310,7 +394,8 @@ async fn execute_candidate_edit_inner(
             patched_score: Some(patched_score),
             delta: Some(delta),
             validation_commands,
-            ..CandidateExecutionOutcome::empty(
+            ..CandidateExecutionOutcome::rejected(
+                SafetyRejectionKind::NetNegative,
                 format!(
                     " (net-negative {:.2}->{:.2})",
                     context.baseline_score, patched_score
@@ -319,8 +404,14 @@ async fn execute_candidate_edit_inner(
             )
         };
     }
+    let net_positive_edit = NetPositiveEdit {
+        validated: validated_edit,
+        patched_score,
+        delta,
+    };
 
     if context.config.review_before_apply {
+        let validation_commands = net_positive_edit.validated.validation_commands;
         if !context.config.quiet {
             println!("     [Review] Change validated in isolation but not applied (--review).");
         }
@@ -329,12 +420,18 @@ async fn execute_candidate_edit_inner(
             patched_score: Some(patched_score),
             delta: Some(delta),
             validation_commands,
-            ..CandidateExecutionOutcome::empty(
+            ..CandidateExecutionOutcome::rejected(
+                SafetyRejectionKind::ReviewOnly,
                 " (review mode: validated in isolation, not applied)",
                 hook_decisions,
             )
         };
     }
+
+    let edit = net_positive_edit.validated.scoped.edit;
+    let validation_commands = net_positive_edit.validated.validation_commands;
+    let patched_score = net_positive_edit.patched_score;
+    let delta = net_positive_edit.delta;
 
     let snapshot = match mdx_rust_analysis::editing::snapshot_file(&edit.file) {
         Ok(snapshot) => snapshot,
@@ -344,7 +441,8 @@ async fn execute_candidate_edit_inner(
                 patched_score: Some(patched_score),
                 delta: Some(delta),
                 validation_commands,
-                ..CandidateExecutionOutcome::empty(
+                ..CandidateExecutionOutcome::rejected(
+                    SafetyRejectionKind::SnapshotFailed,
                     format!(" (snapshot failed: {err})"),
                     hook_decisions,
                 )
@@ -364,7 +462,11 @@ async fn execute_candidate_edit_inner(
             patched_score: Some(patched_score),
             delta: Some(delta),
             validation_commands,
-            ..CandidateExecutionOutcome::empty(" (landing failed)", hook_decisions)
+            ..CandidateExecutionOutcome::rejected(
+                SafetyRejectionKind::LandingFailed,
+                " (landing failed)",
+                hook_decisions,
+            )
         };
     }
 
@@ -399,6 +501,13 @@ async fn execute_candidate_edit_inner(
             rollback_succeeded: Some(rollback_succeeded),
             rollback_error,
             timed_out: true,
+            rejection: Some(SafetyRejection {
+                kind: SafetyRejectionKind::Timeout,
+                message: format!(
+                    "candidate timed out after {}s and was rolled back",
+                    context.config.candidate_timeout.as_secs()
+                ),
+            }),
         };
     }
 
@@ -433,6 +542,7 @@ async fn execute_candidate_edit_inner(
             rollback_succeeded: None,
             rollback_error: None,
             timed_out: false,
+            rejection: None,
         }
     } else {
         let rollback_result = mdx_rust_analysis::editing::restore_file(&snapshot);
@@ -459,6 +569,10 @@ async fn execute_candidate_edit_inner(
             rollback_succeeded: Some(rollback_succeeded),
             rollback_error,
             timed_out: false,
+            rejection: Some(SafetyRejection {
+                kind: SafetyRejectionKind::FinalValidationFailed,
+                message: "final validation failed and rolled back".to_string(),
+            }),
         }
     }
 }
@@ -469,7 +583,8 @@ fn timed_out_outcome(
 ) -> CandidateExecutionOutcome {
     CandidateExecutionOutcome {
         timed_out: true,
-        ..CandidateExecutionOutcome::empty(
+        ..CandidateExecutionOutcome::rejected(
+            SafetyRejectionKind::Timeout,
             format!(" (candidate timed out after {}s)", timeout.as_secs()),
             hook_decisions,
         )
@@ -585,6 +700,7 @@ async fn evaluate_workspace(
 mod tests {
     use super::*;
     use crate::optimizer::mechanical_score;
+    use proptest::prelude::*;
     use tempfile::tempdir;
 
     fn temp_agent_source(answer_suffix: &str) -> String {
@@ -887,5 +1003,37 @@ fn main() {
         assert_eq!(outcome.validated, 0);
         assert_eq!(outcome.landed, 0);
         assert_eq!(outcome.accepted, 0);
+        assert_eq!(
+            outcome.rejection.as_ref().map(|rejection| &rejection.kind),
+            Some(&SafetyRejectionKind::Timeout)
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn normalized_diff_paths_remove_only_diff_side_prefixes(path in "[a-zA-Z0-9_./-]{1,64}") {
+            let line = format!("diff --git a/{path} b/{path}");
+            let paths = diff_paths_from_line(&line);
+
+            prop_assert_eq!(paths, vec![path.clone(), path]);
+        }
+
+        #[test]
+        fn pre_accept_policy_denies_all_non_positive_deltas(delta in -10.0f32..=0.0f32) {
+            let decision = evaluate_builtin_hook(
+                &HookPolicy::default(),
+                &HookContext {
+                    stage: HookStage::PreAccept,
+                    agent_name: "agent".to_string(),
+                    edit_description: None,
+                    patch_bytes: 0,
+                    command: None,
+                    validation_passed: Some(true),
+                    score_delta: Some(delta),
+                },
+            );
+
+            prop_assert!(decision.denied());
+        }
     }
 }

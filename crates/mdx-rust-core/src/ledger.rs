@@ -5,9 +5,10 @@
 //! behind a richer storage layer.
 
 use crate::eval::{stable_hash_hex, EvaluationDataset, EvaluationSample};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum OptimizationBudget {
     Light,
     #[default]
@@ -51,7 +52,7 @@ impl OptimizationBudget {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatasetSplit {
     pub train: Vec<EvaluationSample>,
     pub holdout: Vec<EvaluationSample>,
@@ -80,7 +81,7 @@ pub fn split_dataset(dataset: &EvaluationDataset, budget: OptimizationBudget) ->
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PromptVariantRecord {
     pub id: String,
     pub strategy: String,
@@ -107,7 +108,7 @@ impl PromptVariantRecord {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExperimentLedger {
     pub budget: OptimizationBudget,
     pub dataset_version: String,

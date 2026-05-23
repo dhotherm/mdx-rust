@@ -1,11 +1,12 @@
 //! Agent registry management
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Represents a registered agent
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RegisteredAgent {
     pub name: String,
     pub path: PathBuf,
@@ -14,7 +15,7 @@ pub struct RegisteredAgent {
 }
 
 /// The kind of agent contract detected
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum AgentContract {
     /// Native Rust function or trait (preferred for Rig agents)
     NativeRust,
@@ -22,7 +23,7 @@ pub enum AgentContract {
     Process,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct Registry {
     pub agents: HashMap<String, RegisteredAgent>,
 }

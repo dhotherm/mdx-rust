@@ -4,16 +4,17 @@
 //! how. The current scorer is intentionally simple, but the optimizer now has
 //! a stable place to grow policy-aligned and LLM-judge scoring.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EvaluationSample {
     pub id: String,
     pub input: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EvaluationDataset {
     pub version: String,
     pub samples: Vec<EvaluationSample>,
@@ -87,7 +88,7 @@ impl EvaluationDataset {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ScorerMetadata {
     pub id: String,
     pub version: String,
