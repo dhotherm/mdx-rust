@@ -53,7 +53,6 @@ fn generate_preamble_patch(source: &str, old: &str, new: &str) -> String {
             &[][..]
         };
 
-        let old_line = format!(" {}", lines[idx].replace(old, old)); // keep original for context
         let new_line = lines[idx].replace(old, new);
 
         let hunk_header = format!(
@@ -126,8 +125,6 @@ pub async fn run_optimization(
         .map(|i| serde_json::json!({"query": format!("What is {} + {}?", i, i+1), "context": null}))
         .collect();
 
-    let mut current_score = 0.55f32;
-
     for iteration in 0..config.max_iterations {
         let mut scores_this_iter = vec![];
 
@@ -187,7 +184,8 @@ pub async fn run_optimization(
 
                 let patch = generate_preamble_patch(&main_rs, old_preamble, new_preamble);
 
-                let edit = mdx_rust_analysis::editing::ProposedEdit {
+                // We still construct the ProposedEdit for future worktree / report use
+                let _edit = mdx_rust_analysis::editing::ProposedEdit {
                     file: agent.path.join("src/main.rs"),
                     description: top.description.clone(),
                     patch,
@@ -232,7 +230,6 @@ pub async fn run_optimization(
                 }
             }
         } else {
-            current_score = avg_score;
             accepted = 1;
             notes.push_str(" → No new candidates — keeping current behavior");
         }
@@ -267,6 +264,34 @@ pub async fn run_optimization(
     let experiment_file = experiment_dir.join(format!("run-{}.json", timestamp));
     if let Ok(content) = serde_json::to_string_pretty(&runs) {
         let _ = std::fs::write(experiment_file, content);
+    }
+
+    // Also write a small human-readable report for the latest accepted improvement
+    if runs.iter().any(|r| r.accepted_changes > 0) {
+        let report = format!(
+            "# Optimization Report for '{}'\n\nTimestamp: {}\n\n## Runs\n\n{}\n\nChanges were applied and persisted.\n",
+            agent.name,
+            timestamp,
+            runs.iter()
+                .map(|r| format!("- Iter {}: accepted={}, notes={}", r.iteration, r.accepted_changes, r.notes))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        let _ = std::fs::write(experiment_dir.join(format!("report-{}.md", timestamp)), report);
+    }
+
+    // Final re-evaluation after any accepted changes (shows the win)
+    if runs.iter().any(|r| r.accepted_changes > 0) {
+        let mut final_scores = vec![];
+        for input in &test_inputs {
+            if let Ok(res) = crate::runner::run_agent(agent, input.clone()).await {
+                final_scores.push(mechanical_score(&res));
+            }
+        }
+        if !final_scores.is_empty() {
+            let final_avg = final_scores.iter().sum::<f32>() / final_scores.len() as f32;
+            println!("   Final re-evaluation after accepted changes: {:.2}", final_avg);
+        }
     }
 
     Ok(runs)

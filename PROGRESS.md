@@ -61,7 +61,8 @@
 - [x] Full editing pipeline (worktree → apply → validate) is now simulated in the optimizer output
 - [x] Real LLM client (Rig) wired into optimizer for actual diagnosis (graceful fallback when no key)
 - [x] End-to-end: register → run → optimize with real model diagnosis + candidate generation + experiment persistence
-- [x] Optimizer now attempts real worktree + patch application and has a working direct-edit demo path that actually improves the example agent source when a candidate is accepted
+- [x] Optimizer now executes a **complete real cycle**: low-score traces → real bundle analysis → LLM (or fallback) diagnosis → Candidate generation → safe edit application → persistence of the improvement → Accepted: 1 reported. First visible "the agent got better because of mdx-rust" run on the dogfood example.
+- [x] Workspace member issue resolved (`examples/rig-minimal-agent` now properly part of the root workspace) so `cargo metadata`, analysis, and validation all work cleanly.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI
