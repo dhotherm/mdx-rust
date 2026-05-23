@@ -99,14 +99,12 @@ pub async fn run_optimization(
         let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle, {} candidates)", avg_score, file_count, candidates.len());
 
         if !candidates.is_empty() {
-            // Simulate producing a patch for the top candidate
             let top = &candidates[0];
-            notes.push_str(&format!(" → Top candidate: {} (would generate patch)", top.focus));
+            notes.push_str(&format!(" → Top candidate: {} (patch would be applied via worktree)", top.focus));
 
-            // Very naive patch idea for the example
+            // Simulate the editing pipeline output
             if top.focus == "system_prompt" {
-                // In reality this would come from the LLM + editing module
-                println!("     [Simulated Patch] Add to preamble: \"Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.\"");
+                println!("     [Editing] Would create git worktree → apply patch → cargo check → accept if green.");
             }
         } else {
             current_score = avg_score;

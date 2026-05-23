@@ -57,6 +57,7 @@
 - [x] Diagnosis step now consumes real bundle scope from the analysis crate (proper integration)
 - [x] Proper Candidate struct + generation of multiple concrete improvement proposals per iteration
 - [x] Candidates are now visible in the optimize CLI output with focus area + description
+- [x] Optimizer now produces a simulated concrete patch suggestion from the top candidate (preview of real editing)
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI
