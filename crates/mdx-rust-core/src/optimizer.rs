@@ -99,8 +99,15 @@ pub async fn run_optimization(
         let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle, {} candidates)", avg_score, file_count, candidates.len());
 
         if !candidates.is_empty() {
-            // In a real version we would validate + apply the best candidate here
-            notes.push_str(&format!(" → Top candidate: {}", candidates[0].focus));
+            // Simulate producing a patch for the top candidate
+            let top = &candidates[0];
+            notes.push_str(&format!(" → Top candidate: {} (would generate patch)", top.focus));
+
+            // Very naive patch idea for the example
+            if top.focus == "system_prompt" {
+                // In reality this would come from the LLM + editing module
+                println!("     [Simulated Patch] Add to preamble: \"Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.\"");
+            }
         } else {
             current_score = avg_score;
             accepted = 1;
