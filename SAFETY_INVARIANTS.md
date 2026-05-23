@@ -10,7 +10,7 @@ planner change.
 
 Every accepted change must pass this sequence:
 
-1. Build a targeted `ProposedEdit` for one file or a deliberately scoped file set.
+1. Build a targeted `ProposedEdit` for one file.
 2. Run `PreEdit` hooks. Any deny decision stops the candidate.
 3. Run `PreCommand` hooks before validation commands. Any deny decision stops validation.
 4. Apply the edit in an isolated workspace.
@@ -25,6 +25,15 @@ Every accepted change must pass this sequence:
 11. If final validation fails, restore the pre-land snapshot and do not count the change as landed or accepted.
 12. Only after final validation succeeds may the run increment `accepted_changes`.
 
+## V1 Edit Scope
+
+The current public safety contract is intentionally single-file.
+
+- A candidate patch must match `ProposedEdit.file`.
+- A patch that advertises another file in its diff headers is rejected before validation.
+- Multi-file or structural edits require transaction snapshots for every touched file before they can be allowed.
+- Future multi-file strategies must update this document and add rollback tests before landing.
+
 ## Non-Bypass Rules
 
 - Hooks can only add gates. They must never skip isolated validation, net-positive scoring, landing validation, or rollback.
@@ -33,6 +42,7 @@ Every accepted change must pass this sequence:
 - Security audits are advisory unless explicitly wired as a hook. Audit findings must not imply acceptance or rejection by themselves.
 - JSON output must remain machine-parseable. Human progress output belongs outside `--json` mode.
 - Any code path that lands a change must have a rollback path.
+- Candidate execution has an outer wall-clock budget in addition to command-level timeouts. Synchronous cargo/git work is bounded by its own process timeout; once the candidate budget is exhausted, the pipeline must not continue to later stages.
 
 ## Counters
 
@@ -41,6 +51,21 @@ Every accepted change must pass this sequence:
 - `accepted_changes`: candidate landed, final validation passed, and the score delta was strictly positive.
 
 `accepted_changes` must never exceed `landed_changes`, and `landed_changes` must never exceed `validated_changes`.
+
+## Provenance
+
+Accepted runs must record enough evidence for another engineer or agent to inspect what happened without guessing:
+
+- dataset version and content hash
+- policy path and content hash when a policy file is available
+- scorer id/version
+- diagnosis model provider/name and whether a live model was used
+- git SHA before/after when the agent root is a git repository
+- diff hash for the accepted patch
+- hook decisions
+- isolated and final validation command records, including status, timeout flag, duration, stdout, and stderr
+- train score, accepted patched score, score delta, and holdout score when available
+- rollback status and error when rollback is attempted
 
 ## Required Tests
 
@@ -51,6 +76,9 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
 - A final validation failure rolls back the real tree and does not accept.
 - Budget limits cap candidate attempts but do not remove validation requirements.
 - Ledger records do not imply acceptance.
+- A patch whose diff touches a different file than `ProposedEdit.file` is rejected before validation.
+- Candidate timeout exhaustion prevents validation, landing, or acceptance.
+- At least one end-to-end optimizer test proves a denied candidate cannot land or accept.
 
 The current invariant tests live primarily in:
 

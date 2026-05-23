@@ -23,7 +23,8 @@ pub use ledger::{
     split_dataset, DatasetSplit, ExperimentLedger, OptimizationBudget, PromptVariantRecord,
 };
 pub use optimizer::{
-    mechanical_score, run_optimization, Candidate, EditStrategy, OptimizationRun, OptimizeConfig,
+    mechanical_score, run_optimization, Candidate, EditStrategy, ModelProvenance, OptimizationRun,
+    OptimizeConfig,
 };
 pub use registry::{AgentContract, RegisteredAgent, Registry};
 pub use runner::{run_agent, AgentRunResult, TraceEvent};

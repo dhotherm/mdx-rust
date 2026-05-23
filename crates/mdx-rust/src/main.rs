@@ -601,6 +601,7 @@ fn cmd_optimize(
                     hook_policy: HookPolicy::default(),
                     review_before_apply: review,
                     quiet: true,
+                    candidate_timeout: std::time::Duration::from_secs(300),
                 },
             ))
         })?
@@ -615,6 +616,7 @@ fn cmd_optimize(
                 hook_policy: HookPolicy::default(),
                 review_before_apply: review,
                 quiet: false,
+                candidate_timeout: std::time::Duration::from_secs(300),
             },
         ))?
     };

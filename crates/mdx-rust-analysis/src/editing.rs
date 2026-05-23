@@ -22,6 +22,26 @@ pub struct ValidationResult {
     pub cargo_check_output: String,
     pub clippy_output: String,
     pub new_score: Option<f32>,
+    pub command_records: Vec<ValidationCommandRecord>,
+}
+
+/// Auditable record for a validation command.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ValidationCommandRecord {
+    pub command: String,
+    pub success: bool,
+    pub timed_out: bool,
+    pub status_code: Option<i32>,
+    pub duration_ms: u64,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ValidationReport {
+    pub passed: bool,
+    pub combined_output: String,
+    pub command_records: Vec<ValidationCommandRecord>,
 }
 
 /// Captured command execution result.
@@ -31,6 +51,7 @@ pub struct CapturedCommand {
     pub stdout: String,
     pub stderr: String,
     pub timed_out: bool,
+    pub duration_ms: u64,
 }
 
 impl CapturedCommand {
@@ -300,6 +321,11 @@ fn relative_edit_path(agent_root: &Path, file: &Path) -> anyhow::Result<PathBuf>
 /// Returns (success, combined output).
 /// A hanging or extremely slow cargo command must fail the validation instead of hanging the optimizer (P0).
 pub fn validate_build(dir: &Path) -> (bool, String) {
+    let report = validate_build_detailed(dir);
+    (report.passed, report.combined_output)
+}
+
+pub fn validate_build_detailed(dir: &Path) -> ValidationReport {
     const CARGO_TIMEOUT: Duration = Duration::from_secs(90);
 
     fn run_cargo_with_timeout(
@@ -314,30 +340,49 @@ pub fn validate_build(dir: &Path) -> (bool, String) {
 
     let mut output = String::new();
     let mut success = true;
+    let mut command_records = Vec::new();
 
-    if let Some(result) = run_cargo_with_timeout(dir, &["check"], CARGO_TIMEOUT) {
-        output.push_str(&result.combined_output());
-        if !result.success() {
+    for (label, args) in [
+        ("cargo check", &["check"][..]),
+        (
+            "cargo clippy -- -D warnings",
+            &["clippy", "--", "-D", "warnings"][..],
+        ),
+    ] {
+        if let Some(result) = run_cargo_with_timeout(dir, args, CARGO_TIMEOUT) {
+            output.push_str(&result.combined_output());
+            if !result.success() {
+                success = false;
+            }
+            command_records.push(ValidationCommandRecord {
+                command: label.to_string(),
+                success: result.success(),
+                timed_out: result.timed_out,
+                status_code: result.status.and_then(|status| status.code()),
+                duration_ms: result.duration_ms,
+                stdout: result.stdout,
+                stderr: result.stderr,
+            });
+        } else {
+            output.push_str(&format!("[{label} failed to start]\n"));
             success = false;
+            command_records.push(ValidationCommandRecord {
+                command: label.to_string(),
+                success: false,
+                timed_out: false,
+                status_code: None,
+                duration_ms: 0,
+                stdout: String::new(),
+                stderr: "failed to start validation command".to_string(),
+            });
         }
-    } else {
-        output.push_str("[cargo check timed out]\n");
-        success = false;
     }
 
-    if let Some(result) =
-        run_cargo_with_timeout(dir, &["clippy", "--", "-D", "warnings"], CARGO_TIMEOUT)
-    {
-        output.push_str(&result.combined_output());
-        if !result.success() {
-            success = false;
-        }
-    } else {
-        output.push_str("[cargo clippy timed out]\n");
-        success = false;
+    ValidationReport {
+        passed: success,
+        combined_output: output,
+        command_records,
     }
-
-    (success, output)
 }
 
 /// Run a Command with a timeout. Returns None on timeout (treated as failure by callers).
@@ -358,23 +403,27 @@ pub fn run_command_with_timeout(cmd: &mut Command, timeout: Duration) -> Option<
     loop {
         match child.try_wait() {
             Ok(Some(_)) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
                 let output = child.wait_with_output().ok()?;
                 return Some(CapturedCommand {
                     status: Some(output.status),
                     stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                     stderr: String::from_utf8_lossy(&output.stderr).to_string(),
                     timed_out: false,
+                    duration_ms,
                 });
             }
             Ok(None) if start.elapsed() >= timeout => {
                 terminate_process_group(child.id());
                 let _ = child.kill();
+                let duration_ms = start.elapsed().as_millis() as u64;
                 let output = child.wait_with_output().ok()?;
                 return Some(CapturedCommand {
                     status: Some(output.status),
                     stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                     stderr: String::from_utf8_lossy(&output.stderr).to_string(),
                     timed_out: true,
+                    duration_ms,
                 });
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(20)),
@@ -479,15 +528,16 @@ pub fn apply_and_validate(
     let isolated = create_isolated_workspace(agent_path, name)?;
     apply_edit(agent_path, &isolated, edit)?;
 
-    let (passed, output) = validate_build(&isolated);
+    let report = validate_build_detailed(&isolated);
 
     cleanup_isolated_workspace(agent_path, &isolated);
 
     Ok(ValidationResult {
-        passed,
-        cargo_check_output: output,
+        passed: report.passed,
+        cargo_check_output: report.combined_output,
         clippy_output: String::new(),
         new_score: None,
+        command_records: report.command_records,
     })
 }
 
@@ -698,5 +748,27 @@ mod tests {
         assert!(result.timed_out);
         assert!(start.elapsed() < Duration::from_secs(2));
         assert_eq!(result.stdout, "noisy-output");
+        assert!(result.duration_ms > 0);
+    }
+
+    #[test]
+    fn validate_build_records_command_outcomes() {
+        let src = tempdir().unwrap();
+        fs::create_dir_all(src.path().join("src")).unwrap();
+        fs::write(src.path().join("src/main.rs"), "fn main() {}").unwrap();
+        fs::write(
+            src.path().join("Cargo.toml"),
+            "[package]\nname=\"t\"\nversion=\"0.1.0\"\nedition=\"2021\"",
+        )
+        .unwrap();
+
+        let report = validate_build_detailed(src.path());
+
+        assert!(report.passed);
+        assert_eq!(report.command_records.len(), 2);
+        assert!(report
+            .command_records
+            .iter()
+            .all(|record| record.duration_ms > 0));
     }
 }

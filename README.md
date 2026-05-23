@@ -2,17 +2,17 @@
 
 **A Rust-native optimizer for LLM agents.**
 
-Point `mdx-rust` at an existing Rust agent (or crate), give it a behavioral **policy**, and let it safely improve prompts and simple agent behavior through structured experimentation - with compile-time safety gates at every step.
+Point `mdx-rust` at an existing Rust agent (or crate), give it a behavioral **policy**, and let it safely improve prompts and simple single-file fallback behavior through structured experimentation - with compile-time safety gates at every step.
 
 An early, safety-first optimizer for Rust LLM agents, with compile-time validation and Rust-aware analysis as its core differentiators.
 
 ## Why mdx-rust?
 
 - **Native Rust understanding** — Uses `syn` + `tree-sitter-rust` to actually read and reason about your agent’s code instead of treating it as text.
-- **Safety first** — Every proposed change is validated with `cargo check`, `clippy`, and smoke tests inside isolated git worktrees or copies. No broken states.
+- **Safety first** — Every accepted change is validated with `cargo check` and `clippy` inside isolated git worktrees or copies, then revalidated on the real tree with rollback on failure.
 - **Policy-driven** — Your domain rules, constraints, and quality expectations (`policies.md`) guide diagnosis, candidate generation, and scoring — not just “maximize the metric.”
 - **Agent-friendly CLI** — Excellent human output by default + first-class `--json` mode so other coding agents can drive it.
-- **Observable** — First-class trace records with span ids, parent ids, latency, token/cost fields, redaction flags, and links to candidate edits.
+- **Observable** — First-class trace records plus experiment ledgers, hook decisions, validation command records, score deltas, and provenance fields for accepted changes.
 - **Disciplined lifecycle** — Built-in hook stages for pre-edit, pre-command, post-validation, and pre-accept decisions.
 - **Audit aware** — Deterministic static audit checks surface risky agent surfaces like process execution, secret literals, unsafe code, and MCP/A2A-style integration boundaries.
 - **Single binary path** — install from this repo today with `cargo install --git https://github.com/dhotherm/mdx-rust --package mdx-rust`; crates.io packaging is still pending.
@@ -89,6 +89,16 @@ Experiment records include dataset version/hash, scorer version, git SHAs, valid
 
 The full acceptance contract is documented in [SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md).
 
+### Current Scope
+
+v1 is deliberately conservative:
+
+- Accepted edits are single-file only.
+- Current edit strategies cover prompts and common echo-style fallback behavior.
+- `eval` can load and hash datasets, but scored standalone evaluation is still being built.
+- Native Rust contracts currently execute through the process harness; richer in-process harnesses are future work.
+- crates.io packaging is pending, so install from GitHub for now.
+
 ## Status
 
 **Active dogfood / private beta (May 2026).**
@@ -99,7 +109,7 @@ mdx-rust can already:
 - Perform deep Rust analysis (prompts, tools, entrypoints)
 - Run deterministic diagnosis with structured candidates
 - Safely propose, validate (`cargo check` + `clippy` in isolation), and accept improvements
-- Execute typed strategies for prompts and common fallback behavior
+- Execute typed strategies for prompts and common single-file fallback behavior
 - Split evaluation data into train/holdout sets under `light`, `medium`, or `heavy` budgets
 - Record prompt variant ledgers and lifecycle hook decisions
 - Run deterministic static security audits

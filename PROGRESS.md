@@ -3,7 +3,7 @@
 **Project**: MDx Rust — Rust-native optimizer for LLM agents  
 **Status**: Long-running autonomous build (started May 2026)  
 **Owner**: Mandeep Dhother  
-**Current Phase**: Phase 0 — Rock-Solid Foundation
+**Current Phase**: Private beta hardening
 
 ---
 
@@ -22,11 +22,11 @@
 
 - **History**: Clean single root commit (no external inspiration references visible in any commit or diff).
 - **Architecture**: 3-crate workspace (`mdx-rust` + `mdx-rust-core` + `mdx-rust-analysis`).
-- **CLI**: `init` (production quality), basic `doctor`.
-- **Foundation**: Config loading started in core, example Rig agent exists.
-- **Real work remaining**: `register`, analysis, safe editing, optimization loop, etc.
+- **CLI**: `init`, `register`, `doctor`, `spec`, `optimize`, `eval`, and `audit`.
+- **Foundation**: Safety-first optimizer loop with isolated validation, lifecycle hooks, ledgers, static audit, and rollback.
+- **Current scope**: Private beta. v1 accepted edits are single-file prompt/fallback changes; scored standalone `eval`, crates.io packaging, and richer native harnesses are still pending.
 
-**Last major update**: Autonomous build initiated.
+**Last major update**: Public-readiness hardening pass.
 
 ---
 
@@ -90,21 +90,24 @@
 - [x] Optimizer records hook decisions, holdout scores, budget metadata, and prompt variant ledger entries in run artifacts.
 - [x] Security audit module and `mdx-rust audit` command added. Current static checks flag process execution surfaces, unsafe code, likely secret literals, and MCP/A2A-style integration boundaries.
 - [x] README updated to document the lifecycle, audit command, budgets, hook decisions, holdout splits, and artifact guarantees.
-- [x] Safety invariants are now documented in `SAFETY_INVARIANTS.md`, referenced from `AGENTS.md`, and backed by invariant tests for deny hooks, net-negative candidates, final validation rollback, budget caps, and ledger non-acceptance.
+- [x] Safety invariants are now documented in `SAFETY_INVARIANTS.md`, referenced from `AGENTS.md`, and backed by invariant tests for deny hooks, net-negative candidates, final validation rollback, budget caps, ledger non-acceptance, single-file patch scope, and candidate timeout exhaustion.
 - [x] Candidate acceptance logic was extracted into `safety_pipeline.rs`, making the optimizer orchestration smaller and the acceptance-critical path easier to audit.
+- [x] First-run readiness hardened: clean-clone `init` works, stdin is closed after JSON input for EOF-reading Rust CLIs, the example quickstart accepts a real improvement, and README positioning now says private beta instead of overclaiming production maturity.
+- [x] Provenance upgraded: accepted runs now include policy path/hash, scorer, diagnosis model provenance, hook decisions, validation command records with status/timeout/duration/stdout/stderr, score deltas, holdout score, git metadata when available, and rollback status.
+- [x] End-to-end adversarial optimizer test added proving a denied candidate cannot validate, land, accept, or mutate source through the full optimizer loop.
 
-**Core product is substantially complete ("fully done" for the original handoff vision).** The optimizer, analysis, safe editing, review, best persistence, spec, CLI, tests, and dogfooding example are all working end-to-end with high quality. Ready for your Codex feedback on next directions.
+**Core product is credible private beta, not GA.** The safety loop is real and tested, but public-release work remains: scored standalone eval, broader strategy support, crates.io packaging, and richer native harnessing.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI
 
 ### In Progress / Next
 
-- [ ] Improve registry to use proper types from core
-- [ ] Full agent contract detection (Rig vs generic process)
-- [ ] Better artifact + registry persistence
-- [ ] Tests for Phase 0
-- [ ] Move into Phase 1 (deeper registration + basic runner)
+- [ ] Implement scored standalone `mdx-rust eval`
+- [ ] Prepare crates.io packaging or a documented GitHub-install release flow
+- [ ] Add richer native Rust harness support beyond process execution
+- [ ] Broaden edit strategies beyond prompt and common echo fallback patches
+- [ ] Add CI smoke coverage for the README quickstart
 
 ---
 

@@ -3,6 +3,7 @@
 //! Currently backed by Rig for convenience. Later we can support direct HTTP
 //! for more control over "heavy reasoning" models.
 
+use crate::optimizer::ModelProvenance;
 use rig::completion::Prompt;
 use rig::providers::openai;
 use serde::Serialize;
@@ -40,6 +41,15 @@ impl LlmClient {
     pub fn new(model: impl Into<String>) -> Self {
         Self {
             model: model.into(),
+        }
+    }
+
+    pub fn provenance(&self, used: bool) -> ModelProvenance {
+        ModelProvenance {
+            role: "diagnosis".to_string(),
+            provider: "openai".to_string(),
+            model: self.model.clone(),
+            used,
         }
     }
 

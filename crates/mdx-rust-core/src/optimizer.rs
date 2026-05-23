@@ -23,9 +23,11 @@ use crate::{
     HookPolicy, OptimizationBudget, PromptVariantRecord, ScorerMetadata, TraceDiagnosis,
 };
 use mdx_rust_analysis::editing::ProposedEdit;
+use mdx_rust_analysis::editing::ValidationCommandRecord;
 use mdx_rust_analysis::AgentBundle;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// Generate a proper unified diff with surrounding context for a preamble string change.
 /// This produces something `git apply` can reliably use.
@@ -109,6 +111,8 @@ pub struct OptimizeConfig {
     /// When true, suppress all human progress output (used for --json mode).
     #[serde(default)]
     pub quiet: bool,
+    #[serde(skip, default = "default_candidate_timeout")]
+    pub candidate_timeout: Duration,
 }
 
 /// A single optimization experiment / iteration result.
@@ -155,6 +159,10 @@ pub struct OptimizationRun {
     #[serde(default)]
     pub validation_commands: Option<Vec<String>>,
     #[serde(default)]
+    pub validation_command_records: Vec<ValidationCommandRecord>,
+    #[serde(default)]
+    pub final_validation_command_records: Vec<ValidationCommandRecord>,
+    #[serde(default)]
     pub trace_diagnosis: Vec<TraceDiagnosis>,
     #[serde(default)]
     pub hook_decisions: Vec<HookDecision>,
@@ -164,6 +172,24 @@ pub struct OptimizationRun {
     pub holdout_score: Option<f32>,
     #[serde(default)]
     pub budget: Option<OptimizationBudget>,
+    #[serde(default)]
+    pub policy_path: Option<String>,
+    #[serde(default)]
+    pub model: Option<ModelProvenance>,
+    #[serde(default)]
+    pub rollback_succeeded: Option<bool>,
+    #[serde(default)]
+    pub rollback_error: Option<String>,
+    #[serde(default)]
+    pub candidate_timed_out: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelProvenance {
+    pub role: String,
+    pub provider: String,
+    pub model: String,
+    pub used: bool,
 }
 
 /// A proposed improvement generated during an optimization iteration.
@@ -183,6 +209,10 @@ pub enum EditStrategy {
     FallbackLogic,
     OutputSchema,
     ModelConfig,
+}
+
+fn default_candidate_timeout() -> Duration {
+    Duration::from_secs(300)
 }
 
 /// Placeholder for the full optimization engine.
@@ -241,7 +271,7 @@ pub async fn run_optimization(
                 None
             }
         });
-    let policy_hash = load_policy_hash(&agent.name);
+    let policy_info = load_policy_info(&agent.name);
 
     for iteration in 0..config.max_iterations {
         let mut scores_this_iter = vec![];
@@ -252,6 +282,11 @@ pub async fn run_optimization(
         let mut trace_diagnoses = Vec::new();
         let mut hook_decisions = Vec::new();
         let mut accepted_holdout_score = None;
+        let mut accepted_validation_commands = Vec::new();
+        let mut accepted_final_validation_commands = Vec::new();
+        let mut accepted_rollback_succeeded = None;
+        let mut accepted_rollback_error = None;
+        let mut any_candidate_timed_out = false;
 
         for input in &test_inputs {
             let run_result = crate::runner::run_agent(agent, input.clone()).await?;
@@ -369,6 +404,7 @@ pub async fn run_optimization(
                         hook_policy: &config.hook_policy,
                         review_before_apply: config.review_before_apply,
                         quiet: config.quiet,
+                        candidate_timeout: config.candidate_timeout,
                     },
                     iteration,
                     candidate_index,
@@ -382,6 +418,7 @@ pub async fn run_optimization(
 
                 validated += outcome.validated;
                 landed += outcome.landed;
+                any_candidate_timed_out |= outcome.timed_out;
                 hook_decisions.extend(outcome.hook_decisions);
 
                 if outcome.accepted > 0 {
@@ -390,6 +427,10 @@ pub async fn run_optimization(
                     accepted_patched = outcome.patched_score;
                     accepted_delta = outcome.delta;
                     accepted_holdout_score = outcome.holdout_score;
+                    accepted_validation_commands = outcome.validation_commands;
+                    accepted_final_validation_commands = outcome.final_validation_commands;
+                    accepted_rollback_succeeded = outcome.rollback_succeeded;
+                    accepted_rollback_error = outcome.rollback_error;
                 }
 
                 notes.push_str(&outcome.note);
@@ -455,7 +496,7 @@ pub async fn run_optimization(
             notes,
             candidates,
             diff: accepted_diff,
-            policy_hash: policy_hash.clone(),
+            policy_hash: policy_info.as_ref().map(|policy| policy.hash.clone()),
             dataset_version: Some(dataset.version.clone()),
             dataset_hash: Some(dataset_hash.clone()),
             baseline_score: run_baseline,
@@ -467,11 +508,20 @@ pub async fn run_optimization(
             working_tree_dirty_after: prov_dirty,
             scorer: prov_scorer,
             validation_commands: prov_cmds,
+            validation_command_records: accepted_validation_commands,
+            final_validation_command_records: accepted_final_validation_commands,
             trace_diagnosis: trace_diagnoses,
             hook_decisions,
             ledger: Some(ledger.clone()),
             holdout_score: accepted_holdout_score,
             budget: Some(config.budget),
+            policy_path: policy_info
+                .as_ref()
+                .map(|policy| policy.path.display().to_string()),
+            model: Some(llm.provenance(std::env::var("OPENAI_API_KEY").is_ok())),
+            rollback_succeeded: accepted_rollback_succeeded,
+            rollback_error: accepted_rollback_error,
+            candidate_timed_out: any_candidate_timed_out,
         });
 
         if accepted > 0 && iteration > 0 {
@@ -532,6 +582,41 @@ pub async fn run_optimization(
                 if let Some(v) = &run.dataset_version {
                     report.push_str(&format!("  Dataset version: {}\n", v));
                 }
+                if let Some(path) = &run.policy_path {
+                    report.push_str(&format!("  Policy path: {}\n", path));
+                }
+                if let Some(model) = &run.model {
+                    report.push_str(&format!(
+                        "  Diagnosis model: {}:{} (used={})\n",
+                        model.provider, model.model, model.used
+                    ));
+                }
+                if !run.validation_command_records.is_empty() {
+                    report.push_str("  Isolated validation commands:\n");
+                    for command in &run.validation_command_records {
+                        report.push_str(&format!(
+                            "    - {} | success={} | timeout={} | status={:?} | duration_ms={}\n",
+                            command.command,
+                            command.success,
+                            command.timed_out,
+                            command.status_code,
+                            command.duration_ms
+                        ));
+                    }
+                }
+                if !run.final_validation_command_records.is_empty() {
+                    report.push_str("  Final validation commands:\n");
+                    for command in &run.final_validation_command_records {
+                        report.push_str(&format!(
+                            "    - {} | success={} | timeout={} | status={:?} | duration_ms={}\n",
+                            command.command,
+                            command.success,
+                            command.timed_out,
+                            command.status_code,
+                            command.duration_ms
+                        ));
+                    }
+                }
             }
         }
 
@@ -576,7 +661,13 @@ pub async fn run_optimization(
     Ok(runs)
 }
 
-fn load_policy_hash(agent_name: &str) -> Option<String> {
+#[derive(Debug, Clone)]
+struct PolicyInfo {
+    path: PathBuf,
+    hash: String,
+}
+
+fn load_policy_info(agent_name: &str) -> Option<PolicyInfo> {
     let cwd = std::env::current_dir().ok()?;
     let candidates = [
         cwd.join(".mdx-rust")
@@ -588,8 +679,11 @@ fn load_policy_hash(agent_name: &str) -> Option<String> {
 
     candidates
         .iter()
-        .find_map(|path| std::fs::read(path).ok())
-        .map(|content| stable_hash_hex(&content))
+        .find_map(|path| std::fs::read(path).ok().map(|content| (path, content)))
+        .map(|(path, content)| PolicyInfo {
+            path: path.clone(),
+            hash: stable_hash_hex(&content),
+        })
 }
 
 fn stable_hash_hex(bytes: &[u8]) -> String {
@@ -943,6 +1037,7 @@ mod tests {
             hook_policy: HookPolicy::default(),
             review_before_apply: false,
             quiet: false,
+            candidate_timeout: default_candidate_timeout(),
         };
         assert_eq!(cfg.max_iterations, 1);
     }
