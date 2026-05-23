@@ -69,6 +69,10 @@ The implementation also uses typed rejection records and internal stage
 wrappers so accepted changes cannot be represented the same way as proposed or
 rejected candidates.
 
+`v0.2` ships with a narrow but parser-validated structural rewrite for common
+fallback patterns. Broader native Rust refactoring is planned for future
+releases.
+
 ## Quick Start
 
 Install the CLI:
@@ -180,9 +184,8 @@ guessing which checks matter.
 
 ## Status
 
-`v0.2.0` is being prepared as the first serious safety-first release. Before it
-is published, the candidate commit should pass local gates, GitHub CI, install
-smoke, docs.rs-style rustdoc, package checks, and external pressure testing.
+`v0.2.0` is the first serious safety-first release. It is scoped, conservative,
+and ready for real users who are comfortable with an early public beta.
 
 ## License
 

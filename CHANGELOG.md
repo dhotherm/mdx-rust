@@ -4,21 +4,37 @@ All notable public changes to `mdx-rust` are documented here.
 
 ## 0.2.0 - 2026-05-23
 
-Release candidate scope for the first serious safety-first release.
+First serious safety-first release candidate.
 
 ### Added
 
 - Versioned audit packets for accepted optimizer changes.
+- `mdx-rust schema <kind> --json` for machine-readable JSON Schema export of
+  audit packets and agent-facing records.
 - Clear API stability documentation for the published crates.
 - Stronger release-readiness documentation and CI documentation gates.
-- A narrow parser-guarded fallback edit path that verifies Rust parses before
-  and after rewriting echo-style fallback strings.
+- A narrow AST-backed fallback edit path that verifies Rust parses before and
+  after rewriting echo-style fallback strings.
 
 ### Changed
 
 - The CLI remains the supported product surface. Published library crates are
   explicitly unstable before 1.0 and expose a narrower documented facade.
 - The v0.2 safety contract hard-enforces single-file accepted edits.
+- Release-candidate checks now include docs warnings, release build, install
+  smoke coverage, dependency audit, unused dependency checks, package inspection,
+  and explicit publish-order documentation.
+- `tree-sitter`, `tree-sitter-rust`, and `ring` were updated to clear the
+  active RustSec advisory path.
+
+### Known Limitations
+
+- Accepted edits are still limited to one file.
+- Current strategies focus on prompt and fallback behavior improvements.
+- The AST-backed edit path is intentionally narrow; broad native Rust
+  refactoring remains future work.
+- Library APIs are unstable before 1.0.
+- Standalone scored `mdx-rust eval` is still incomplete.
 
 ## 0.1.1 - 2026-05-23
 
