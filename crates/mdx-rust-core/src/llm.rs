@@ -55,8 +55,8 @@ impl LlmClient {
             .agent(&self.model)
             .preamble(
                 "You are an expert at debugging and improving LLM agents written in Rust. \
-                 Always respond with a JSON object: {\"summary\": \"short diagnosis\", \"candidates\": [{\"focus\": \"system_prompt|tools|reasoning\", \"description\": \"...\", \"expected_improvement\": \"...\"}]}. \
-                 Be concise and actionable. Focus on minimal, high-impact changes to prompts or control flow.",
+                 Always respond with a JSON object: {\"summary\": \"short diagnosis\", \"candidates\": [{\"focus\": \"system_prompt|tool_description|fallback_logic|output_schema|model_config\", \"description\": \"...\", \"expected_improvement\": \"...\"}]}. \
+                 Be concise and actionable. Focus on minimal, high-impact changes to prompts, tool usage, schemas, model config, or control flow.",
             )
             .build();
 

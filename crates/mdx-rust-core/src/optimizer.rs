@@ -15,9 +15,11 @@
 
 use crate::registry::RegisteredAgent;
 use crate::runner::AgentRunResult;
-use crate::{diagnose_run, EvaluationDataset, ScorerMetadata, TraceDiagnosis};
+use crate::{diagnose_run, EvaluationDataset, FailureKind, ScorerMetadata, TraceDiagnosis};
+use mdx_rust_analysis::editing::ProposedEdit;
+use mdx_rust_analysis::AgentBundle;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Generate a proper unified diff with surrounding context for a preamble string change.
 /// This produces something `git apply` can reliably use.
@@ -156,7 +158,7 @@ pub struct Candidate {
     pub strategy: Option<EditStrategy>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum EditStrategy {
     SystemPrompt,
     ToolDescription,
@@ -297,174 +299,56 @@ pub async fn run_optimization(
                 });
             }
         } else {
-            // Fallback
-            candidates = vec![Candidate {
-                focus: "system_prompt".to_string(),
-                description: "Strengthen the system prompt with explicit reasoning instructions."
-                    .to_string(),
-                expected_improvement: "Reduce echo fallback.".to_string(),
-                strategy: Some(EditStrategy::SystemPrompt),
-            }];
+            candidates = fallback_candidates_from_trace(&trace_diagnoses);
         }
 
         if !candidates.is_empty() {
-            let top = &candidates[0];
-            notes.push_str(&format!(
-                " → Top candidate: {} (attempting real worktree apply)",
-                top.focus
-            ));
+            let candidate_limit = config.candidates_per_iteration.max(1) as usize;
+            for (candidate_index, candidate) in candidates.iter().take(candidate_limit).enumerate()
+            {
+                if accepted > 0 {
+                    break;
+                }
 
-            if top.focus == "system_prompt" || top.focus == "llm" {
-                // Prefer a real file from the analysis bundle instead of hard-coded src/main.rs
-                let target_file = rich_bundle
-                    .as_ref()
-                    .and_then(|b| {
-                        b.scope.optimizable_paths.iter().find(|p| {
-                            let name = p.file_name().unwrap_or_default().to_string_lossy();
-                            name.ends_with(".rs") && (name == "main.rs" || name.contains("agent"))
-                        })
-                    })
-                    .cloned()
-                    .unwrap_or_else(|| agent.path.join("src/main.rs"));
-
-                let content = std::fs::read_to_string(&target_file).unwrap_or_default();
-                let _before_snapshot = content.clone();
-
-                // Drive old preamble from actual analysis when available (less demo-specific)
-                let old_preamble = rich_bundle
-                    .as_ref()
-                    .and_then(|b| b.preambles.first())
-                    .map(|p| p.text.clone())
-                    .unwrap_or_else(|| {
-                        "You are a concise, helpful assistant. Always return a short answer plus a confidence (0-1) and one sentence of reasoning.".to_string()
-                    });
-
-                let new_preamble = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
-
-                let relative_target = target_file
-                    .strip_prefix(&agent.path)
-                    .unwrap_or(&target_file)
-                    .to_path_buf();
-                let patch = generate_preamble_patch(
-                    &relative_target,
-                    &content,
-                    &old_preamble,
-                    new_preamble,
-                );
-
-                let edit = mdx_rust_analysis::editing::ProposedEdit {
-                    file: target_file,
-                    description: top.description.clone(),
-                    patch: patch.clone(),
+                let Some(edit) =
+                    build_edit_for_candidate(&agent.path, rich_bundle.as_ref(), candidate)?
+                else {
+                    notes.push_str(&format!(
+                        " (candidate {} skipped: no safe edit plan for {:?})",
+                        candidate.focus, candidate.strategy
+                    ));
+                    continue;
                 };
 
-                // Always validate the proposed edit in an isolated workspace first.
-                // This is the required safety gate.
-                let wt_name = format!("opt-{}", iteration);
-                let validation_result =
-                    mdx_rust_analysis::editing::apply_and_validate(&agent.path, &edit, &wt_name);
+                notes.push_str(&format!(
+                    " → Candidate {}: {} ({:?})",
+                    candidate_index + 1,
+                    candidate.focus,
+                    candidate.strategy
+                ));
 
-                if let Ok(val) = validation_result {
-                    if val.passed {
-                        validated = 1;
-                        if !config.quiet {
-                            println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
-                        }
+                let outcome = execute_candidate_edit(
+                    agent,
+                    config,
+                    iteration,
+                    candidate_index,
+                    &edit,
+                    &test_inputs,
+                    baseline_score,
+                )
+                .await;
 
-                        // === Net-positive evaluation gate (P1 Codex requirement) ===
-                        // Apply the candidate in a fresh isolated workspace and score it.
-                        let patched_score: f32 = {
-                            let score_name = format!("score-{}", iteration);
-                            match mdx_rust_analysis::editing::create_isolated_workspace(
-                                &agent.path,
-                                &score_name,
-                            ) {
-                                Ok(isolated) => {
-                                    let s = if mdx_rust_analysis::editing::apply_edit(
-                                        &agent.path,
-                                        &isolated,
-                                        &edit,
-                                    )
-                                    .is_ok()
-                                    {
-                                        evaluate_workspace(&isolated, &test_inputs)
-                                            .await
-                                            .unwrap_or(baseline_score)
-                                    } else {
-                                        baseline_score
-                                    };
-                                    mdx_rust_analysis::editing::cleanup_isolated_workspace(
-                                        &agent.path,
-                                        &isolated,
-                                    );
-                                    s
-                                }
-                                Err(_) => baseline_score,
-                            }
-                        };
+                validated += outcome.validated;
+                landed += outcome.landed;
 
-                        let delta = patched_score - baseline_score;
-                        let passes_net_positive = delta > 0.0;
-
-                        if !passes_net_positive {
-                            if !config.quiet {
-                                println!(
-                                    "     [Net-Negative] Patched score {:.2} vs baseline {:.2} (delta {:.2}) — change rejected.",
-                                    patched_score, baseline_score, delta
-                                );
-                            }
-                            notes.push_str(&format!(
-                                " (net-negative {:.2}→{:.2})",
-                                baseline_score, patched_score
-                            ));
-                        } else if !config.review_before_apply {
-                            // Full safety pipeline: land + final validation only for net-positive changes
-                            let snapshot = mdx_rust_analysis::editing::snapshot_file(&edit.file)?;
-
-                            if let Err(e) =
-                                mdx_rust_analysis::editing::apply_edit_to_agent(&agent.path, &edit)
-                            {
-                                if !config.quiet {
-                                    println!("     [Land Failed] Could not apply validated patch to real source: {}", e);
-                                }
-                            } else {
-                                landed = 1;
-                                let (final_ok, _final_output) =
-                                    mdx_rust_analysis::editing::validate_build(&agent.path);
-
-                                if final_ok {
-                                    accepted = 1;
-                                    accepted_diff = Some(edit.patch.clone());
-                                    accepted_patched = Some(patched_score);
-                                    accepted_delta = Some(delta);
-
-                                    if !config.quiet {
-                                        println!(
-                                            "     [Accepted] Landed + final validation OK (score {:.2} → {:.2}, Δ{:.2}).",
-                                            baseline_score, patched_score, delta
-                                        );
-                                    }
-                                } else {
-                                    let _ = mdx_rust_analysis::editing::restore_file(&snapshot);
-                                    let _ = mdx_rust_analysis::editing::validate_build(&agent.path);
-                                    landed = 0;
-                                    if !config.quiet {
-                                        println!("     [Final Validation Failed] Change rolled back after re-validation failed.");
-                                    }
-                                }
-                            }
-                        } else {
-                            if !config.quiet {
-                                println!("     [Review] Change validated in isolation but not applied (--review).");
-                            }
-                            notes.push_str(" (review mode — validated in isolation, not applied)");
-                        }
-                    }
-                } else {
-                    if !config.quiet {
-                        println!("     [Safe Apply] Validation in isolated workspace failed.");
-                    }
+                if outcome.accepted > 0 {
+                    accepted = outcome.accepted;
+                    accepted_diff = outcome.accepted_diff;
+                    accepted_patched = outcome.patched_score;
+                    accepted_delta = outcome.delta;
                 }
+
+                notes.push_str(&outcome.note);
             }
         } else {
             accepted = 0; // No change was proposed or needed
@@ -680,6 +564,69 @@ fn strategy_for_focus(focus: &str) -> EditStrategy {
     }
 }
 
+fn fallback_candidates_from_trace(diagnoses: &[TraceDiagnosis]) -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+
+    if diagnoses.iter().any(|diagnosis| {
+        diagnosis
+            .signals
+            .iter()
+            .any(|signal| signal.kind == FailureKind::EchoFallback)
+    }) {
+        candidates.push(Candidate {
+            focus: "fallback_logic".to_string(),
+            description: "Prevent echo fallback and require a useful best-effort answer."
+                .to_string(),
+            expected_improvement: "Reduce low-value echo responses.".to_string(),
+            strategy: Some(EditStrategy::FallbackLogic),
+        });
+    }
+
+    if diagnoses.iter().any(|diagnosis| {
+        diagnosis
+            .signals
+            .iter()
+            .any(|signal| signal.kind == FailureKind::InvalidJson)
+    }) {
+        candidates.push(Candidate {
+            focus: "output_schema".to_string(),
+            description: "Make the output contract explicit for answer, reasoning, and confidence."
+                .to_string(),
+            expected_improvement: "Improve parseability for agent callers.".to_string(),
+            strategy: Some(EditStrategy::OutputSchema),
+        });
+    }
+
+    if diagnoses.iter().any(|diagnosis| {
+        diagnosis.signals.iter().any(|signal| {
+            matches!(
+                signal.kind,
+                FailureKind::MissingReasoning | FailureKind::LowConfidence
+            )
+        })
+    }) {
+        candidates.push(Candidate {
+            focus: "system_prompt".to_string(),
+            description: "Strengthen the system prompt with explicit reasoning instructions."
+                .to_string(),
+            expected_improvement: "Increase reasoning quality and confidence.".to_string(),
+            strategy: Some(EditStrategy::SystemPrompt),
+        });
+    }
+
+    if candidates.is_empty() {
+        candidates.push(Candidate {
+            focus: "system_prompt".to_string(),
+            description: "Strengthen the system prompt with explicit reasoning instructions."
+                .to_string(),
+            expected_improvement: "Improve answer quality.".to_string(),
+            strategy: Some(EditStrategy::SystemPrompt),
+        });
+    }
+
+    candidates
+}
+
 fn summarize_trace_diagnoses(diagnoses: &[TraceDiagnosis]) -> String {
     let mut summaries = Vec::new();
 
@@ -694,6 +641,261 @@ fn summarize_trace_diagnoses(diagnoses: &[TraceDiagnosis]) -> String {
     } else {
         format!("Trace failures: {}", summaries.join(" | "))
     }
+}
+
+#[derive(Debug, Default)]
+struct CandidateEditOutcome {
+    validated: u32,
+    landed: u32,
+    accepted: u32,
+    accepted_diff: Option<String>,
+    patched_score: Option<f32>,
+    delta: Option<f32>,
+    note: String,
+}
+
+async fn execute_candidate_edit(
+    agent: &RegisteredAgent,
+    config: &OptimizeConfig,
+    iteration: u32,
+    candidate_index: usize,
+    edit: &ProposedEdit,
+    test_inputs: &[serde_json::Value],
+    baseline_score: f32,
+) -> CandidateEditOutcome {
+    let mut outcome = CandidateEditOutcome::default();
+
+    // Always validate the proposed edit in an isolated workspace first.
+    let wt_name = format!("opt-{}-{}", iteration, candidate_index);
+    let validation_result =
+        mdx_rust_analysis::editing::apply_and_validate(&agent.path, edit, &wt_name);
+
+    let Ok(validation) = validation_result else {
+        if !config.quiet {
+            println!("     [Safe Apply] Validation in isolated workspace failed to run.");
+        }
+        outcome.note = " (validation failed to run)".to_string();
+        return outcome;
+    };
+
+    if !validation.passed {
+        if !config.quiet {
+            println!("     [Safe Apply] Validation in isolated workspace failed.");
+        }
+        outcome.note = " (validation rejected candidate)".to_string();
+        return outcome;
+    }
+
+    outcome.validated = 1;
+    if !config.quiet {
+        println!(
+            "     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK)."
+        );
+    }
+
+    let patched_score = {
+        let score_name = format!("score-{}-{}", iteration, candidate_index);
+        match mdx_rust_analysis::editing::create_isolated_workspace(&agent.path, &score_name) {
+            Ok(isolated) => {
+                let score = if mdx_rust_analysis::editing::apply_edit(&agent.path, &isolated, edit)
+                    .is_ok()
+                {
+                    evaluate_workspace(&isolated, test_inputs)
+                        .await
+                        .unwrap_or(baseline_score)
+                } else {
+                    baseline_score
+                };
+                mdx_rust_analysis::editing::cleanup_isolated_workspace(&agent.path, &isolated);
+                score
+            }
+            Err(_) => baseline_score,
+        }
+    };
+
+    let delta = patched_score - baseline_score;
+    if delta <= 0.0 {
+        if !config.quiet {
+            println!(
+                "     [Net-Negative] Patched score {:.2} vs baseline {:.2} (delta {:.2}) - change rejected.",
+                patched_score, baseline_score, delta
+            );
+        }
+        outcome.note = format!(
+            " (net-negative {:.2}->{:.2})",
+            baseline_score, patched_score
+        );
+        return outcome;
+    }
+
+    if config.review_before_apply {
+        if !config.quiet {
+            println!("     [Review] Change validated in isolation but not applied (--review).");
+        }
+        outcome.patched_score = Some(patched_score);
+        outcome.delta = Some(delta);
+        outcome.note = " (review mode: validated in isolation, not applied)".to_string();
+        return outcome;
+    }
+
+    let snapshot = match mdx_rust_analysis::editing::snapshot_file(&edit.file) {
+        Ok(snapshot) => snapshot,
+        Err(err) => {
+            outcome.note = format!(" (snapshot failed: {})", err);
+            return outcome;
+        }
+    };
+
+    if let Err(err) = mdx_rust_analysis::editing::apply_edit_to_agent(&agent.path, edit) {
+        if !config.quiet {
+            println!(
+                "     [Land Failed] Could not apply validated patch to real source: {}",
+                err
+            );
+        }
+        outcome.note = " (landing failed)".to_string();
+        return outcome;
+    }
+
+    outcome.landed = 1;
+    let (final_ok, _final_output) = mdx_rust_analysis::editing::validate_build(&agent.path);
+
+    if final_ok {
+        outcome.accepted = 1;
+        outcome.accepted_diff = Some(edit.patch.clone());
+        outcome.patched_score = Some(patched_score);
+        outcome.delta = Some(delta);
+        outcome.note = format!(" (accepted +{delta:.2})");
+
+        if !config.quiet {
+            println!(
+                "     [Accepted] Landed + final validation OK (score {:.2} -> {:.2}, delta {:.2}).",
+                baseline_score, patched_score, delta
+            );
+        }
+    } else {
+        let _ = mdx_rust_analysis::editing::restore_file(&snapshot);
+        let _ = mdx_rust_analysis::editing::validate_build(&agent.path);
+        outcome.landed = 0;
+        outcome.note = " (final validation failed and rolled back)".to_string();
+        if !config.quiet {
+            println!(
+                "     [Final Validation Failed] Change rolled back after re-validation failed."
+            );
+        }
+    }
+
+    outcome
+}
+
+fn build_edit_for_candidate(
+    agent_root: &Path,
+    bundle: Option<&AgentBundle>,
+    candidate: &Candidate,
+) -> anyhow::Result<Option<ProposedEdit>> {
+    let strategy = candidate
+        .strategy
+        .clone()
+        .unwrap_or_else(|| strategy_for_focus(&candidate.focus));
+
+    let Some((target_file, old_preamble)) = select_preamble_target(agent_root, bundle) else {
+        return Ok(None);
+    };
+
+    let Some(new_preamble) = evolved_preamble_for_strategy(&old_preamble, &strategy, bundle) else {
+        return Ok(None);
+    };
+
+    if normalize_prompt(&new_preamble) == normalize_prompt(&old_preamble) {
+        return Ok(None);
+    }
+
+    let content = std::fs::read_to_string(&target_file)?;
+    let relative_target = target_file
+        .strip_prefix(agent_root)
+        .unwrap_or(&target_file)
+        .to_path_buf();
+    let patch = generate_preamble_patch(&relative_target, &content, &old_preamble, &new_preamble);
+
+    Ok(Some(ProposedEdit {
+        file: target_file,
+        description: format!("{:?}: {}", strategy, candidate.description),
+        patch,
+    }))
+}
+
+fn select_preamble_target(
+    agent_root: &Path,
+    bundle: Option<&AgentBundle>,
+) -> Option<(PathBuf, String)> {
+    if let Some(prompt) = bundle.and_then(|bundle| bundle.preambles.first()) {
+        return Some((PathBuf::from(&prompt.file), prompt.text.clone()));
+    }
+
+    let target = bundle
+        .and_then(|bundle| {
+            bundle.scope.optimizable_paths.iter().find(|path| {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                name.ends_with(".rs") && (name == "main.rs" || name.contains("agent"))
+            })
+        })
+        .cloned()
+        .unwrap_or_else(|| agent_root.join("src/main.rs"));
+
+    let content = std::fs::read_to_string(&target).ok()?;
+    extract_first_preamble_literal(&content).map(|prompt| (target, prompt))
+}
+
+fn extract_first_preamble_literal(content: &str) -> Option<String> {
+    let marker = ".preamble(\"";
+    let start = content.find(marker)? + marker.len();
+    let rest = &content[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn evolved_preamble_for_strategy(
+    old: &str,
+    strategy: &EditStrategy,
+    bundle: Option<&AgentBundle>,
+) -> Option<String> {
+    let addition = match strategy {
+        EditStrategy::SystemPrompt => {
+            "Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer."
+        }
+        EditStrategy::FallbackLogic => {
+            "Never echo the user input as the final answer. If uncertain, state assumptions, reason briefly, and provide the best useful answer."
+        }
+        EditStrategy::OutputSchema => {
+            "Always produce an answer, reasoning, and confidence from 0 to 1."
+        }
+        EditStrategy::ToolDescription => {
+            let has_tools = bundle.is_some_and(|bundle| !bundle.tools.is_empty());
+            if !has_tools {
+                return None;
+            }
+            "Before answering, decide whether available tools improve factuality or completeness, and only use them when they add real value."
+        }
+        EditStrategy::ModelConfig => return None,
+    };
+
+    if normalize_prompt(old).contains(&normalize_prompt(addition)) {
+        return Some(old.to_string());
+    }
+
+    let mut base = old.trim().trim_end_matches('.').to_string();
+    if base.is_empty() {
+        base = "You are a concise, helpful assistant".to_string();
+    }
+    Some(format!("{base}. {addition}"))
+}
+
+fn normalize_prompt(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 /// Evaluate an arbitrary workspace dir (used for isolated patched scoring).
@@ -760,6 +962,7 @@ pub fn mechanical_score(result: &AgentRunResult) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_mechanical_score_echo_vs_reasoned() {
@@ -792,5 +995,121 @@ mod tests {
             quiet: false,
         };
         assert_eq!(cfg.max_iterations, 1);
+    }
+
+    #[test]
+    fn strategy_for_focus_maps_common_candidate_names() {
+        assert_eq!(
+            strategy_for_focus("improve tool descriptions"),
+            EditStrategy::ToolDescription
+        );
+        assert_eq!(
+            strategy_for_focus("fix fallback logic"),
+            EditStrategy::FallbackLogic
+        );
+        assert_eq!(
+            strategy_for_focus("tighten output schema"),
+            EditStrategy::OutputSchema
+        );
+        assert_eq!(
+            strategy_for_focus("lower model temperature"),
+            EditStrategy::ModelConfig
+        );
+        assert_eq!(strategy_for_focus("reasoning"), EditStrategy::SystemPrompt);
+    }
+
+    #[test]
+    fn fallback_candidates_follow_trace_failures() {
+        let candidates = fallback_candidates_from_trace(&[TraceDiagnosis {
+            signals: vec![
+                crate::FailureSignal {
+                    kind: FailureKind::EchoFallback,
+                    severity: 2,
+                    evidence: "Echo: hello".to_string(),
+                },
+                crate::FailureSignal {
+                    kind: FailureKind::InvalidJson,
+                    severity: 2,
+                    evidence: "raw stdout".to_string(),
+                },
+            ],
+        }]);
+
+        assert_eq!(candidates[0].strategy, Some(EditStrategy::FallbackLogic));
+        assert!(candidates
+            .iter()
+            .any(|candidate| candidate.strategy == Some(EditStrategy::OutputSchema)));
+    }
+
+    #[test]
+    fn build_edit_for_candidate_creates_schema_preamble_patch() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let main = src.join("main.rs");
+        std::fs::write(
+            &main,
+            r#"fn main() { let _agent = client.agent("m").preamble("You are helpful.").build(); }"#,
+        )
+        .unwrap();
+
+        let candidate = Candidate {
+            focus: "output_schema".to_string(),
+            description: "make output contract explicit".to_string(),
+            expected_improvement: "more parseable output".to_string(),
+            strategy: Some(EditStrategy::OutputSchema),
+        };
+
+        let edit = build_edit_for_candidate(dir.path(), None, &candidate)
+            .unwrap()
+            .expect("schema strategy should produce a prompt edit");
+
+        assert_eq!(edit.file, main);
+        assert!(edit.patch.contains("answer, reasoning, and confidence"));
+    }
+
+    #[test]
+    fn tool_strategy_requires_discovered_tools() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let main = src.join("main.rs");
+        std::fs::write(
+            &main,
+            r#"fn main() { let _agent = client.agent("m").preamble("You are helpful.").build(); }"#,
+        )
+        .unwrap();
+
+        let candidate = Candidate {
+            focus: "tool_description".to_string(),
+            description: "clarify tool use".to_string(),
+            expected_improvement: "better tool calls".to_string(),
+            strategy: Some(EditStrategy::ToolDescription),
+        };
+
+        let without_tools = build_edit_for_candidate(dir.path(), None, &candidate).unwrap();
+        assert!(without_tools.is_none());
+
+        let bundle = AgentBundle {
+            scope: mdx_rust_analysis::BundleScope {
+                optimizable_paths: vec![main],
+                read_only_paths: vec![],
+            },
+            preambles: vec![],
+            tools: vec![mdx_rust_analysis::ExtractedTool {
+                file: "src/main.rs".to_string(),
+                name: "search".to_string(),
+                description: None,
+            }],
+            is_rig_agent: true,
+            key_files: vec![],
+        };
+
+        let with_tools = build_edit_for_candidate(dir.path(), Some(&bundle), &candidate)
+            .unwrap()
+            .expect("tool strategy should produce a prompt edit when tools exist");
+        assert!(with_tools
+            .patch
+            .contains("available tools improve factuality"));
     }
 }
