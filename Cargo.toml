@@ -4,6 +4,7 @@ members = [
     "crates/mdx-rust",
     "crates/mdx-rust-core",
     "crates/mdx-rust-analysis",
+    "examples/rig-minimal-agent",
 ]
 
 [workspace.package]

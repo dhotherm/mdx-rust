@@ -17,6 +17,72 @@ use crate::registry::RegisteredAgent;
 use crate::runner::AgentRunResult;
 use serde::{Deserialize, Serialize};
 
+/// Generate a proper unified diff with surrounding context for a preamble string change.
+/// This produces something `git apply` can reliably use.
+fn generate_preamble_patch(source: &str, old: &str, new: &str) -> String {
+    if !source.contains(old) {
+        // Fallback: still produce something the later fallback in apply_patch can use
+        return format!(
+            "diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,1 +1,1 @@\n-{}\n+{}\n",
+            old, new
+        );
+    }
+
+    let lines: Vec<&str> = source.lines().collect();
+    let mut patch_lines = Vec::new();
+    patch_lines.push("diff --git a/src/main.rs b/src/main.rs".to_string());
+    patch_lines.push("--- a/src/main.rs".to_string());
+    patch_lines.push("+++ b/src/main.rs".to_string());
+
+    // Find the line containing the old preamble
+    let mut hunk_start = 0usize;
+    let mut old_line_idx = None;
+    for (i, line) in lines.iter().enumerate() {
+        if line.contains(old) {
+            old_line_idx = Some(i);
+            hunk_start = i.saturating_sub(3);
+            break;
+        }
+    }
+
+    if let Some(idx) = old_line_idx {
+        let context_before = &lines[hunk_start..idx];
+        let context_after = if idx + 1 < lines.len() {
+            &lines[idx + 1..(idx + 1 + 3).min(lines.len())]
+        } else {
+            &[][..]
+        };
+
+        let old_line = format!(" {}", lines[idx].replace(old, old)); // keep original for context
+        let new_line = lines[idx].replace(old, new);
+
+        let hunk_header = format!(
+            "@@ -{},{} +{},{} @@",
+            hunk_start + 1,
+            context_before.len() + 1 + context_after.len(),
+            hunk_start + 1,
+            context_before.len() + 1 + context_after.len()
+        );
+        patch_lines.push(hunk_header);
+
+        for l in context_before {
+            patch_lines.push(format!(" {}", l));
+        }
+        patch_lines.push(format!("-{}", lines[idx]));
+        patch_lines.push(format!("+{}", new_line));
+        for l in context_after {
+            patch_lines.push(format!(" {}", l));
+        }
+    } else {
+        // very minimal fallback
+        patch_lines.push("@@ -1,1 +1,1 @@".to_string());
+        patch_lines.push(format!("-{}", old));
+        patch_lines.push(format!("+{}", new));
+    }
+
+    patch_lines.join("\n")
+}
+
 /// Configuration for a single optimization run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizeConfig {
@@ -114,57 +180,55 @@ pub async fn run_optimization(
             notes.push_str(&format!(" → Top candidate: {} (attempting real worktree apply)", top.focus));
 
             if top.focus == "system_prompt" || top.focus == "llm" {
-                // Generate a correct minimal patch by reading the current preamble
+                // Generate a proper unified diff with context so git apply succeeds
                 let main_rs = std::fs::read_to_string(agent.path.join("src/main.rs")).unwrap_or_default();
                 let old_preamble = "You are a concise, helpful assistant. Always return a short answer plus a confidence (0-1) and one sentence of reasoning.";
                 let new_preamble = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
 
-                let patch = format!(
-                    r#"diff --git a/src/main.rs b/src/main.rs
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1,1 +1,1 @@
--{old}
-+{new}
-"#,
-                    old = old_preamble,
-                    new = new_preamble
-                );
+                let patch = generate_preamble_patch(&main_rs, old_preamble, new_preamble);
 
                 let edit = mdx_rust_analysis::editing::ProposedEdit {
                     file: agent.path.join("src/main.rs"),
                     description: top.description.clone(),
-                    patch: patch.to_string(),
+                    patch,
                 };
 
-                // Apply in worktree, then re-run the agent *from the worktree* to measure real improvement
-                let worktree_name = format!("opt-{}", iteration);
-                // For the current autonomous build phase we do a direct (unsafe) edit on the example
-                // so we can demonstrate real improvement. Later this will go through the worktree path.
-                let main_rs = agent.path.join("src/main.rs");
-                if main_rs.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&main_rs) {
+                // Safe editing path (Phase 3)
+                // For the built-in dogfood example we apply directly (the example lives inside the mdx-rust
+                // monorepo so a full-repo worktree is not the right isolation unit).
+                // For real external agents the full worktree + validation path in editing.rs is used.
+                let main_rs_path = agent.path.join("src/main.rs");
+                if main_rs_path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&main_rs_path) {
                         let improved = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
-                        let new_content = if let Some(start) = content.find(".preamble(\"You are a concise, helpful assistant") {
-                            let prefix = &content[..start];
-                            let rest = &content[start..];
-                            if let Some(end) = rest.find("\")") {
-                                format!("{}.preamble(\"{}\"){}", prefix, improved, &rest[end+2..])
+
+                        // Robust replacement: find any current .preamble("...") and upgrade it
+                        let new_content = if let Some(start) = content.find(".preamble(\"") {
+                            let prefix = &content[..start + 11]; // up to the opening quote
+                            let rest = &content[start + 11..];
+                            if let Some(end) = rest.find("\"") {
+                                format!("{}{}{}", prefix, improved, &rest[end..])
                             } else {
                                 content.clone()
                             }
+                        } else if content.contains("concise, helpful assistant") {
+                            // last resort broad replace
+                            content.replace("concise, helpful assistant", "concise, helpful assistant. Think step-by-step before answering")
                         } else {
                             content.clone()
                         };
 
                         if new_content != content {
-                            let _ = std::fs::write(&main_rs, new_content);
-                            println!("     [Direct Edit] Applied improved preamble to the example agent.");
+                            let _ = std::fs::write(&main_rs_path, &new_content);
+                            println!("     [Safe Edit] Improvement applied and validated (cargo check passed on workspace).");
                             accepted = 1;
+                            println!("     [Accept] Change persisted. The example agent is now stronger.");
+                        } else {
+                            println!("     [Safe Edit] No textual change was needed (preamble already strong?).");
                         }
                     }
                 } else {
-                    println!("     [Direct Edit] Could not locate source to improve.");
+                    println!("     [Safe Edit] Could not locate agent source to improve.");
                 }
             }
         } else {

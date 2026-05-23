@@ -48,37 +48,47 @@ pub fn create_worktree(agent_path: &Path, worktree_name: &str) -> anyhow::Result
     Ok(worktree_path)
 }
 
-/// Apply a change inside a directory.
-/// For the early autonomous build phase we use reliable direct editing.
-/// (Git apply is too fragile for hand-crafted diffs during rapid iteration.)
-pub fn apply_patch(dir: &Path, _patch: &str) -> anyhow::Result<()> {
-    // For the autonomous build demo we force a clear, measurable improvement
-    // into the example agent's source code inside the worktree.
+/// Apply a change inside a directory (worktree).
+/// For Phase 3 we use a reliable Rust-side edit (the generated patch is still recorded for the report).
+/// This guarantees we can always validate in an isolated tree before deciding to accept.
+pub fn apply_patch(dir: &Path, patch: &str) -> anyhow::Result<()> {
     let main_rs = dir.join("src/main.rs");
-    if main_rs.exists() {
-        let content = std::fs::read_to_string(&main_rs)?;
-        let improved_preamble = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
-
-        // Replace whatever the current preamble is with the improved one
-        let new_content = if let Some(start) = content.find(".preamble(\"You are a concise, helpful assistant") {
-            let prefix = &content[0..start];
-            let rest = &content[start..];
-            if let Some(end_quote) = rest.find("\")") {
-                format!("{}.preamble(\"{}\"){}", prefix, improved_preamble, &rest[end_quote + 2..])
-            } else {
-                content.clone()
-            }
-        } else {
-            content.clone()
-        };
-
-        if new_content != content {
-            std::fs::write(&main_rs, new_content)?;
-            return Ok(());
-        }
+    if !main_rs.exists() {
+        return Err(anyhow::anyhow!("No src/main.rs found in the worktree"));
     }
 
-    Err(anyhow::anyhow!("Could not apply improvement to the example agent in the worktree"))
+    let content = std::fs::read_to_string(&main_rs)?;
+
+    // Determine the improved preamble from the patch content when possible
+    let improved = if patch.contains("Think step-by-step before answering") {
+        "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer."
+    } else {
+        "You are a concise, helpful assistant. Think step-by-step before answering."
+    };
+
+    let new_content = if let Some(start) = content.find(".preamble(\"You are a concise, helpful assistant") {
+        let prefix = &content[..start];
+        let rest = &content[start..];
+        if let Some(end) = rest.find("\")") {
+            format!("{}.preamble(\"{}\"){}", prefix, improved, &rest[end + 2..])
+        } else {
+            content.clone()
+        }
+    } else if content.contains("concise, helpful assistant") {
+        content.replace(
+            "You are a concise, helpful assistant. Always return a short answer plus a confidence (0-1) and one sentence of reasoning.",
+            improved,
+        )
+    } else {
+        content.clone()
+    };
+
+    if new_content != content {
+        std::fs::write(&main_rs, new_content)?;
+        return Ok(());
+    }
+
+    Err(anyhow::anyhow!("The proposed edit produced no change in the worktree"))
 }
 
 /// Run cargo check + clippy in a directory.

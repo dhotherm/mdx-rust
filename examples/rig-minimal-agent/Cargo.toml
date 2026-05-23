@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-[workspace]
-# Standalone so it can be run cleanly from the parent workspace during development
-
 [dependencies]
 rig-core = "0.10"
 tokio = { version = "1", features = ["full"] }
