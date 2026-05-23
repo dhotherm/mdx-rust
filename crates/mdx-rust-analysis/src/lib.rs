@@ -8,5 +8,6 @@
 //! This crate will be heavily developed in Phase 2.
 
 pub mod bundler;
+pub mod finders;
 
 pub use bundler::{build_bundle_scope, BundleScope};

@@ -18,7 +18,7 @@ ignore.workspace = true
 # Code analysis
 syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 quote = "1"
-tree-sitter = "0.22"
+tree-sitter = "0.20"
 tree-sitter-rust = "0.20"
 
 [dev-dependencies]
