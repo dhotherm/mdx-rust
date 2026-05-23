@@ -111,12 +111,42 @@ pub async fn run_optimization(
 
         if !candidates.is_empty() {
             let top = &candidates[0];
-            notes.push_str(&format!(" → Top candidate: {} (patch would be applied via worktree)", top.focus));
+            notes.push_str(&format!(" → Top candidate: {} (attempting real worktree apply)", top.focus));
 
             if top.focus == "system_prompt" || top.focus == "llm" {
-                // Real(ish) apply simulation — in next steps we will use the editing module + actual worktree
-                println!("     [Editing] Would create git worktree, patch the preamble, run cargo check, and accept if the new version scores higher.");
-                // Placeholder for actual edit application (will be wired to editing.rs + git2)
+                let patch = r#"diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -35,7 +35,8 @@ async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
+         let client = openai::Client::from_env();
+         let agent = client
+             .agent("gpt-4o-mini")
+-            .preamble("You are a concise, helpful assistant.")
++            .preamble("You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.")
+             .build();
+ 
+         let prompt = format!("Query: {}\nContext: {}", input.query, input.context.unwrap_or_default());
+"#;
+
+                let edit = mdx_rust_analysis::editing::ProposedEdit {
+                    file: agent.path.join("src/main.rs"),
+                    description: top.description.clone(),
+                    patch: patch.to_string(),
+                };
+
+                match mdx_rust_analysis::editing::apply_and_validate(&agent.path, &edit, &format!("opt-{}", iteration)) {
+                    Ok(val) => {
+                        if val.passed {
+                            println!("     [Safe Apply] Patch applied and validated in worktree!");
+                            accepted = 1;
+                        } else {
+                            println!("     [Safe Apply] Validation failed in worktree.");
+                        }
+                    }
+                    Err(e) => {
+                        println!("     [Safe Apply] Failed: {}", e);
+                    }
+                }
             }
         } else {
             current_score = avg_score;
