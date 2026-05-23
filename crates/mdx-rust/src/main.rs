@@ -120,8 +120,14 @@ fn main() {
             // TODO: full loop with tracing, diagnosis, candidate generation, validation
         }
         Commands::Doctor { name } => {
-            println!("Running diagnostics for agent '{}'", name);
-            // TODO: show bundle scope, editable paths, current best score, etc.
+            if let Err(e) = cmd_doctor(&name, cli.json) {
+                if cli.json {
+                    println!(r#"{{"status":"error","error":"{}"}}"#, e);
+                } else {
+                    eprintln!("Error: {}", e);
+                }
+                std::process::exit(1);
+            }
         }
         Commands::Eval { name, dataset } => {
             println!("Evaluating agent '{}' with dataset {:?}", name, dataset);
@@ -266,6 +272,55 @@ Describe what this agent is supposed to do in 1-2 sentences.
         println!("  mdx-rust register <name> [path]");
         println!("  mdx-rust doctor <name>");
     }
+
+    Ok(())
+}
+
+/// First version of `doctor` — shows the state of the .mdx-rust/ directory
+/// and basic information about a registered agent (if any).
+fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
+    use std::fs;
+    use std::path::Path;
+
+    let artifact_root = ".mdx-rust";
+    let agent_dir = format!("{}/agents/{}", artifact_root, name);
+
+    if json {
+        println!(r#"{{"command":"doctor","agent":"{}","artifact_root":"{}","exists":{}}}"#, 
+                 name, artifact_root, Path::new(&agent_dir).exists());
+        return Ok(());
+    }
+
+    println!("🔍 mdx-rust doctor for agent '{}'", name);
+    println!();
+
+    if !Path::new(artifact_root).exists() {
+        println!("  ❌ No {} directory found in this project.", artifact_root);
+        println!("     Run `mdx-rust init` first.");
+        return Ok(());
+    }
+
+    println!("  ✅ {} directory exists", artifact_root);
+
+    // Check for key files
+    let config_path = format!("{}/config.toml", artifact_root);
+    if Path::new(&config_path).exists() {
+        println!("  ✅ config.toml found");
+    } else {
+        println!("  ⚠️  config.toml missing");
+    }
+
+    if Path::new(&agent_dir).exists() {
+        println!("  ✅ Agent '{}' is registered", name);
+        // In later phases we'll show registry.json, best version, etc.
+    } else {
+        println!("  ℹ️  Agent '{}' is not yet registered", name);
+        println!("     Run: mdx-rust register {}", name);
+    }
+
+    println!();
+    println!("  (More detailed bundle scope, ignore analysis, and experiment");
+    println!("   status will appear here in later phases.)");
 
     Ok(())
 }
