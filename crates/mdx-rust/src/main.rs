@@ -84,12 +84,19 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    // TODO: Initialize tracing (human pretty by default, JSON when --json)
+    // Basic tracing setup (pretty for humans, json when --json)
+    init_tracing(cli.json);
 
     match cli.command {
         Commands::Init => {
-            println!("Initializing mdx-rust in current directory...");
-            // TODO: create .mdx-rust/, config, .mdx-rustignore, example policy
+            if let Err(e) = cmd_init(cli.json) {
+                if cli.json {
+                    println!(r#"{{"status":"error","error":"{}"}}"#, e);
+                } else {
+                    eprintln!("Error: {}", e);
+                }
+                std::process::exit(1);
+            }
         }
         Commands::Register { name, path } => {
             println!("Registering agent '{}' at {:?}", name, path);
@@ -121,4 +128,144 @@ fn main() {
             // TODO: run evaluation harness
         }
     }
+}
+
+/// Initialize tracing with nice human output by default, or JSON when requested.
+fn init_tracing(json: bool) {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = EnvFilter::from_default_env()
+        .add_directive("mdx_rust=info".parse().unwrap());
+
+    if json {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .json()
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(false)
+            .compact()
+            .init();
+    }
+}
+
+/// Run the `init` command
+fn cmd_init(json: bool) -> anyhow::Result<()> {
+    use std::fs;
+    use std::path::Path;
+
+    let artifact_dir = ".mdx-rust";
+    let cwd = std::env::current_dir()?;
+
+    if Path::new(artifact_dir).exists() {
+        if json {
+            println!(r#"{{"status":"already_initialized","path":"{}"}}"#, artifact_dir);
+        } else {
+            println!("mdx-rust is already initialized in this directory ({} exists).", artifact_dir);
+        }
+        return Ok(());
+    }
+
+    fs::create_dir(artifact_dir)?;
+
+    // Create config.toml
+    let config_content = r#"# mdx-rust configuration
+# See docs for more options
+
+[models]
+# analyzer = "claude-4-sonnet"   # Strong model for diagnosis & improvements
+# judge = "gpt-4o"               # Model used for LLM-as-Judge scoring
+# default = "gpt-4o-mini"
+
+artifact_dir = ".mdx-rust"
+"#;
+    fs::write(format!("{}/config.toml", artifact_dir), config_content)?;
+
+    // Create .mdx-rustignore with sensible defaults
+    let ignore_content = r#"# Files and directories that mdx-rust should never include when bundling
+# for the LLM (in addition to .gitignore and common VCS/lock files)
+
+# Build artifacts
+target/
+**/*.rlib
+**/*.rmeta
+**/*.so
+**/*.dylib
+**/*.dll
+
+# Lockfiles and generated
+Cargo.lock
+**/*.lock
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test fixtures that are large or noisy
+**/test-data/
+**/fixtures/large/
+
+# mdx-rust's own artifacts (never bundle ourselves)
+.mdx-rust/
+"#;
+    fs::write(format!("{}/.mdx-rustignore", artifact_dir), ignore_content)?;
+
+    // Create a starter policies.md
+    let policies_content = r#"# Agent Policy
+
+## Purpose
+Describe what this agent is supposed to do in 1-2 sentences.
+
+## Decision Rules
+1. ...
+2. ...
+
+## Constraints
+- Never ...
+- Always ...
+
+## Quality Expectations
+- ...
+- ...
+
+## Edge Cases
+| Scenario | Expected Behaviour |
+|----------|--------------------|
+| ...      | ...                |
+"#;
+    fs::write(format!("{}/policies.md", artifact_dir), policies_content)?;
+
+    // Create a basic eval_spec.json template
+    let eval_spec = r#"{
+  "version": 1,
+  "description": "Evaluation spec for this agent",
+  "scoring": {
+    "fields": []
+  },
+  "policy_path": "policies.md"
+}
+"#;
+    fs::write(format!("{}/eval_spec.json", artifact_dir), eval_spec)?;
+
+    if json {
+        println!(r#"{{"status":"initialized","path":"{}","files_created":["config.toml",".mdx-rustignore","policies.md","eval_spec.json"]}}"#, artifact_dir);
+    } else {
+        println!("✅ mdx-rust initialized successfully in {}", cwd.display());
+        println!();
+        println!("Created:");
+        println!("  {}/config.toml", artifact_dir);
+        println!("  {}/.mdx-rustignore", artifact_dir);
+        println!("  {}/policies.md      (edit this with your agent's rules)", artifact_dir);
+        println!("  {}/eval_spec.json", artifact_dir);
+        println!();
+        println!("Next steps:");
+        println!("  mdx-rust register <name> [path]");
+        println!("  mdx-rust doctor <name>");
+    }
+
+    Ok(())
 }
