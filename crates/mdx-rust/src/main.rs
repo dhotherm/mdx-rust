@@ -49,21 +49,11 @@ enum Commands {
         name: String,
 
         /// Maximum optimization iterations
-        #[arg(long, default_value = "5")]
-        iterations: u32,
-
-        /// Number of candidate fixes to generate per iteration
         #[arg(long, default_value = "3")]
-        candidates: u32,
-
-        /// Dry run (do not apply any changes)
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Review mode: ask for confirmation before applying each candidate
-        #[arg(long)]
-        review: bool,
+        iterations: u32,
     },
+
+
 
     /// Inspect what would be bundled, editable scope, and current state
     Doctor {
@@ -124,15 +114,12 @@ fn main() {
         Commands::Optimize {
             name,
             iterations,
-            candidates,
-            dry_run,
-            review,
+            ..
         } => {
-            println!(
-                "Optimizing '{}' (iterations={}, candidates={}, dry_run={}, review={})",
-                name, iterations, candidates, dry_run, review
-            );
-            // TODO: full loop with tracing, diagnosis, candidate generation, validation
+            if let Err(e) = cmd_optimize(&name, iterations, cli.json) {
+                eprintln!("Optimize error: {}", e);
+                std::process::exit(1);
+            }
         }
         Commands::Doctor { name } => {
             if let Err(e) = cmd_doctor(&name, cli.json) {
@@ -429,6 +416,42 @@ fn cmd_invoke(name: &str, input: Option<&str>, json: bool) -> anyhow::Result<()>
 }
 
 
+
+fn cmd_optimize(name: &str, iterations: u32, json: bool) -> anyhow::Result<()> {
+    use mdx_rust_core::optimizer::{run_optimization, OptimizeConfig};
+    use mdx_rust_core::registry::Registry;
+
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd)?;
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let registry = Registry::load_from(&artifact_root)?;
+
+    let agent = registry
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered", name))?;
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let runs = rt.block_on(run_optimization(
+        agent,
+        &OptimizeConfig {
+            max_iterations: iterations,
+            candidates_per_iteration: 2,
+            use_llm_judge: false,
+        },
+    ))?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&runs)?);
+    } else {
+        println!("Optimization skeleton run for '{}'", name);
+        for run in runs {
+            println!("  Iteration {} → scores: {:?} (accepted: {})", run.iteration, run.scores, run.accepted_changes);
+        }
+        println!("\n(Real diagnosis, candidate generation, and safe apply coming in Phase 3)");
+    }
+
+    Ok(())
+}
 
 fn detect_contract(path: &std::path::Path) -> mdx_rust_core::registry::AgentContract {
     use mdx_rust_analysis::finders::find_run_agent_functions;

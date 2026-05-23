@@ -48,6 +48,7 @@
 - [x] Doctor now shows real bundle scope using the analysis crate
 - [x] Finders improved (run_agent detection + Rig heuristics)
 - [x] Editing skeleton added (worktree validation pipeline foundation)
+- [x] Optimizer module skeleton (run → score → diagnose → candidates structure)
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI
