@@ -91,27 +91,19 @@ fn main() {
     match cli.command {
         Commands::Init => {
             if let Err(e) = cmd_init(cli.json) {
-                if cli.json {
-                    println!(r#"{{"status":"error","error":"{}"}}"#, e);
-                } else {
-                    eprintln!("Error: {}", e);
-                }
+                emit_error(cli.json, "init", &e);
                 std::process::exit(1);
             }
         }
         Commands::Register { name, path } => {
             if let Err(e) = cmd_register(&name, path.as_deref(), cli.json) {
-                if cli.json {
-                    println!(r#"{{"status":"error","error":"{}"}}"#, e);
-                } else {
-                    eprintln!("Error during registration: {}", e);
-                }
+                emit_error(cli.json, "register", &e);
                 std::process::exit(1);
             }
         }
         Commands::Spec { name } => {
             if let Err(e) = cmd_spec(&name, cli.json) {
-                eprintln!("Spec error: {}", e);
+                emit_error(cli.json, "spec", &e);
                 std::process::exit(1);
             }
         }
@@ -122,34 +114,43 @@ fn main() {
             ..
         } => {
             if let Err(e) = cmd_optimize(&name, iterations, review, cli.json) {
-                if cli.json {
-                    println!(r#"{{"status":"error","error":"{}"}}"#, e);
-                } else {
-                    eprintln!("Optimize error: {}", e);
-                }
+                emit_error(cli.json, "optimize", &e);
                 std::process::exit(1);
             }
         }
         Commands::Doctor { name } => {
             if let Err(e) = cmd_doctor(&name, cli.json) {
-                if cli.json {
-                    println!(r#"{{"status":"error","error":"{}"}}"#, e);
-                } else {
-                    eprintln!("Error: {}", e);
-                }
+                emit_error(cli.json, "doctor", &e);
                 std::process::exit(1);
             }
         }
         Commands::Eval { name, dataset } => {
-            println!("Evaluating agent '{}' with dataset {:?}", name, dataset);
-            // TODO: run evaluation harness
-        }
-        Commands::Invoke { name, input } => {
-            if let Err(e) = cmd_invoke(&name, input.as_deref(), cli.json) {
-                eprintln!("Invoke error: {}", e);
+            if let Err(e) = cmd_eval(&name, dataset.as_deref(), cli.json) {
+                emit_error(cli.json, "eval", &e);
                 std::process::exit(1);
             }
         }
+        Commands::Invoke { name, input } => {
+            if let Err(e) = cmd_invoke(&name, input.as_deref(), cli.json) {
+                emit_error(cli.json, "invoke", &e);
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+fn emit_error(json: bool, command: &str, error: &anyhow::Error) {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "error",
+                "command": command,
+                "error": error.to_string()
+            })
+        );
+    } else {
+        eprintln!("{} error: {}", command, error);
     }
 }
 
@@ -191,8 +192,8 @@ fn cmd_init(json: bool) -> anyhow::Result<()> {
     if Path::new(artifact_dir).exists() {
         if json {
             println!(
-                r#"{{"status":"already_initialized","path":"{}"}}"#,
-                artifact_dir
+                "{}",
+                serde_json::json!({"status":"already_initialized","path":artifact_dir})
             );
         } else {
             println!(
@@ -261,8 +262,8 @@ Cargo.lock
 
     if json {
         println!(
-            r#"{{"status":"initialized","artifact_dir":"{}"}}"#,
-            artifact_dir
+            "{}",
+            serde_json::json!({"status":"initialized","artifact_dir":artifact_dir})
         );
     } else {
         println!("✅ mdx-rust initialized in {}", cwd.display());
@@ -294,12 +295,15 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
     if json {
         if let Some(agent) = registry.get(name) {
             println!(
-                r#"{{"agent":"{}","registered":true,"path":"{}"}}"#,
-                name,
-                agent.path.display()
+                "{}",
+                serde_json::json!({
+                    "agent": name,
+                    "registered": true,
+                    "path": agent.path.display().to_string()
+                })
             );
         } else {
-            println!(r#"{{"agent":"{}","registered":false}}"#, name);
+            println!("{}", serde_json::json!({"agent":name,"registered":false}));
         }
         return Ok(());
     }
@@ -431,11 +435,14 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
 
     if json {
         println!(
-            r#"{{"status":"registered","name":"{}","path":"{}","contract":"{:?}","smoke_test_passed":{}}}"#,
-            name,
-            target_path.display(),
-            registry.get(name).unwrap().contract,
-            smoke_passed
+            "{}",
+            serde_json::json!({
+                "status": "registered",
+                "name": name,
+                "path": target_path.display().to_string(),
+                "contract": format!("{:?}", registry.get(name).unwrap().contract),
+                "smoke_test_passed": smoke_passed
+            })
         );
     } else {
         println!("✅ Registered agent '{}'", name);
@@ -485,6 +492,53 @@ fn cmd_invoke(name: &str, input: Option<&str>, json: bool) -> anyhow::Result<()>
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
         println!("{:#?}", result);
+    }
+
+    Ok(())
+}
+
+fn cmd_eval(name: &str, dataset: Option<&str>, json: bool) -> anyhow::Result<()> {
+    use mdx_rust_core::registry::Registry;
+    use mdx_rust_core::EvaluationDataset;
+    use std::path::Path;
+
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd)?;
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let registry = Registry::load_from(&artifact_root)?;
+
+    let agent = registry
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered", name))?;
+
+    let evaluation_dataset = if let Some(dataset_path) = dataset {
+        EvaluationDataset::load_from_path(Path::new(dataset_path))?
+    } else {
+        EvaluationDataset::synthetic_v1()
+    };
+    let dataset_hash = evaluation_dataset.content_hash();
+    let sample_count = evaluation_dataset.samples.len();
+
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "agent": name,
+                "path": agent.path.display().to_string(),
+                "dataset": dataset,
+                "dataset_version": evaluation_dataset.version,
+                "dataset_hash": dataset_hash,
+                "sample_count": sample_count,
+                "status": "loaded"
+            })
+        );
+    } else {
+        println!("Evaluating agent '{}' with dataset {:?}", name, dataset);
+        println!(
+            "Loaded {} sample(s), version {}, hash {}.",
+            sample_count, evaluation_dataset.version, dataset_hash
+        );
+        println!("Scored evaluation execution is not implemented yet.");
     }
 
     Ok(())
@@ -568,7 +622,11 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
         println!("🚀 Optimization run for agent '{}'", name);
         println!("   ({} iterations)", runs.len());
         for run in &runs {
-            let avg = run.scores.iter().sum::<f32>() / run.scores.len() as f32;
+            let avg = if run.scores.is_empty() {
+                0.0
+            } else {
+                run.scores.iter().sum::<f32>() / run.scores.len() as f32
+            };
             println!(
                 "   • Iteration {} | Avg: {:.2} | Validated: {} | Landed: {} | Accepted: {}",
                 run.iteration, avg, run.validated_changes, run.landed_changes, run.accepted_changes

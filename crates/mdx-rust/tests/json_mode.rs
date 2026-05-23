@@ -19,56 +19,59 @@ fn find_built_binary() -> Option<PathBuf> {
     None
 }
 
-#[test]
-fn optimize_json_mode_produces_parseable_json() {
-    // Prefer a pre-built binary if present; otherwise fall back to `cargo run -q`
+fn mdx_command(args: &[&str]) -> Command {
     let mut cmd = if let Some(bin) = find_built_binary() {
-        let mut c = Command::new(bin);
-        c.arg("optimize")
-            .arg("nonexistent-for-json-test")
-            .arg("--iterations")
-            .arg("1")
-            .arg("--json");
-        c
+        Command::new(bin)
     } else {
         let mut c = Command::new("cargo");
-        c.args([
-            "run",
-            "-q",
-            "--",
-            "optimize",
-            "nonexistent-for-json-test",
-            "--iterations",
-            "1",
-            "--json",
-        ]);
+        c.args(["run", "-q", "--"]);
         c
     };
+    cmd.args(args);
+    cmd
+}
+
+fn assert_machine_pure_json(args: &[&str]) -> serde_json::Value {
+    let mut cmd = mdx_command(args);
 
     let output = cmd.output().expect("failed to invoke mdx-rust binary");
 
     let stdout = str::from_utf8(&output.stdout).expect("stdout must be valid UTF-8");
     let stderr = str::from_utf8(&output.stderr).expect("stderr must be valid UTF-8");
 
-    // Search both stdout and stderr for a line that is valid JSON.
-    // In real --json runs the optimizer emits a JSON array of runs.
-    // On early errors (agent not registered) the top-level handler now emits a JSON error object.
-    let combined = format!("{}\n{}", stdout, stderr);
+    assert!(stderr.trim().is_empty(), "stderr must be empty: {stderr}");
+    assert!(
+        serde_json::from_str::<serde_json::Value>(stdout.trim()).is_ok(),
+        "stdout must be exactly parseable JSON. Got:\n{stdout}"
+    );
+    serde_json::from_str(stdout.trim()).unwrap()
+}
 
-    let mut found_json = false;
-    for line in combined.lines() {
-        let t = line.trim();
-        if (t.starts_with('{') || t.starts_with('['))
-            && serde_json::from_str::<serde_json::Value>(t).is_ok()
-        {
-            found_json = true;
-            break;
+#[test]
+fn optimize_json_mode_produces_parseable_json() {
+    let value = assert_machine_pure_json(&[
+        "optimize",
+        "nonexistent-for-json-test",
+        "--iterations",
+        "1",
+        "--json",
+    ]);
+    assert_eq!(value["status"], "error");
+}
+
+#[test]
+fn other_json_commands_are_machine_pure_on_errors() {
+    for args in [
+        &["doctor", "missing-json-agent", "--json"][..],
+        &["spec", "missing-json-agent", "--json"][..],
+        &["invoke", "missing-json-agent", "--json"][..],
+        &["eval", "missing-json-agent", "--json"][..],
+    ] {
+        let value = assert_machine_pure_json(args);
+        if args[0] == "doctor" {
+            assert_eq!(value["registered"], false);
+        } else {
+            assert_eq!(value["status"], "error");
         }
     }
-
-    assert!(
-        found_json,
-        "Expected machine-pure JSON (object or array) from --json mode. Got stdout+stderr:\n{}",
-        combined
-    );
 }

@@ -3,7 +3,6 @@
 
 use mdx_rust_core::optimizer::{run_optimization, OptimizeConfig};
 use mdx_rust_core::registry::{AgentContract, RegisteredAgent};
-use std::path::PathBuf;
 use tempfile::tempdir;
 
 #[tokio::test]

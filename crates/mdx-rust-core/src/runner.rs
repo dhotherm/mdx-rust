@@ -91,7 +91,6 @@ async fn run_process_agent(
 ) -> anyhow::Result<AgentRunResult> {
     use std::io::Write;
     use std::process::{Command, Stdio};
-    use std::sync::mpsc;
 
     let start = Instant::now();
     const AGENT_RUN_TIMEOUT: Duration = Duration::from_secs(120);
@@ -101,7 +100,8 @@ async fn run_process_agent(
         return Err(anyhow::anyhow!("Cannot find Cargo.toml for Process agent"));
     }
 
-    let mut child = Command::new("cargo")
+    let mut command = Command::new("cargo");
+    command
         .current_dir(&agent.path)
         .args([
             "run",
@@ -112,8 +112,10 @@ async fn run_process_agent(
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+        .stderr(Stdio::piped());
+    configure_process_group(&mut command);
+
+    let mut child = command.spawn()?;
 
     {
         let stdin = child
@@ -124,43 +126,39 @@ async fn run_process_agent(
         stdin.write_all(b"\n")?;
     }
 
-    // Reliable timeout pattern: run wait_with_output in a thread, timeout the join.
-    let (tx, rx) = mpsc::channel();
-    let handle = std::thread::spawn(move || {
-        let res = child.wait_with_output();
-        let _ = tx.send(res);
-    });
-
-    let output = match rx.recv_timeout(AGENT_RUN_TIMEOUT) {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => {
-            let _ = handle.join();
-            let duration = start.elapsed().as_millis() as u64;
-            return Ok(AgentRunResult {
-                output: serde_json::json!({"error": format!("wait error: {}", e)}),
-                duration_ms: duration,
-                success: false,
-                error: Some(e.to_string()),
-                traces: vec![],
-            });
-        }
-        Err(_) => {
-            // Timeout — kill child
-            let _ = handle.join(); // best effort
-                                   // We can't easily kill from here because child moved into thread.
-                                   // For robust kill we would use a Arc<Mutex<Child>> or the wait-timeout crate's kill.
-                                   // For now we return a clear timeout failure. Real kill would require more plumbing.
-            let duration = start.elapsed().as_millis() as u64;
-            return Ok(AgentRunResult {
-                output: serde_json::json!({"error": "agent timed out"}),
-                duration_ms: duration,
-                success: false,
-                error: Some(format!(
-                    "Agent run exceeded {}s timeout and was terminated",
-                    AGENT_RUN_TIMEOUT.as_secs()
-                )),
-                traces: vec![],
-            });
+    let output = loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break child.wait_with_output()?,
+            Ok(None) if start.elapsed() >= AGENT_RUN_TIMEOUT => {
+                terminate_process_group(child.id());
+                let _ = child.kill();
+                let _ = child.wait();
+                let duration = start.elapsed().as_millis() as u64;
+                return Ok(AgentRunResult {
+                    output: serde_json::json!({"error": "agent timed out"}),
+                    duration_ms: duration,
+                    success: false,
+                    error: Some(format!(
+                        "Agent run exceeded {}s timeout and was terminated",
+                        AGENT_RUN_TIMEOUT.as_secs()
+                    )),
+                    traces: vec![],
+                });
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(e) => {
+                terminate_process_group(child.id());
+                let _ = child.kill();
+                let _ = child.wait();
+                let duration = start.elapsed().as_millis() as u64;
+                return Ok(AgentRunResult {
+                    output: serde_json::json!({"error": format!("wait error: {}", e)}),
+                    duration_ms: duration,
+                    success: false,
+                    error: Some(e.to_string()),
+                    traces: vec![],
+                });
+            }
         }
     };
 
@@ -189,3 +187,29 @@ async fn run_process_agent(
         traces: vec![],
     })
 }
+
+#[cfg(unix)]
+fn configure_process_group(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn configure_process_group(_command: &mut std::process::Command) {}
+
+#[cfg(unix)]
+fn terminate_process_group(pid: u32) {
+    for signal in ["-TERM", "-KILL"] {
+        let _ = std::process::Command::new("kill")
+            .arg(signal)
+            .arg(format!("-{pid}"))
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[cfg(not(unix))]
+fn terminate_process_group(_pid: u32) {}
