@@ -366,12 +366,21 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
 }
 
 fn detect_contract(path: &std::path::Path) -> mdx_rust_core::registry::AgentContract {
-    // Very basic heuristic for Phase 0
-    // Later this will use tree-sitter + syn to find Rig agents or run_agent functions
+    use mdx_rust_analysis::finders::find_run_agent_functions;
+
+    // Check for Rig first via Cargo.toml
     let cargo_content = std::fs::read_to_string(path.join("Cargo.toml")).unwrap_or_default();
     if cargo_content.contains("rig-core") || cargo_content.contains("rig") {
-        mdx_rust_core::registry::AgentContract::NativeRust
-    } else {
-        mdx_rust_core::registry::AgentContract::Process
+        return mdx_rust_core::registry::AgentContract::NativeRust;
     }
+
+    // Try to find run_agent style functions using tree-sitter
+    if let Ok(main_rs) = std::fs::read_to_string(path.join("src/main.rs")) {
+        let found = find_run_agent_functions(&main_rs);
+        if !found.is_empty() {
+            return mdx_rust_core::registry::AgentContract::NativeRust;
+        }
+    }
+
+    mdx_rust_core::registry::AgentContract::Process
 }
