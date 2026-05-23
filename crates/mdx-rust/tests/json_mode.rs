@@ -71,6 +71,22 @@ fn assert_machine_pure_json(args: &[&str]) -> serde_json::Value {
     serde_json::from_str(stdout.trim()).unwrap()
 }
 
+fn assert_machine_pure_json_in(args: &[&str], dir: &std::path::Path) -> serde_json::Value {
+    let output = mdx_command_in(args, dir)
+        .output()
+        .expect("failed to invoke mdx-rust binary");
+
+    let stdout = str::from_utf8(&output.stdout).expect("stdout must be valid UTF-8");
+    let stderr = str::from_utf8(&output.stderr).expect("stderr must be valid UTF-8");
+
+    assert!(stderr.trim().is_empty(), "stderr must be empty: {stderr}");
+    assert!(
+        serde_json::from_str::<serde_json::Value>(stdout.trim()).is_ok(),
+        "stdout must be exactly parseable JSON. Got:\n{stdout}"
+    );
+    serde_json::from_str(stdout.trim()).unwrap()
+}
+
 #[test]
 fn optimize_json_mode_produces_parseable_json() {
     let value = assert_machine_pure_json(&[
@@ -108,6 +124,10 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     assert_eq!(value["title"], "AuditPacket");
     assert_eq!(value["type"], "object");
     assert!(value["properties"]["schema_version"].is_object());
+
+    let hardening = assert_machine_pure_json(&["schema", "hardening-run", "--json"]);
+    assert_eq!(hardening["title"], "HardeningRun");
+    assert!(hardening["properties"]["outcome"].is_object());
 }
 
 #[test]
@@ -136,4 +156,40 @@ fn init_json_writes_artifact_dir_at_config_root() {
         artifact_pos < models_pos,
         "artifact_dir must live at config root, not inside [models]"
     );
+}
+
+#[test]
+fn improve_json_mode_reviews_hardening_without_applying() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-improve-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let value = assert_machine_pure_json_in(&["improve", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(value["schema_version"], "0.3");
+    assert_eq!(value["outcome"]["status"], "Reviewed");
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
 }

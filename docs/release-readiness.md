@@ -1,6 +1,6 @@
 # Release Readiness
 
-This document is the release checklist for `v0.2.0`.
+This document is the release checklist for `v0.3.0`.
 
 ## Required Automated Gates
 
@@ -22,7 +22,7 @@ dependency is indexed.
 
 `mdx-rust` intentionally uses a moderate dependency tree because it needs Rust
 parsing, CLI ergonomics, async process execution, and optional model-provider
-support. Before `v0.2.0` is published:
+support. Before `v0.3.0` is published:
 
 - No yanked crates should be present.
 - Known RustSec advisories must be fixed or documented with a dated
@@ -48,6 +48,8 @@ cd "$tmpdir"
 mdx-rust init
 test -f .mdx-rust/config.toml
 mdx-rust schema audit-packet --json >/tmp/mdx-rust-audit-schema.json
+mdx-rust schema hardening-run --json >/tmp/mdx-rust-hardening-schema.json
+mdx-rust doctor --json >/tmp/mdx-rust-doctor.json
 ```
 
 ## Example Smoke
@@ -64,6 +66,19 @@ cargo run -p mdx-rust -- audit example
 Confirm that the optimizer either accepts a net-positive change with an audit
 packet or clearly reports that no safe improvement was accepted.
 
+## Hardening Smoke
+
+From a clean checkout:
+
+```bash
+cargo run -p mdx-rust -- doctor --json
+cargo run -p mdx-rust -- audit --json
+cargo run -p mdx-rust -- improve crates/mdx-rust-analysis/src/hardening.rs --json
+```
+
+Confirm that review mode does not mutate the working tree and that any proposed
+change has isolated validation command records.
+
 ## Performance Sanity
 
 Record rough timings before release:
@@ -71,6 +86,7 @@ Record rough timings before release:
 - CLI startup with `mdx-rust --version`.
 - Fresh `mdx-rust init`.
 - One `optimize --iterations 1 --budget light` run on the example agent.
+- One `improve <small-rust-file>` review run.
 
 The exact numbers depend heavily on Cargo cache warmth. The release bar is not a
 micro-benchmark; it is that the CLI starts promptly and the example optimization
@@ -78,7 +94,7 @@ does not hang or produce confusing output.
 
 ## Publish Order
 
-Do not publish `v0.2.0` until the candidate commit has passed external pressure
+Do not publish `v0.3.0` until the candidate commit has passed external pressure
 testing.
 
 When approved, publish in dependency order:

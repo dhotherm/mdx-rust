@@ -6,9 +6,10 @@
 
 - `mdx-rust`: CLI entrypoint and human or JSON command output.
 - `mdx-rust-core`: registry, runner, optimizer, hooks, ledgers, scoring, audit
-  packets, and the candidate safety pipeline.
+  packets, hardening reports, and the candidate safety pipeline.
 - `mdx-rust-analysis`: Rust source discovery, prompt/tool finders, isolated
-  workspace creation, patch application, validation, and rollback snapshots.
+  workspace creation, patch application, hardening analysis, validation, and
+  rollback snapshots.
 
 ## Optimization Lifecycle
 
@@ -59,11 +60,34 @@ agent-facing contracts inspectable and gives future MCP or hook integrations a
 stable validation target without making the Rust library API stable before
 `1.0`.
 
-## v0.2 Edit Scope
+## Hardening Lifecycle
+
+`v0.3` adds a separate path for ordinary Rust modules:
+
+1. Discover the Rust workspace with `cargo metadata` when available.
+2. Scan the requested target or workspace for high-confidence hardening
+   findings.
+3. Build bounded file-content changes for supported strategies.
+4. Apply the changes in an isolated workspace.
+5. Run `cargo check` and `cargo clippy -- -D warnings`.
+6. In review mode, stop here and write a hardening report.
+7. With `--apply`, snapshot every touched real file.
+8. Write the already validated changes to the real tree.
+9. Run final validation on the real tree.
+10. Roll back every touched file if final validation fails.
+
+The hardening path is intentionally review-first and scoped. It does not use
+the agent optimizer scoring loop, and it does not relax the optimizer's
+single-file acceptance contract.
+
+## v0.2 Optimizer Edit Scope
 
 `v0.2` hard-enforces single-file accepted edits. A diff that touches a file other
 than `ProposedEdit.file` is rejected before validation.
 
-Multi-file accepted edits are a future feature and require transaction snapshots
-for every touched file, tests proving rollback, and an update to
-`SAFETY_INVARIANTS.md`.
+## v0.3 Hardening Scope
+
+`v0.3` allows bounded hardening transactions outside the optimizer. These
+transactions snapshot every touched file, validate in isolation, require
+`--apply` before landing, run final validation, and roll back on failure.
+General multi-file refactoring remains future work.

@@ -1,11 +1,10 @@
 use clap::{Parser, Subcommand};
 use mdx_rust_core::Config;
 
-/// MDx Rust — A Rust-native optimizer for LLM agents.
+/// MDx Rust — A Rust-native safe-change system.
 ///
-/// Point mdx-rust at your existing Rust agent, give it a policy,
-/// and let it safely improve prompts, tools, and logic through
-/// structured experimentation with compile-time validation gates.
+/// Point mdx-rust at Rust code, give it policies and validation gates,
+/// and let it propose scoped, auditable hardening changes.
 #[derive(Parser)]
 #[command(name = "mdx-rust")]
 #[command(version, about, long_about = None)]
@@ -63,8 +62,34 @@ enum Commands {
 
     /// Inspect what would be bundled, editable scope, and current state
     Doctor {
-        /// Agent name
-        name: String,
+        /// Optional agent name. Omit to inspect the current Rust workspace.
+        name: Option<String>,
+    },
+
+    /// Propose or apply scoped Rust hardening changes for ordinary modules
+    Improve {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Optional goal text recorded in reports
+        #[arg(long)]
+        goal: Option<String>,
+
+        /// Optional policy file to hash and attach to the hardening report
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Apply validated changes to the real tree. Without this, review mode is used.
+        #[arg(long)]
+        apply: bool,
+
+        /// Maximum Rust files to scan
+        #[arg(long, default_value = "100")]
+        max_files: usize,
+
+        /// Validation timeout in seconds
+        #[arg(long, default_value = "180")]
+        timeout_seconds: u64,
     },
 
     /// Evaluate the current (or a specific) version of the agent on a dataset
@@ -77,16 +102,20 @@ enum Commands {
         dataset: Option<String>,
     },
 
-    /// Run deterministic static security checks against a registered agent
+    /// Run deterministic static security checks against an agent or current workspace
     Audit {
-        /// Agent name
-        name: String,
+        /// Optional agent name. Omit to audit the current Rust workspace.
+        name: Option<String>,
+
+        /// Optional policy file to hash and include when auditing the current workspace
+        #[arg(long)]
+        policy: Option<String>,
     },
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event
-        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event"])]
+        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding
+        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding"])]
         kind: String,
     },
 
@@ -137,8 +166,29 @@ fn main() {
             }
         }
         Commands::Doctor { name } => {
-            if let Err(e) = cmd_doctor(&name, cli.json) {
+            if let Err(e) = cmd_doctor(name.as_deref(), cli.json) {
                 emit_error(cli.json, "doctor", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Improve {
+            target,
+            goal,
+            policy,
+            apply,
+            max_files,
+            timeout_seconds,
+        } => {
+            if let Err(e) = cmd_improve(
+                target.as_deref(),
+                goal.as_deref(),
+                policy.as_deref(),
+                apply,
+                max_files,
+                timeout_seconds,
+                cli.json,
+            ) {
+                emit_error(cli.json, "improve", &e);
                 std::process::exit(1);
             }
         }
@@ -148,8 +198,8 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Audit { name } => {
-            if let Err(e) = cmd_audit(&name, cli.json) {
+        Commands::Audit { name, policy } => {
+            if let Err(e) = cmd_audit(name.as_deref(), policy.as_deref(), cli.json) {
                 emit_error(cli.json, "audit", &e);
                 std::process::exit(1);
             }
@@ -286,14 +336,15 @@ Cargo.lock
     fs::write(format!("{}/.mdx-rustignore", artifact_dir), ignore_content)?;
 
     // Starter policy
-    let policies = r#"# Agent Policy
+    let policies = r#"# Project Policy
 
 ## Purpose
-[Describe the purpose of your agent in 1-2 sentences]
+[Describe the purpose of this Rust project in 1-2 sentences]
 
-## Decision Rules
-1. ...
-2. ...
+## Hardening Rules
+1. Avoid panics in request, CLI, and service boundary paths.
+2. Preserve contextual errors for filesystem, environment, network, and database failures.
+3. Validate external inputs before using them in risky operations.
 
 ## Constraints
 - ...
@@ -327,14 +378,68 @@ Cargo.lock
         println!("  {}/policies.md", artifact_dir);
         println!("  {}/eval_spec.json", artifact_dir);
         println!();
-        println!("Next: mdx-rust register <name> [path]");
+        println!("Next: mdx-rust doctor");
+        println!("Or:   mdx-rust register <name> [path]");
     }
 
     Ok(())
 }
 
 /// `doctor` command — shows project state using the loaded Config
-fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
+fn cmd_doctor(name: Option<&str>, json: bool) -> anyhow::Result<()> {
+    if let Some(name) = name {
+        return cmd_agent_doctor(name, json);
+    }
+
+    cmd_workspace_doctor(json)
+}
+
+fn cmd_workspace_doctor(json: bool) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let run = mdx_rust_core::run_hardening(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::HardeningConfig {
+            apply: false,
+            max_files: 100,
+            validation_timeout: std::time::Duration::from_secs(180),
+            ..mdx_rust_core::HardeningConfig::default()
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&run)?);
+        return Ok(());
+    }
+
+    println!("🔍 mdx-rust doctor — workspace");
+    println!("   Root: {}", run.root);
+    println!("   Artifact directory: {}", artifact_root.display());
+    println!(
+        "   Cargo metadata: {} package(s) ({})",
+        run.workspace.package_count,
+        if run.workspace.cargo_metadata_available {
+            "available"
+        } else {
+            "unavailable"
+        }
+    );
+    println!("   Scanned Rust files: {}", run.files_scanned);
+    println!("   Findings: {}", run.findings.len());
+    println!("   Proposed hardening changes: {}", run.changes.len());
+    println!("   Outcome: {:?}", run.outcome.status);
+    if !run.changes.is_empty() {
+        println!();
+        println!("Suggested next step:");
+        println!("  mdx-rust improve --target <file-or-dir>");
+        println!("  mdx-rust improve --target <file-or-dir> --apply");
+    }
+    Ok(())
+}
+
+fn cmd_agent_doctor(name: &str, json: bool) -> anyhow::Result<()> {
     use mdx_rust_core::registry::Registry;
 
     let cwd = std::env::current_dir()?;
@@ -456,6 +561,7 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
 
     // Basic contract detection (improve later with real analysis)
     let contract = detect_contract(&target_path);
+    let contract_label = format!("{contract:?}");
 
     let absolute_path = target_path.canonicalize().unwrap_or(target_path.clone());
 
@@ -490,7 +596,7 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
                 "status": "registered",
                 "name": name,
                 "path": target_path.display().to_string(),
-                "contract": format!("{:?}", registry.get(name).unwrap().contract),
+                "contract": contract_label,
                 "smoke_test_passed": smoke_passed,
                 "smoke_test_timed_out": smoke_timed_out
             })
@@ -498,10 +604,7 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
     } else {
         println!("✅ Registered agent '{}'", name);
         println!("   Path: {}", target_path.display());
-        println!(
-            "   Contract detected: {:?}",
-            registry.get(name).unwrap().contract
-        );
+        println!("   Contract detected: {contract_label}");
         println!(
             "   Smoke test (cargo check): {}",
             if smoke_passed {
@@ -726,7 +829,72 @@ fn cmd_optimize(
     Ok(())
 }
 
-fn cmd_audit(name: &str, json: bool) -> anyhow::Result<()> {
+fn cmd_improve(
+    target: Option<&str>,
+    goal: Option<&str>,
+    policy: Option<&str>,
+    apply: bool,
+    max_files: usize,
+    timeout_seconds: u64,
+    json: bool,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let run = mdx_rust_core::run_hardening(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::HardeningConfig {
+            target: target.map(std::path::PathBuf::from),
+            policy_path: policy.map(std::path::PathBuf::from),
+            apply,
+            max_files,
+            validation_timeout: std::time::Duration::from_secs(timeout_seconds),
+        },
+    )?;
+
+    if json {
+        let mut value = serde_json::to_value(&run)?;
+        if let Some(goal) = goal {
+            value["goal"] = serde_json::Value::String(goal.to_string());
+        }
+        println!("{}", serde_json::to_string_pretty(&value)?);
+        return Ok(());
+    }
+
+    println!(
+        "🛠️  mdx-rust improve — {}",
+        if apply { "apply" } else { "review" }
+    );
+    if let Some(target) = target {
+        println!("   Target: {}", target);
+    }
+    if let Some(goal) = goal {
+        println!("   Goal: {}", goal);
+    }
+    println!("   Findings: {}", run.findings.len());
+    println!("   Proposed changes: {}", run.changes.len());
+    println!("   Outcome: {:?}", run.outcome.status);
+    println!("   Note: {}", run.outcome.note);
+    if let Some(path) = &run.artifact_path {
+        println!("   Report: {}", path);
+    }
+    for change in &run.changes {
+        println!("   • {} — {}", change.file, change.description);
+    }
+    if !apply && !run.changes.is_empty() {
+        println!();
+        println!("Validated in isolation. Re-run with --apply to land the transaction.");
+    }
+
+    Ok(())
+}
+
+fn cmd_audit(name: Option<&str>, policy: Option<&str>, json: bool) -> anyhow::Result<()> {
+    let Some(name) = name else {
+        return cmd_workspace_audit(policy, json);
+    };
+
     use mdx_rust_core::registry::Registry;
     use mdx_rust_core::security::audit_agent;
 
@@ -766,6 +934,47 @@ fn cmd_audit(name: &str, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cmd_workspace_audit(policy: Option<&str>, json: bool) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let run = mdx_rust_core::run_hardening(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::HardeningConfig {
+            policy_path: policy.map(std::path::PathBuf::from),
+            apply: false,
+            max_files: 100,
+            validation_timeout: std::time::Duration::from_secs(180),
+            ..mdx_rust_core::HardeningConfig::default()
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&run)?);
+    } else {
+        println!("Hardening audit for workspace: {}", run.root);
+        println!("  Findings: {}", run.findings.len());
+        println!("  Patchable changes: {}", run.changes.len());
+        for finding in &run.findings {
+            println!(
+                "  [{}] {} - {} ({}:{})",
+                if finding.patchable {
+                    "patchable"
+                } else {
+                    "review"
+                },
+                finding.id,
+                finding.title,
+                finding.file.display(),
+                finding.line
+            );
+        }
+    }
+
+    Ok(())
+}
+
 fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
     let schema = match kind {
         "audit-packet" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::AuditPacket))?,
@@ -777,6 +986,12 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::HookDecision))?
         }
         "trace-event" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::TraceEvent))?,
+        "hardening-run" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::HardeningRun))?
+        }
+        "hardening-finding" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_analysis::HardeningFinding))?
+        }
         other => anyhow::bail!("unknown schema kind: {other}"),
     };
 

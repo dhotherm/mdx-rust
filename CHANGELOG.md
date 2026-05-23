@@ -2,6 +2,37 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.3.0 - Unreleased
+
+Safe scoped hardening for ordinary Rust modules.
+
+### Added
+
+- `mdx-rust improve [target]` for review-first hardening of Rust files or
+  directories without requiring agent registration.
+- Workspace `mdx-rust doctor` and `mdx-rust audit` modes when no agent name is
+  provided.
+- Hardening reports under `.mdx-rust/hardening/` with schema version `0.3`.
+- JSON Schema export for `hardening-run` and `hardening-finding`.
+- Bounded hardening transactions that validate in isolation, snapshot touched
+  files, apply only with `--apply`, and rollback on final validation failure.
+- A first conservative hardening strategy that replaces panic-prone
+  `unwrap`/`expect` calls in `anyhow::Result` functions with contextual errors.
+
+### Changed
+
+- Product framing expands from Rust agent optimization to safe, auditable Rust
+  codebase improvement.
+- `doctor` and `audit` remain compatible with registered agents while also
+  supporting normal Rust workspaces.
+
+### Known Limitations
+
+- Hardening strategies are intentionally narrow and high-confidence.
+- General autonomous refactoring remains out of scope.
+- Broader multi-file refactors require future impact analysis and plan-first
+  review.
+
 ## 0.2.0 - 2026-05-23
 
 First serious safety-first release candidate.

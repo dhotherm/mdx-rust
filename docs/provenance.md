@@ -15,7 +15,7 @@ mdx-rust schema audit-packet --json
 ```
 
 Other exported schemas include `candidate`, `optimization-run`,
-`hook-decision`, and `trace-event`.
+`hook-decision`, `trace-event`, `hardening-run`, and `hardening-finding`.
 
 ## Required Fields
 
@@ -82,3 +82,34 @@ The records are intentionally bounded by command timeouts and candidate timeout.
 
 The `0.2` audit packet is unsigned JSON. Signed attestations, SLSA-style output,
 and external compliance integrations are future work.
+
+## Hardening Reports
+
+`v0.3` hardening runs produce separate reports:
+
+```text
+.mdx-rust/hardening/hardening-<mode>-<timestamp>.json
+```
+
+The hardening report schema version is `"0.3"`.
+
+Hardening reports record:
+
+- workspace root and target
+- review or apply mode
+- `cargo metadata` workspace summary when available
+- optional policy path and content hash
+- extracted policy rule lines for reviewer context
+- files scanned
+- findings and whether each finding is patchable
+- proposed change summaries and old/new content hashes
+- isolated validation command records
+- final validation command records when `--apply` is used
+- transaction status
+- rollback status and rollback error when rollback is attempted
+
+Print the hardening schema with:
+
+```bash
+mdx-rust schema hardening-run --json
+```

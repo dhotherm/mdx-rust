@@ -1,11 +1,12 @@
 //! Core primitives for the `mdx-rust` CLI.
 //!
-//! `mdx-rust-core` contains the optimizer, safety pipeline, registry,
-//! evaluation, ledger, and audit primitives used by the `mdx-rust` binary.
+//! `mdx-rust-core` contains the optimizer, hardening engine, safety pipeline,
+//! registry, evaluation, ledger, and audit primitives used by the `mdx-rust`
+//! binary.
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.2.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `0.3.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io and so advanced
 //! users can inspect the internal data structures, but the library API is not
 //! yet stable. Public items may change before `1.0`.
@@ -18,6 +19,8 @@
 pub mod config;
 #[doc(hidden)]
 pub mod eval;
+#[doc(hidden)]
+pub mod hardening;
 #[doc(hidden)]
 pub mod hooks;
 #[doc(hidden)]
@@ -41,6 +44,11 @@ pub mod trace;
 pub use config::Config;
 /// Dataset and scorer metadata used by optimizer reports.
 pub use eval::{EvaluationDataset, EvaluationSample, ScorerMetadata};
+/// Scoped Rust hardening engine for ordinary Rust modules. Unstable before `1.0`.
+pub use hardening::{
+    run_hardening, HardeningChangeSummary, HardeningConfig, HardeningMode, HardeningOutcome,
+    HardeningPolicyRecord, HardeningRun, HardeningStatus, WorkspaceSummary,
+};
 /// Built-in lifecycle hook primitives. These are unstable before `1.0`.
 pub use hooks::{
     evaluate_builtin_hook, HookAction, HookContext, HookDecision, HookPolicy, HookStage,

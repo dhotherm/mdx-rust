@@ -2,9 +2,9 @@
 
 Thanks for helping improve `mdx-rust`.
 
-This project optimizes code written by other agents, so changes that touch
-editing, validation, scoring, rollback, hooks, or provenance have a higher than
-usual safety bar.
+This project proposes changes to Rust codebases, so changes that touch editing,
+validation, scoring, rollback, hooks, hardening, or provenance have a higher
+than usual safety bar.
 
 ## Development Setup
 
@@ -32,8 +32,12 @@ For changes touching candidate edits or acceptance:
 - Prove final validation failure rolls back real source.
 - Prove counters cannot report accepted changes that did not land.
 - Prove timeouts stop execution instead of hanging.
-- Preserve the `v0.2` single-file accepted edit contract unless the change also
-  adds transaction rollback support and updates `SAFETY_INVARIANTS.md`.
+- Preserve the optimizer's single-file accepted edit contract unless the change
+  also updates transaction rollback support and `SAFETY_INVARIANTS.md`.
+- Preserve the hardening engine's review-first behavior unless the user passes
+  `--apply`.
+- Prove hardening transactions snapshot all touched files and reject unscoped
+  paths.
 - Preserve complete audit packets for every accepted change.
 - Preserve typed rejection reasons for every rejected candidate.
 - Preserve JSON Schema derivations for structs that cross CLI, hook, trace,

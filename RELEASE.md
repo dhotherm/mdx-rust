@@ -1,6 +1,6 @@
 # Release Notes And Publishing
 
-`mdx-rust v0.2.0` is being prepared as a release candidate. Do not publish the
+`mdx-rust v0.3.0` is being prepared as a release candidate. Do not publish the
 crates until the exact candidate commit has passed CI and external pressure
 testing.
 
@@ -53,16 +53,18 @@ Wait for the crates.io index to update between dependent publishes.
 ## Release Gate
 
 Use [docs/release-readiness.md](./docs/release-readiness.md) as the source of
-truth for `v0.2.0` release validation.
+truth for `v0.3.0` release validation.
 
 ## Public Claims To Avoid
 
 - Do not call the tool generally production-ready.
-- Do not claim arbitrary multi-file rollback.
+- Do not claim arbitrary autonomous refactoring.
 - Do not imply the library API is stable.
 - Do not imply scored standalone `mdx-rust eval` is complete.
+- Do not imply `improve` applies changes unless `--apply` is passed.
 
-The honest public phrase for `v0.2.0` is:
+The honest public phrase for `v0.3.0` is:
 
-> A safety-first public beta for single-file Rust agent optimization, with
-> versioned provenance and a deliberately unstable library API before `1.0`.
+> A safety-first public beta for scoped Rust hardening and Rust agent
+> optimization, with validation gates, transaction rollback, and versioned
+> provenance.

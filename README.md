@@ -6,11 +6,12 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.80+](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 
-**A Rust-native safety loop for improving LLM agents.**
+**A Rust-native safe-change system for codebases.**
 
-`mdx-rust` points at an existing Rust agent, runs it on a small evaluation set,
-diagnoses weak behavior, proposes narrow edits, validates those edits in
-isolation, and only lands changes that pass Rust gates and improve the score.
+`mdx-rust` points at Rust code, finds scoped hardening opportunities, validates
+changes in isolation, and only lands edits that pass Rust gates. It still
+supports agent optimization, but `v0.3` starts the broader path: safe, measured,
+auditable improvement for ordinary Rust modules.
 
 The CLI is the supported product surface. The library crates are published for
 installation and inspection, but their APIs remain unstable before `1.0`.
@@ -19,19 +20,22 @@ installation and inspection, but their APIs remain unstable before `1.0`.
 
 `mdx-rust` is an early public beta. It is useful for experimentation and
 dogfooding on Rust agent crates, but it is intentionally conservative. In
-plain terms: `v0.2` is good at single-file, safety-gated prompt and fallback
-behavior improvements for Rust agents. It is not a general Rust refactoring
-engine yet.
+plain terms: `v0.3` is good at review-first, safety-gated hardening of scoped
+Rust modules plus the existing agent prompt/fallback optimizer. It is not a
+general autonomous refactoring engine yet.
 
 Today it supports:
 
 - Rust-aware source analysis with `syn` and `tree-sitter-rust`.
 - Process-based agent invocation with lifecycle traces.
 - Prompt and AST-guarded fallback-behavior improvement strategies.
-- Single-file accepted edits only.
+- Review-first scoped Rust hardening for normal modules through `improve`.
+- Bounded hardening transactions with all touched files snapshotted and rolled
+  back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
 - Net-positive scoring, final real-tree validation, and rollback on failure.
-- Versioned audit packets for accepted changes.
+- Versioned audit packets for accepted optimizer changes and hardening reports
+  for scoped module improvements.
 - JSON Schema derivations for agent-facing records such as candidates, hooks,
   traces, eval datasets, audit packets, and validation command records.
 - Human CLI output plus machine-parseable `--json` output.
@@ -39,7 +43,7 @@ Today it supports:
 
 Not yet supported:
 
-- Arbitrary multi-file accepted edits.
+- Arbitrary multi-file accepted edits outside the hardening transaction model.
 - General autonomous refactoring.
 - Stable library APIs.
 - Complete standalone scored `mdx-rust eval`.
@@ -69,9 +73,9 @@ The implementation also uses typed rejection records and internal stage
 wrappers so accepted changes cannot be represented the same way as proposed or
 rejected candidates.
 
-`v0.2` ships with a narrow but parser-validated structural rewrite for common
-fallback patterns. Broader native Rust refactoring is planned for future
-releases.
+`v0.3` also adds a separate hardening path for ordinary Rust modules. It is
+review-first by default: `mdx-rust improve` validates candidate changes in an
+isolated workspace and requires `--apply` before touching the real tree.
 
 ## Quick Start
 
@@ -105,25 +109,43 @@ mdx-rust optimize my-agent --iterations 3 --budget medium --review
 
 Artifacts are written under `.mdx-rust/agents/<name>/`.
 
+For an ordinary Rust crate or backend module:
+
+```bash
+cd your-rust-service
+mdx-rust init
+mdx-rust doctor
+mdx-rust audit --policy policies/backend-safety.md
+mdx-rust improve src/api/config.rs
+mdx-rust improve src/api/config.rs --apply
+```
+
+Hardening artifacts are written under `.mdx-rust/hardening/`.
+
 ## Key Commands
 
 ```bash
 mdx-rust init
 mdx-rust register my-agent ./path/to/agent
+mdx-rust doctor
 mdx-rust spec my-agent
 mdx-rust doctor my-agent
+mdx-rust audit --policy policies/backend-safety.md
 mdx-rust audit my-agent
+mdx-rust improve src/lib.rs
+mdx-rust improve src/lib.rs --apply
 mdx-rust eval my-agent --dataset .mdx-rust/agents/my-agent/dataset.json
 mdx-rust optimize my-agent --iterations 3 --budget medium --review
 mdx-rust schema audit-packet --json
+mdx-rust schema hardening-run --json
 ```
 
 Every command intended for automation supports `--json`.
 
-## Audit Packets
+## Audit Packets And Hardening Reports
 
 Accepted changes produce versioned JSON audit packets in the experiment
-directory. The `0.2` schema records:
+directory. The optimizer `0.2` schema records:
 
 - Agent name and iteration.
 - Single-file edit scope contract.
@@ -138,10 +160,15 @@ directory. The `0.2` schema records:
 - Rollback status if rollback was attempted.
 
 See [docs/provenance.md](./docs/provenance.md) for the schema contract.
-Print the current audit-packet JSON Schema with:
+`v0.3` hardening runs produce versioned JSON reports under
+`.mdx-rust/hardening/` with findings, proposed changes, validation outcomes,
+transaction status, rollback status, policy hash, and workspace metadata.
+
+Print the current JSON Schemas with:
 
 ```bash
 mdx-rust schema audit-packet --json
+mdx-rust schema hardening-run --json
 ```
 
 ## API Stability
@@ -149,7 +176,7 @@ mdx-rust schema audit-packet --json
 `mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis` are all published so the
 CLI can be installed from crates.io.
 
-For `0.2.x`:
+For `0.3.x`:
 
 - The `mdx-rust` CLI is supported.
 - The `mdx-rust-core` and `mdx-rust-analysis` APIs are unstable.
@@ -184,8 +211,8 @@ guessing which checks matter.
 
 ## Status
 
-`v0.2.0` is the first serious safety-first release. It is scoped, conservative,
-and ready for real users who are comfortable with an early public beta.
+`v0.3.0` is in development as the first safe scoped hardening release for
+ordinary Rust modules.
 
 ## License
 

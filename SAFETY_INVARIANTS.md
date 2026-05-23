@@ -25,15 +25,32 @@ Every accepted change must pass this sequence:
 11. If final validation fails, restore the pre-land snapshot and do not count the change as landed or accepted.
 12. Only after final validation succeeds may the run increment `accepted_changes`.
 
-## v0.2 Edit Scope
+## v0.2 Agent Optimizer Edit Scope
 
-The `v0.2` public safety contract is intentionally single-file.
+The agent optimizer safety contract remains intentionally single-file.
 
 - A candidate patch must match `ProposedEdit.file`.
 - A patch that advertises another file in its diff headers is rejected before validation.
 - Multi-file or structural edits require transaction snapshots for every touched file before they can be allowed.
 - Future multi-file strategies must update this document and add rollback tests before landing.
-- The current edit scope label in audit packets is `single-file-v0.2`.
+- The current optimizer edit scope label in audit packets is `single-file-v0.2`.
+
+## v0.3 Hardening Transaction Scope
+
+The `v0.3` hardening path is separate from the agent optimizer.
+
+- `mdx-rust improve` runs in review mode by default.
+- Hardening changes must validate in an isolated workspace before they can be
+  shown as validated or applied.
+- `--apply` is required before hardening changes touch the real tree.
+- Every touched file must be snapshotted before applying to the real tree.
+- If final validation fails or times out, every touched file must be restored
+  from the transaction snapshot.
+- A hardening transaction must reject absolute paths, parent-directory escapes,
+  and any path outside the workspace root.
+- The `0.3` hardening report schema records findings, change summaries,
+  validation command records, final validation command records, policy hash,
+  workspace metadata, transaction status, and rollback status.
 
 ## Non-Bypass Rules
 
@@ -49,6 +66,8 @@ The `v0.2` public safety contract is intentionally single-file.
 - JSON output must remain machine-parseable. Human progress output belongs outside `--json` mode.
 - Any code path that lands a change must have a rollback path.
 - Candidate execution has an outer wall-clock budget in addition to command-level timeouts. Synchronous cargo/git work is bounded by its own process timeout; once the candidate budget is exhausted, the pipeline must not continue to later stages.
+- Hardening review mode may validate proposed changes in isolation, but it must
+  not mutate the real tree.
 
 ## Counters
 
@@ -94,12 +113,19 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
 - Candidate timeout exhaustion prevents validation, landing, or acceptance.
 - At least one end-to-end optimizer test proves a denied candidate cannot land or accept.
 - At least one end-to-end optimizer test proves a real improvement can be accepted, improves the final on-disk score, and includes a complete audit packet.
+- At least one hardening test proves review mode validates without touching the
+  real tree.
+- At least one hardening test proves `--apply` uses transaction snapshots and
+  final validation before reporting success.
+- At least one hardening test proves unscoped transaction paths are rejected.
 
 The current invariant tests live primarily in:
 
 - `crates/mdx-rust-core/src/safety_pipeline.rs`
 - `crates/mdx-rust-core/src/ledger.rs`
 - `crates/mdx-rust-analysis/src/editing.rs`
+- `crates/mdx-rust-core/src/hardening.rs`
+- `crates/mdx-rust-analysis/src/hardening.rs`
 
 ## Change Discipline
 
