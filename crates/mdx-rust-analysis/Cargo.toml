@@ -13,6 +13,7 @@ anyhow.workspace = true
 serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+ignore.workspace = true
 
 # Will add syn + tree-sitter in Phase 2
 [dev-dependencies]

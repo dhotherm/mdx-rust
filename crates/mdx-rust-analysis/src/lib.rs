@@ -9,7 +9,4 @@
 
 pub mod bundler;
 
-// Placeholder for now
-pub fn placeholder() -> &'static str {
-    "analysis crate stub"
-}
+pub use bundler::{build_bundle_scope, BundleScope};
