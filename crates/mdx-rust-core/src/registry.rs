@@ -62,3 +62,29 @@ impl Registry {
         self.agents.get(name)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_registry_save_load_roundtrip() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let mut reg = Registry::new();
+        reg.register(RegisteredAgent {
+            name: "test-agent".to_string(),
+            path: PathBuf::from("/tmp/test"),
+            contract: AgentContract::NativeRust,
+            registered_at: "123".to_string(),
+        });
+
+        reg.save_to(root).unwrap();
+        let loaded = Registry::load_from(root).unwrap();
+
+        assert_eq!(loaded.agents.len(), 1);
+        assert_eq!(loaded.get("test-agent").unwrap().contract, AgentContract::NativeRust);
+    }
+}
