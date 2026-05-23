@@ -8,3 +8,4 @@ pub mod runner;
 
 pub use config::Config;
 pub use registry::{AgentContract, RegisteredAgent, Registry};
+pub use runner::{run_agent, AgentRunResult};

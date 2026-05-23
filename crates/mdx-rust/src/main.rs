@@ -80,6 +80,14 @@ enum Commands {
         #[arg(long)]
         dataset: Option<String>,
     },
+
+    /// (Dev) Invoke a registered agent with a JSON input (useful for testing)
+    #[clap(hide = true)]
+    Invoke {
+        name: String,
+        #[arg(long)]
+        input: Option<String>,
+    },
 }
 
 fn main() {
@@ -139,6 +147,12 @@ fn main() {
         Commands::Eval { name, dataset } => {
             println!("Evaluating agent '{}' with dataset {:?}", name, dataset);
             // TODO: run evaluation harness
+        }
+        Commands::Invoke { name, input } => {
+            if let Err(e) = cmd_invoke(&name, input.as_deref(), cli.json) {
+                eprintln!("Invoke error: {}", e);
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -360,6 +374,37 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
         println!("   Smoke test (cargo check): {}", if smoke_passed { "PASSED" } else { "FAILED or skipped" });
         println!();
         println!("Next: mdx-rust doctor {}", name);
+    }
+
+    Ok(())
+}
+
+fn cmd_invoke(name: &str, input: Option<&str>, json: bool) -> anyhow::Result<()> {
+    use mdx_rust_core::registry::Registry;
+    use mdx_rust_core::runner::run_agent;
+
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd)?;
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let registry = Registry::load_from(&artifact_root)?;
+
+    let agent = registry
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered", name))?;
+
+    let input_value: serde_json::Value = if let Some(s) = input {
+        serde_json::from_str(s)?
+    } else {
+        serde_json::json!({"query": "hello from mdx-rust", "context": null})
+    };
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let result = rt.block_on(run_agent(agent, input_value))?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        println!("{:#?}", result);
     }
 
     Ok(())
