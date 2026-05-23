@@ -64,13 +64,16 @@ pub async fn run_optimization(
 
         let avg_score: f32 = scores_this_iter.iter().sum::<f32>() / scores_this_iter.len() as f32;
 
-        // Very naive "diagnosis + candidate" simulation
+        // Diagnosis step now uses the actual bundle scope from the analysis crate
+        let bundle = mdx_rust_analysis::build_bundle_scope(&agent.path, None).ok();
+        let file_count = bundle.as_ref().map(|b| b.optimizable_paths.len()).unwrap_or(0);
+
+        // Smarter (but still simulated) diagnosis using the bundle info
         let mut accepted = 0;
-        let mut notes = format!("Avg score this iter: {:.2}", avg_score);
+        let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle)", avg_score, file_count);
 
         if avg_score <= current_score {
-            // Simulate generating a candidate improvement
-            notes.push_str(" → Diagnosis: Agent is returning echo fallback. Candidate: Improve system prompt / add reasoning.");
+            notes.push_str(" → Diagnosis: Low performance detected. Candidate: Strengthen preamble + add explicit reasoning step before final answer.");
         } else {
             current_score = avg_score;
             accepted = 1;

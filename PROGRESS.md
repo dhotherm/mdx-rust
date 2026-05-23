@@ -53,6 +53,7 @@
 - [x] Optimizer now actually invokes the agent multiple times and computes real (if simple) scores across iterations
 - [x] Basic diagnosis + candidate suggestion simulation inside the loop (feels like real thinking)
 - [x] Optimization runs are persisted as experiments under the agent (foundation for regression guards & reports)
+- [x] Rich human-friendly output for optimize showing per-iteration diagnosis notes
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI
