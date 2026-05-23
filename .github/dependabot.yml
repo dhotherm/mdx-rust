@@ -5,6 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # rig-core 0.x minors are compatibility work, not routine dependency chores.
+      # Keep patch bumps automated and schedule larger upgrades deliberately.
+      - dependency-name: rig-core
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
   - package-ecosystem: github-actions
     directory: /
     schedule:
