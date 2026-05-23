@@ -100,8 +100,14 @@ fn main() {
             }
         }
         Commands::Register { name, path } => {
-            println!("Registering agent '{}' at {:?}", name, path);
-            // TODO: analyze crate, detect entrypoint, smoke test, write registry
+            if let Err(e) = cmd_register(&name, path.as_deref(), cli.json) {
+                if cli.json {
+                    println!(r#"{{"status":"error","error":"{}"}}"#, e);
+                } else {
+                    eprintln!("Error during registration: {}", e);
+                }
+                std::process::exit(1);
+            }
         }
         Commands::Spec { name } => {
             println!("Generating policy + eval spec for '{}'", name);
@@ -286,6 +292,73 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
 
     println!();
     println!("(Deeper analysis, bundle scope, and experiment status coming in later phases)");
+
+    Ok(())
+}
+
+/// First real implementation of `register`
+fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()> {
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
+    let cwd = std::env::current_dir()?;
+    let target_path = path
+        .map(Path::new)
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+
+    let cargo_toml = target_path.join("Cargo.toml");
+
+    if !cargo_toml.exists() {
+        anyhow::bail!("No Cargo.toml found at {}. Is this a Rust crate?", target_path.display());
+    }
+
+    let config = Config::load_from_project(&cwd)?;
+    let artifact_root = &config.artifact_dir;
+    let agent_dir = cwd.join(artifact_root).join("agents").join(name);
+
+    fs::create_dir_all(&agent_dir)?;
+
+    // Basic registry entry (we'll improve this later)
+    let registry_entry = format!(
+        r#"{{
+  "name": "{}",
+  "path": "{}",
+  "registered_at": "{}",
+  "contract": "unknown"
+}}"#,
+        name,
+        target_path.display(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs().to_string())
+            .unwrap_or_else(|_| "0".to_string())
+    );
+
+    fs::write(agent_dir.join("registry.json"), registry_entry)?;
+
+    // Smoke test
+    let check = Command::new("cargo")
+        .arg("check")
+        .current_dir(&target_path)
+        .output();
+
+    let smoke_passed = match check {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    };
+
+    if json {
+        println!(r#"{{"status":"registered","name":"{}","path":"{}","smoke_test_passed":{}}}"#,
+                 name, target_path.display(), smoke_passed);
+    } else {
+        println!("✅ Registered agent '{}'", name);
+        println!("   Path: {}", target_path.display());
+        println!("   Smoke test (cargo check): {}", if smoke_passed { "PASSED" } else { "FAILED or skipped" });
+        println!();
+        println!("Next: mdx-rust doctor {}", name);
+    }
 
     Ok(())
 }
