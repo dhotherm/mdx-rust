@@ -68,7 +68,7 @@ pub fn find_preambles(source: &str, file_path: &Path) -> Vec<ExtractedPrompt> {
     // Tree-sitter walk for call expressions containing "preamble"
     if let Some(tree) = parse_rust_source(source) {
         let root = tree.root_node();
-        let cursor = root.walk();
+        let _cursor = root.walk();
 
         fn walk(node: tree_sitter::Node, source: &str, file_path: &Path, prompts: &mut Vec<ExtractedPrompt>) {
             if node.kind() == "call_expression" {

@@ -101,6 +101,9 @@ pub struct OptimizationRun {
     pub accepted_changes: u32,
     pub notes: String,
     pub candidates: Vec<Candidate>,
+    /// Optional unified diff of the change that was accepted in this iteration
+    #[serde(default)]
+    pub diff: Option<String>,
 }
 
 /// A proposed improvement generated during an optimization iteration.
@@ -170,6 +173,7 @@ pub async fn run_optimization(
         let mut candidates = vec![];
         let mut accepted = 0;
         let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle)", avg_score, file_count);
+        let mut accepted_diff: Option<String> = None;
 
         if let Some(d) = diagnosis {
             notes.push_str(&format!(" → LLM: {}", d.summary));
@@ -195,7 +199,10 @@ pub async fn run_optimization(
 
             if top.focus == "system_prompt" || top.focus == "llm" {
                 // Generate a proper unified diff with context so git apply succeeds
-                let main_rs = std::fs::read_to_string(agent.path.join("src/main.rs")).unwrap_or_default();
+                let main_rs_path = agent.path.join("src/main.rs");
+                let main_rs = std::fs::read_to_string(&main_rs_path).unwrap_or_default();
+                let _before_snapshot = main_rs.clone(); // captured for future rich diff in reports
+
                 let old_preamble = "You are a concise, helpful assistant. Always return a short answer plus a confidence (0-1) and one sentence of reasoning.";
                 let new_preamble = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
 
@@ -252,6 +259,14 @@ pub async fn run_optimization(
                             println!("     [Safe Edit] Improvement applied and validated (cargo check passed on workspace).");
                             accepted = 1;
                             println!("     [Accept] Change persisted. The example agent is now stronger.");
+
+                            // Capture a simple diff for the report
+                            let old_line = content.lines().find(|l| l.contains("preamble")).unwrap_or("old").to_string();
+                            let new_line = new_content.lines().find(|l| l.contains("preamble")).unwrap_or("new").to_string();
+                            accepted_diff = Some(format!(
+                                "diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@\n- {}\n+ {}",
+                                old_line, new_line
+                            ));
                         } else {
                             println!("     [Safe Edit] No textual change was needed (preamble already strong?).");
                         }
@@ -271,6 +286,7 @@ pub async fn run_optimization(
             accepted_changes: accepted,
             notes,
             candidates,
+            diff: accepted_diff,
         });
 
         if accepted > 0 && iteration > 0 {
@@ -311,10 +327,9 @@ pub async fn run_optimization(
                     run.iteration, run.accepted_changes, run.notes
                 ));
 
-                // Try to capture a real diff of the main change for the report
-                if std::fs::read_to_string(&agent.path.join("src/main.rs")).is_ok() {
-                    // We already applied, so we can't easily get the old version here.
-                    // In a more advanced version we would snapshot before applying.
+                if let Some(d) = &run.diff {
+                    report.push_str(&format!("\n```diff\n{}\n```\n", d));
+                } else {
                     report.push_str("  (Change persisted to src/main.rs)\n");
                 }
             }
