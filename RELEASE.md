@@ -1,8 +1,8 @@
 # Release Notes And Publishing
 
-`mdx-rust v0.3.0` is being prepared as a release candidate. Do not publish the
-crates until the exact candidate commit has passed CI and external pressure
-testing.
+`mdx-rust v0.3.0` is the current release target. Publish only from an exact
+commit that has passed local release validation, GitHub CI, and external
+pressure testing.
 
 ## Supported Install Paths
 

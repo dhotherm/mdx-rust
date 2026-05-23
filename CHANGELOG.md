@@ -2,7 +2,7 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
-## 0.3.0 - Unreleased
+## 0.3.0 - 2026-05-23
 
 Safe scoped hardening for ordinary Rust modules.
 

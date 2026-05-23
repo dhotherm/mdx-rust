@@ -193,3 +193,54 @@ anyhow = "1"
     assert_eq!(value["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
 }
+
+#[test]
+fn improve_apply_json_mode_lands_validated_hardening() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-improve-apply-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+
+    let value = assert_machine_pure_json_in(
+        &[
+            "improve",
+            "src/lib.rs",
+            "--apply",
+            "--timeout-seconds",
+            "90",
+            "--json",
+        ],
+        dir.path(),
+    );
+
+    assert_eq!(value["schema_version"], "0.3");
+    assert_eq!(value["outcome"]["status"], "Applied");
+    assert_eq!(value["outcome"]["isolated_validation_passed"], true);
+    assert_eq!(value["outcome"]["final_validation_passed"], true);
+
+    let after = std::fs::read_to_string(&lib).unwrap();
+    assert!(after.contains("use anyhow::Context;"));
+    assert!(after.contains(".context(\"load failed instead of panicking\")?"));
+    assert!(!after.contains(".unwrap()"));
+}
