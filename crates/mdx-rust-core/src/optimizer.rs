@@ -136,15 +136,29 @@ pub async fn run_optimization(
 
         let avg_score: f32 = scores_this_iter.iter().sum::<f32>() / scores_this_iter.len() as f32;
 
-        // Real diagnosis using bundle scope + LLM
-        let bundle = mdx_rust_analysis::build_bundle_scope(&agent.path, None).ok();
-        let file_count = bundle.as_ref().map(|b| b.optimizable_paths.len()).unwrap_or(0);
+        // Rich analysis: extract real preambles, tools, entrypoints
+        let rich_bundle = mdx_rust_analysis::analyze_agent(&agent.path, None).ok();
+        let file_count = rich_bundle.as_ref().map(|b| b.scope.optimizable_paths.len()).unwrap_or(0);
+
+        // Build a high-signal summary for the LLM
+        let bundle_summary = if let Some(ref b) = rich_bundle {
+            let mut s = format!("{} source files, Rig agent = {}", file_count, b.is_rig_agent);
+            if !b.preambles.is_empty() {
+                s.push_str(&format!(", current preambles: {:?}", b.preambles.iter().map(|p| &p.text).collect::<Vec<_>>()));
+            }
+            if !b.tools.is_empty() {
+                s.push_str(&format!(", tools: {:?}", b.tools.iter().map(|t| &t.name).collect::<Vec<_>>()));
+            }
+            s
+        } else {
+            format!("{} source files (limited analysis)", file_count)
+        };
 
         let llm = crate::llm::LlmClient::default();
         let diag_req = crate::llm::DiagnosisRequest {
-            policy: "Improve the agent so it gives high-quality, reasoned answers instead of echoing.".to_string(),
-            bundle_summary: format!("{} source files", file_count),
-            traces_summary: "Multiple runs with low scores and echo-style outputs.".to_string(),
+            policy: "Improve the agent so it gives high-quality, reasoned answers instead of echoing. Prefer explicit step-by-step reasoning in the system prompt.".to_string(),
+            bundle_summary,
+            traces_summary: "Multiple runs with low scores and echo-style outputs. Weak fallback behavior detected.".to_string(),
             scores: scores_this_iter.clone(),
         };
 

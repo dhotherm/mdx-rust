@@ -51,8 +51,9 @@ impl LlmClient {
             .build();
 
         let prompt = format!(
-            "Policy:\n{}\n\nBundle: {} files\n\nTraces summary:\n{}\n\nCurrent scores: {:?}\n\n\
-             Give a short diagnosis and 2-3 concrete candidate improvements.",
+            "Policy:\n{}\n\nCode analysis (extracted preambles, tools, structure):\n{}\n\nTraces summary:\n{}\n\nCurrent scores: {:?}\n\n\
+             You are optimizing a Rust LLM agent. Give a short diagnosis and 2-3 concrete, minimal, safe candidate improvements \
+             (e.g. stronger system prompt, better tool descriptions, added reasoning step). Be specific.",
             req.policy, req.bundle_summary, req.traces_summary, req.scores
         );
 
