@@ -424,6 +424,10 @@ fn match_findings_to_policy(
 
 fn category_for_finding(finding: &HardeningFinding) -> PolicyCategory {
     match finding.strategy {
+        mdx_rust_analysis::HardeningStrategy::BorrowParameterTightening
+        | mdx_rust_analysis::HardeningStrategy::IteratorCloned
+        | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
+        | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => PolicyCategory::General,
         mdx_rust_analysis::HardeningStrategy::ResultUnwrapContext => PolicyCategory::PanicSafety,
         mdx_rust_analysis::HardeningStrategy::ProcessExecutionReview => {
             PolicyCategory::ProcessExecution
@@ -453,6 +457,10 @@ fn summarize_risk(findings: &[HardeningFinding]) -> HardeningRiskSummary {
         match finding.strategy {
             mdx_rust_analysis::HardeningStrategy::ProcessExecutionReview
             | mdx_rust_analysis::HardeningStrategy::UnsafeReview => summary.high += 1,
+            mdx_rust_analysis::HardeningStrategy::BorrowParameterTightening
+            | mdx_rust_analysis::HardeningStrategy::IteratorCloned
+            | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
+            | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => summary.low += 1,
             mdx_rust_analysis::HardeningStrategy::ResultUnwrapContext
             | mdx_rust_analysis::HardeningStrategy::EnvAccessReview
             | mdx_rust_analysis::HardeningStrategy::FileIoReview
@@ -477,7 +485,7 @@ fn summarize_risk(findings: &[HardeningFinding]) -> HardeningRiskSummary {
     if saw_patchable {
         summary
             .top_recommendations
-            .push("Run mdx-rust improve <target> --apply after reviewing the proposed contextual error changes.".to_string());
+            .push("Run mdx-rust improve <target> --apply after reviewing the proposed Tier 1 mechanical changes.".to_string());
     }
     if saw_process {
         summary.top_recommendations.push(

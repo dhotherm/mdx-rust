@@ -333,8 +333,11 @@ pub enum RecipeTier {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum RefactorRecipe {
+    BorrowParameterTightening,
     ContextualErrorHardening,
     ExtractFunctionCandidate,
+    IteratorCloned,
+    MustUsePublicReturn,
     SplitModuleCandidate,
     BoundaryValidationReview,
     PublicApiReview,
@@ -681,6 +684,25 @@ pub fn run_autopilot(
             break;
         };
 
+        let mut validation_timeout = config.validation_timeout;
+        if let Some(budget) = config.budget {
+            let Some(remaining) = budget.checked_sub(started_at.elapsed()) else {
+                run.budget_exhausted = true;
+                pass.status = AutopilotPassStatus::NoExecutableCandidates;
+                pass.note = "budget exhausted before execution could start".to_string();
+                run.passes.push(pass);
+                break;
+            };
+            if remaining.is_zero() {
+                run.budget_exhausted = true;
+                pass.status = AutopilotPassStatus::NoExecutableCandidates;
+                pass.note = "budget exhausted before execution could start".to_string();
+                run.passes.push(pass);
+                break;
+            }
+            validation_timeout = validation_timeout.min(remaining);
+        }
+
         let batch = apply_refactor_plan_batch(
             &root,
             artifact_root,
@@ -688,12 +710,18 @@ pub fn run_autopilot(
                 plan_path: PathBuf::from(plan_path),
                 apply: config.apply,
                 allow_public_api_impact: config.allow_public_api_impact,
-                validation_timeout: config.validation_timeout,
+                validation_timeout,
                 max_candidates: config.max_candidates,
                 max_tier: config.max_tier,
                 min_evidence: config.min_evidence,
             },
         )?;
+        if config
+            .budget
+            .is_some_and(|budget| started_at.elapsed() >= budget)
+        {
+            run.budget_exhausted = true;
+        }
         run.total_executed_candidates += batch.executed_candidates;
         run.total_skipped_candidates += batch.skipped_candidates;
         pass.status = autopilot_pass_status(&batch.status);
@@ -811,7 +839,7 @@ pub fn apply_refactor_plan_candidate(
     }
 
     if candidate.status != RefactorCandidateStatus::ApplyViaImprove
-        || candidate.recipe != RefactorRecipe::ContextualErrorHardening
+        || !is_supported_mechanical_recipe(&candidate.recipe)
     {
         run.status = RefactorApplyStatus::Unsupported;
         run.note = "candidate is plan-only; no executable recipe is available yet".to_string();
@@ -1252,7 +1280,7 @@ fn recommended_actions(
     let mut actions = Vec::new();
     if quality.patchable_findings > 0 && evidence.grade >= EvidenceGrade::Compiled {
         actions.push(
-            "Run mdx-rust autopilot --apply to execute low-risk contextual hardening passes."
+            "Run mdx-rust autopilot --apply to execute low-risk Tier 1 mechanical hardening passes."
                 .to_string(),
         );
     } else if quality.patchable_findings > 0 {
@@ -1318,12 +1346,13 @@ fn hardening_candidates(
             let file = finding.file.display().to_string();
             let required_evidence = EvidenceGrade::Compiled;
             let evidence_satisfied = evidence.grade >= required_evidence;
+            let recipe = recipe_for_hardening_strategy(&finding.strategy);
             RefactorCandidate {
                 id: format!("plan-hardening-{}-{}", sanitize_id(&file), finding.line),
                 candidate_hash: String::new(),
-                recipe: RefactorRecipe::ContextualErrorHardening,
+                recipe,
                 title: finding.title.clone(),
-                rationale: "Patchable contextual error hardening can be applied through the existing isolated validation transaction.".to_string(),
+                rationale: "Patchable Tier 1 mechanical hardening can be applied through the existing isolated validation transaction.".to_string(),
                 file: file.clone(),
                 line: finding.line,
                 risk: RefactorRiskLevel::Low,
@@ -1341,6 +1370,21 @@ fn hardening_candidates(
             }
         })
         .collect()
+}
+
+fn recipe_for_hardening_strategy(
+    strategy: &mdx_rust_analysis::HardeningStrategy,
+) -> RefactorRecipe {
+    match strategy {
+        mdx_rust_analysis::HardeningStrategy::BorrowParameterTightening => {
+            RefactorRecipe::BorrowParameterTightening
+        }
+        mdx_rust_analysis::HardeningStrategy::IteratorCloned => RefactorRecipe::IteratorCloned,
+        mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => {
+            RefactorRecipe::MustUsePublicReturn
+        }
+        _ => RefactorRecipe::ContextualErrorHardening,
+    }
 }
 
 fn structural_candidates(
@@ -1648,7 +1692,7 @@ fn executable_candidate_queue<'a>(
             break;
         }
         if candidate.status != RefactorCandidateStatus::ApplyViaImprove
-            || candidate.recipe != RefactorRecipe::ContextualErrorHardening
+            || !is_supported_mechanical_recipe(&candidate.recipe)
         {
             continue;
         }
@@ -1667,6 +1711,16 @@ fn executable_candidate_queue<'a>(
         }
     }
     queue
+}
+
+fn is_supported_mechanical_recipe(recipe: &RefactorRecipe) -> bool {
+    matches!(
+        recipe,
+        RefactorRecipe::BorrowParameterTightening
+            | RefactorRecipe::ContextualErrorHardening
+            | RefactorRecipe::IteratorCloned
+            | RefactorRecipe::MustUsePublicReturn
+    )
 }
 
 fn count_executable_candidates(

@@ -90,6 +90,8 @@ Autonomous Rust evolution for safe executable work.
 - `mdx-rust evolve --budget <time> --tier <n>` as the direct command coding
   agents can call for bounded autonomous Rust improvement.
 - Candidate tiers and required evidence gates that control what can execute.
+- Four compile-gated Tier 1 recipes: contextual error hardening, private borrow
+  parameter tightening, iterator clone cleanup, and `#[must_use]` annotation.
 - Fresh planning before every autonomous apply pass.
 - Versioned codebase map and autopilot artifacts for agents, CI, and future MCP
   or API surfaces.
@@ -97,8 +99,11 @@ Autonomous Rust evolution for safe executable work.
 
 ## v0.7.0 Direction
 
-Broader recipe execution with stronger semantic analysis.
+Measured semantic refactoring after the v0.6 mechanical recipe layer has been
+exercised on real crates.
 
+- Coverage and mutation evidence collection that can lift modules into Tier 2
+  and Tier 3 execution.
 - Narrow multi-file recipe support with full transaction snapshots and rollback
   evidence.
 - Public API compatibility checks for crates that opt in.

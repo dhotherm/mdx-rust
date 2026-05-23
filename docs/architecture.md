@@ -179,3 +179,12 @@ Evidence grades control proportional aggression:
 - `Tested`: Tier 1 remains executable and reports stronger evidence.
 - `Covered`, `Hardened`, and `Proven`: reserved for future Tier 2 and Tier 3
   recipes once coverage, mutation, and property evidence are actually run.
+
+The v0.6 executable Tier 1 recipe set is intentionally mechanical:
+
+- contextual error hardening in `anyhow::Result` functions
+- private borrow parameter tightening from owned container references to
+  borrowed views
+- iterator clone cleanup from clone-mapping collection to a simpler validated
+  form such as `to_vec()`
+- `#[must_use]` annotations for public value-returning functions

@@ -102,6 +102,9 @@ allowed to move quickly, but it must not create a second mutation path.
 - Each executed candidate must route through `apply-plan --all` and the
   hardening transaction path. Autopilot must not write Rust source files
   directly.
+- v0.6 executable Tier 1 recipes are contextual error hardening, private borrow
+  parameter tightening, iterator clone cleanup, and `#[must_use]` annotation.
+  They are allowed to execute only through the same hardening transaction path.
 - Autopilot must stop on stale plans, rejected steps, unsupported candidates,
   final validation failures, behavior eval failures, or exhausted executable
   work.

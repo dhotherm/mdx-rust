@@ -49,6 +49,9 @@ Today it supports:
 - `autopilot` multi-pass orchestration that maps, plans, applies the safe
   queue, replans after mutation, and persists an audit report.
 - `evolve` budget-bounded autonomous improvement for agent callers.
+- Four executable Tier 1 mechanical recipes: contextual error hardening,
+  private borrow parameter tightening, iterator clone cleanup, and
+  `#[must_use]` annotations for public value-returning functions.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -90,13 +93,25 @@ evidence grade and requested tier, and routes every real edit through freshness
 checks, isolated validation, final validation, and the hardening transaction
 path.
 
+The executable Tier 1 recipe set is now deliberately broader than panic cleanup:
+
+- Replace panic-prone `unwrap`/`expect` inside `anyhow::Result` functions with
+  contextual errors and `?`.
+- Tighten private parameters from `&String` to `&str` and from `&Vec<T>` to
+  `&[T]` when compile and clippy gates prove the change.
+- Replace clone-mapping collection with a simpler validated form such as
+  `to_vec()`.
+- Add `#[must_use]` to public value-returning functions when the return type is
+  not already a common must-use type.
+
 Not yet supported:
 
 - Arbitrary multi-file accepted edits outside the hardening transaction model.
 - Autonomous public API changes or broad semantic rewrites.
 - Direct application of stale plans or plan-only/high-risk candidates.
 - Stable library APIs.
-- Built-in coverage, mutation testing, or full semantic behavior proofs.
+- Automatic execution of coverage, mutation testing, or full semantic behavior
+  proofs.
 - External hook runners.
 - Multi-language optimization.
 
@@ -344,8 +359,9 @@ guessing which checks matter.
 ## Status
 
 `v0.6.0` is in development as the first autonomous Rust evolution release. It
-adds codebase maps, multi-pass autopilot orchestration, and keeps broader
-semantic refactors behind explicit review and future transaction work.
+adds codebase maps, multi-pass autopilot orchestration, evidence-gated Tier 1
+recipe execution, and keeps broader semantic refactors behind explicit review
+and future transaction work.
 
 ## License
 

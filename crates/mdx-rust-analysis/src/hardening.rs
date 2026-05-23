@@ -29,6 +29,10 @@ pub struct HardeningFinding {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum HardeningStrategy {
+    BorrowParameterTightening,
+    IteratorCloned,
+    MechanicalTier1Cleanup,
+    MustUsePublicReturn,
     ResultUnwrapContext,
     ProcessExecutionReview,
     UnsafeReview,
@@ -153,26 +157,10 @@ pub fn analyze_hardening(
             }
         }
 
-        if let Some(change) = build_result_context_change(root, file, &content, &function_ranges)? {
-            for id in &change.finding_ids {
-                if !findings.iter().any(|finding| &finding.id == id) {
-                    let line = id
-                        .rsplit(':')
-                        .next()
-                        .and_then(|line| line.parse::<usize>().ok())
-                        .unwrap_or(1);
-                    findings.push(HardeningFinding {
-                        id: id.clone(),
-                        title: "Panic-prone unwrap in anyhow Result function".to_string(),
-                        description: "Replace unwrap/expect with anyhow Context and ? so failure is reported instead of panicking.".to_string(),
-                        file: rel.clone(),
-                        line,
-                        strategy: HardeningStrategy::ResultUnwrapContext,
-                        patchable: true,
-                    });
-                }
-            }
-            changes.push(change);
+        if let Some(change) = build_tier1_mechanical_change(root, file, &content, &function_ranges)?
+        {
+            findings.extend(change.findings);
+            changes.push(change.change);
         }
     }
 
@@ -185,17 +173,86 @@ pub fn analyze_hardening(
     })
 }
 
-fn build_result_context_change(
+struct Tier1MechanicalChange {
+    change: HardeningFileChange,
+    findings: Vec<HardeningFinding>,
+}
+
+fn build_tier1_mechanical_change(
     root: &Path,
     file: &Path,
     content: &str,
     function_ranges: &[FunctionRange],
-) -> anyhow::Result<Option<HardeningFileChange>> {
+) -> anyhow::Result<Option<Tier1MechanicalChange>> {
     let rel = relative_path(root, file);
     let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
-    let mut changed = false;
     let mut finding_ids = Vec::new();
+    let mut findings = Vec::new();
 
+    apply_result_context_recipe(
+        &rel,
+        &mut lines,
+        function_ranges,
+        &mut finding_ids,
+        &mut findings,
+    );
+    apply_borrow_parameter_recipe(
+        &rel,
+        &mut lines,
+        function_ranges,
+        &mut finding_ids,
+        &mut findings,
+    );
+    apply_borrowed_vec_literal_recipe(&rel, &mut lines, &mut finding_ids, &mut findings);
+    apply_iterator_cloned_recipe(&rel, &mut lines, &mut finding_ids, &mut findings);
+    apply_must_use_recipe(
+        &rel,
+        &mut lines,
+        function_ranges,
+        &mut finding_ids,
+        &mut findings,
+    );
+
+    if finding_ids.is_empty() {
+        return Ok(None);
+    }
+
+    let mut new_content = lines.join("\n");
+    if content.ends_with('\n') {
+        new_content.push('\n');
+    }
+    if findings
+        .iter()
+        .any(|finding| finding.strategy == HardeningStrategy::ResultUnwrapContext)
+    {
+        new_content = ensure_anyhow_context_import(&new_content);
+    }
+    if syn::parse_file(&new_content).is_err() {
+        return Ok(None);
+    }
+
+    Ok(Some(Tier1MechanicalChange {
+        change: HardeningFileChange {
+            file: rel,
+            old_content: content.to_string(),
+            new_content,
+            strategy: HardeningStrategy::MechanicalTier1Cleanup,
+            finding_ids,
+            description:
+                "Apply Tier 1 mechanical hardening recipes under compile and clippy validation."
+                    .to_string(),
+        },
+        findings,
+    }))
+}
+
+fn apply_result_context_recipe(
+    rel: &Path,
+    lines: &mut [String],
+    function_ranges: &[FunctionRange],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
     for range in function_ranges {
         if !range.returns_anyhow_result {
             continue;
@@ -217,40 +274,262 @@ fn build_result_context_change(
             rewritten = replace_expect_calls(&rewritten);
 
             if rewritten != original {
-                changed = true;
                 lines[line_index] = rewritten;
-                finding_ids.push(format!(
-                    "unwrap-in-result:{}:{}",
-                    rel.display(),
-                    line_index + 1
-                ));
+                let line = line_index + 1;
+                let id = format!("unwrap-in-result:{}:{line}", rel.display());
+                finding_ids.push(id.clone());
+                findings.push(HardeningFinding {
+                    id,
+                    title: "Panic-prone unwrap in anyhow Result function".to_string(),
+                    description: "Replace unwrap/expect with anyhow Context and ? so failure is reported instead of panicking.".to_string(),
+                    file: rel.to_path_buf(),
+                    line,
+                    strategy: HardeningStrategy::ResultUnwrapContext,
+                    patchable: true,
+                });
             }
         }
     }
+}
 
-    if !changed {
-        return Ok(None);
-    }
+fn apply_borrow_parameter_recipe(
+    rel: &Path,
+    lines: &mut [String],
+    function_ranges: &[FunctionRange],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    for range in function_ranges {
+        if range.is_public {
+            continue;
+        }
 
-    let mut new_content = lines.join("\n");
-    if content.ends_with('\n') {
-        new_content.push('\n');
-    }
-    new_content = ensure_anyhow_context_import(&new_content);
-    if syn::parse_file(&new_content).is_err() {
-        return Ok(None);
-    }
+        let start = range.signature_start_line.saturating_sub(1);
+        let end = range.signature_end_line.min(lines.len());
+        let mut changed = false;
+        for line in &mut lines[start..end] {
+            let original = line.clone();
+            let tightened = tighten_borrow_parameters(&original);
+            if tightened != original {
+                *line = tightened;
+                changed = true;
+            }
+        }
 
-    Ok(Some(HardeningFileChange {
-        file: rel,
-        old_content: content.to_string(),
-        new_content,
-        strategy: HardeningStrategy::ResultUnwrapContext,
-        finding_ids,
-        description:
-            "Replace panic-prone unwrap/expect calls in anyhow Result functions with Context and ?."
-                .to_string(),
-    }))
+        if changed {
+            let id = format!(
+                "borrow-parameter-tightening:{}:{}",
+                rel.display(),
+                range.signature_start_line
+            );
+            finding_ids.push(id.clone());
+            findings.push(HardeningFinding {
+                id,
+                title: "Tighten private borrowed parameter type".to_string(),
+                description: "Prefer &str and slices over borrowed owned containers in private functions when compile gates prove the change.".to_string(),
+                file: rel.to_path_buf(),
+                line: range.signature_start_line,
+                strategy: HardeningStrategy::BorrowParameterTightening,
+                patchable: true,
+            });
+        }
+    }
+}
+
+fn apply_must_use_recipe(
+    rel: &Path,
+    lines: &mut Vec<String>,
+    function_ranges: &[FunctionRange],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    let mut inserted = 0usize;
+    for range in function_ranges {
+        if !range.is_public || !range.returns_value || range.returns_common_must_use {
+            continue;
+        }
+        if has_nearby_must_use(lines, range.signature_start_line + inserted) {
+            continue;
+        }
+
+        let insert_at = range.signature_start_line.saturating_sub(1) + inserted;
+        let indent: String = lines
+            .get(insert_at)
+            .map(|line| line.chars().take_while(|ch| ch.is_whitespace()).collect())
+            .unwrap_or_default();
+        lines.insert(insert_at, format!("{indent}#[must_use]"));
+        inserted += 1;
+
+        let id = format!(
+            "must-use-public-return:{}:{}",
+            rel.display(),
+            range.signature_start_line
+        );
+        finding_ids.push(id.clone());
+        findings.push(HardeningFinding {
+            id,
+            title: "Public return value should be marked must_use".to_string(),
+            description: "Add #[must_use] to public value-returning functions so ignored results are visible to callers.".to_string(),
+            file: rel.to_path_buf(),
+            line: range.signature_start_line,
+            strategy: HardeningStrategy::MustUsePublicReturn,
+            patchable: true,
+        });
+    }
+}
+
+fn apply_iterator_cloned_recipe(
+    rel: &Path,
+    lines: &mut [String],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    for (line_index, line) in lines.iter_mut().enumerate() {
+        if line.trim_start().starts_with("//") {
+            continue;
+        }
+        let original = line.clone();
+        let rewritten = replace_map_clone_calls(&original);
+        if rewritten == original {
+            continue;
+        }
+
+        *line = rewritten;
+        let line_no = line_index + 1;
+        let id = format!("iterator-cloned:{}:{line_no}", rel.display());
+        finding_ids.push(id.clone());
+        findings.push(HardeningFinding {
+            id,
+            title: "Simplify iterator clone collection".to_string(),
+            description: "Replace clone-mapping collection with a simpler form when compile gates prove the iterator item type.".to_string(),
+            file: rel.to_path_buf(),
+            line: line_no,
+            strategy: HardeningStrategy::IteratorCloned,
+            patchable: true,
+        });
+    }
+}
+
+fn apply_borrowed_vec_literal_recipe(
+    rel: &Path,
+    lines: &mut [String],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    for (line_index, line) in lines.iter_mut().enumerate() {
+        if line.trim_start().starts_with("//") || !line.contains("&vec![") {
+            continue;
+        }
+
+        *line = line.replace("&vec![", "&[");
+        let line_no = line_index + 1;
+        let id = format!("borrowed-vec-literal:{}:{line_no}", rel.display());
+        finding_ids.push(id.clone());
+        findings.push(HardeningFinding {
+            id,
+            title: "Use a borrowed slice literal".to_string(),
+            description: "Replace &vec![..] with a borrowed slice literal when validation proves the callsite.".to_string(),
+            file: rel.to_path_buf(),
+            line: line_no,
+            strategy: HardeningStrategy::BorrowParameterTightening,
+            patchable: true,
+        });
+    }
+}
+
+fn replace_map_clone_calls(line: &str) -> String {
+    let mut output = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find(".map(|") {
+        let (before, after_start) = rest.split_at(start);
+        output.push_str(before);
+        let Some((variable, after_variable)) = after_start[".map(|".len()..].split_once('|') else {
+            output.push_str(after_start);
+            return output;
+        };
+        let variable = variable.trim();
+        if variable.is_empty()
+            || !variable
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            output.push_str(after_start);
+            return output;
+        }
+
+        let expected = format!(" {}.clone())", variable);
+        let trimmed_expected = format!("{}.clone())", variable);
+        if let Some(next) = after_variable.strip_prefix(&expected) {
+            rest = push_clone_replacement(&mut output, next);
+        } else if let Some(next) = after_variable.strip_prefix(&trimmed_expected) {
+            rest = push_clone_replacement(&mut output, next);
+        } else {
+            output.push_str(".map(|");
+            rest = &after_start[".map(|".len()..];
+        }
+    }
+    output.push_str(rest);
+    output
+}
+
+fn push_clone_replacement<'a>(output: &mut String, next: &'a str) -> &'a str {
+    if next.starts_with(".collect()") && output.ends_with(".iter()") {
+        output.truncate(output.len() - ".iter()".len());
+        output.push_str(".to_vec()");
+        &next[".collect()".len()..]
+    } else {
+        output.push_str(".cloned()");
+        next
+    }
+}
+
+fn tighten_borrow_parameters(line: &str) -> String {
+    replace_borrowed_vec(&line.replace("&String", "&str"))
+}
+
+fn replace_borrowed_vec(line: &str) -> String {
+    let mut output = String::new();
+    let mut index = 0usize;
+    while let Some(relative_start) = line[index..].find("&Vec<") {
+        let start = index + relative_start;
+        output.push_str(&line[index..start]);
+        let generic_start = start + "&Vec<".len();
+        let Some(generic_end) = matching_angle_end(line, generic_start) else {
+            output.push_str(&line[start..]);
+            return output;
+        };
+        output.push_str("&[");
+        output.push_str(&line[generic_start..generic_end]);
+        output.push(']');
+        index = generic_end + 1;
+    }
+    output.push_str(&line[index..]);
+    output
+}
+
+fn matching_angle_end(value: &str, start: usize) -> Option<usize> {
+    let mut depth = 1isize;
+    for (offset, ch) in value[start..].char_indices() {
+        match ch {
+            '<' => depth += 1,
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(start + offset);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn has_nearby_must_use(lines: &[String], signature_line: usize) -> bool {
+    let signature_index = signature_line.saturating_sub(1);
+    let start = signature_index.saturating_sub(4);
+    lines[start..signature_index.min(lines.len())]
+        .iter()
+        .any(|line| line.contains("must_use"))
 }
 
 fn replace_expect_calls(line: &str) -> String {
@@ -331,7 +610,12 @@ struct FunctionRange {
     name: String,
     start_line: usize,
     end_line: usize,
+    signature_start_line: usize,
+    signature_end_line: usize,
+    is_public: bool,
     returns_anyhow_result: bool,
+    returns_value: bool,
+    returns_common_must_use: bool,
 }
 
 fn find_function_ranges(content: &str) -> Vec<FunctionRange> {
@@ -377,13 +661,27 @@ fn find_function_ranges(content: &str) -> Vec<FunctionRange> {
             }
         }
 
-        let returns_anyhow_result = signature.contains("-> anyhow::Result")
-            || (has_anyhow_result_alias && signature.contains("-> Result<"));
+        let return_text = signature
+            .split_once("->")
+            .map(|(_, rest)| rest.split('{').next().unwrap_or_default().trim())
+            .unwrap_or_default();
+        let returns_anyhow_result = return_text.starts_with("anyhow::Result")
+            || (has_anyhow_result_alias && return_text.starts_with("Result<"));
+        let returns_value = !return_text.is_empty() && return_text != "()";
+        let returns_common_must_use = return_text.starts_with("Result<")
+            || return_text.starts_with("anyhow::Result")
+            || return_text.starts_with("Option<")
+            || signature.contains("async fn ");
         ranges.push(FunctionRange {
             name,
             start_line,
             end_line,
+            signature_start_line: start_line,
+            signature_end_line: open_line + 1,
+            is_public: signature.trim_start().starts_with("pub "),
             returns_anyhow_result,
+            returns_value,
+            returns_common_must_use,
         });
         index = end_line;
     }
@@ -516,13 +814,114 @@ mod tests {
     }
 
     #[test]
+    fn hardening_tightens_private_borrowed_owned_parameters() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"fn score(name: &String, values: &Vec<u8>) -> usize {
+    name.len() + values.len()
+}
+"#,
+        )
+        .unwrap();
+
+        let analysis = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(analysis.changes.len(), 1);
+        let change = &analysis.changes[0];
+        assert!(change
+            .new_content
+            .contains("fn score(name: &str, values: &[u8])"));
+        assert!(change
+            .finding_ids
+            .iter()
+            .any(|id| id.contains("borrow-parameter-tightening")));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
+    fn hardening_marks_public_value_returns_must_use() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"pub fn total(values: &[u8]) -> usize {
+    values.iter().map(|value| *value as usize).sum()
+}
+"#,
+        )
+        .unwrap();
+
+        let analysis = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(analysis.changes.len(), 1);
+        let change = &analysis.changes[0];
+        assert!(change.new_content.contains("#[must_use]\npub fn total"));
+        assert!(change
+            .finding_ids
+            .iter()
+            .any(|id| id.contains("must-use-public-return")));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
+    fn hardening_replaces_map_clone_collect_with_to_vec() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"pub fn copy_values(values: &[String]) -> Vec<String> {
+    values.iter().map(|value| value.clone()).collect()
+}
+"#,
+        )
+        .unwrap();
+
+        let analysis = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(analysis.changes.len(), 1);
+        let change = &analysis.changes[0];
+        assert!(change.new_content.contains("values.to_vec()"));
+        assert!(change
+            .finding_ids
+            .iter()
+            .any(|id| id.contains("iterator-cloned")));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
     fn hardening_does_not_flag_patterns_inside_strings_or_comments() {
         let dir = tempdir().unwrap();
         let src = dir.path().join("src");
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(
             src.join("lib.rs"),
-            r#"pub fn describe() -> &'static str {
+            r#"fn describe() -> &'static str {
     // Command::new("ignored")
     "unsafe std::process::Command env::var("
 }

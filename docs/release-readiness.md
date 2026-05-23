@@ -145,6 +145,11 @@ the fixture has only compiled evidence, and it must leave source files
 unchanged. The evolve apply run should then execute Tier 1 candidates with the
 compiled evidence default.
 
+The v0.6 recipe smoke should include at least contextual error hardening,
+private borrow parameter tightening, iterator clone cleanup, and `#[must_use]`
+annotation in a throwaway crate. The apply run must show each recipe only lands
+after isolated validation and final validation.
+
 ## Performance Sanity
 
 Record rough timings before release:

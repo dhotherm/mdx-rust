@@ -28,6 +28,9 @@ continuing.
 - Evidence summaries on codebase maps and refactor plans, including grade,
   signals, unlock suggestions, and max autonomous tier.
 - Candidate tier and required-evidence fields, enforced before queue execution.
+- Tier 1 mechanical recipes for private borrow parameter tightening, iterator
+  clone collection cleanup, and `#[must_use]` annotations for public
+  value-returning functions.
 - JSON Schema export for `codebase-map` and `autopilot-run`.
 - Capability gate detection for `cargo-nextest`, `cargo-llvm-cov`,
   `cargo-mutants`, and `cargo-semver-checks`.
@@ -47,8 +50,8 @@ continuing.
 
 ### Known Limitations
 
-- Autopilot executes only supported low-risk recipes. It does not autonomously
-  change public APIs or apply broad semantic rewrites.
+- Autopilot executes only supported low-risk Tier 1 recipes. It does not
+  autonomously change public APIs or apply broad semantic rewrites.
 - Larger candidates such as extracting functions and splitting modules remain
   plan-only until stronger semantic analysis and transaction design land.
 - Optional coverage, mutation testing, and semver tools are detected as
