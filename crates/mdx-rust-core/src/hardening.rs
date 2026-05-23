@@ -514,7 +514,7 @@ fn persist_hardening_run(artifact_root: &Path, run: &HardeningRun) -> anyhow::Re
     Ok(dir.join(format!("hardening-{mode}-{millis}.json")))
 }
 
-fn workspace_summary(root: &Path) -> WorkspaceSummary {
+pub(crate) fn workspace_summary(root: &Path) -> WorkspaceSummary {
     let mut command = std::process::Command::new("cargo");
     command
         .current_dir(root)

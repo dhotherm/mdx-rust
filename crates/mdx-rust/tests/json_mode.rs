@@ -134,6 +134,10 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
 
     let policy = assert_machine_pure_json(&["schema", "project-policy", "--json"]);
     assert_eq!(policy["title"], "ProjectPolicy");
+
+    let plan = assert_machine_pure_json(&["schema", "refactor-plan", "--json"]);
+    assert_eq!(plan["title"], "RefactorPlan");
+    assert!(plan["properties"]["plan_id"].is_object());
 }
 
 #[test]
@@ -250,6 +254,47 @@ anyhow = "1"
     assert!(after.contains("use anyhow::Context;"));
     assert!(after.contains(".context(\"load failed instead of panicking\")?"));
     assert!(!after.contains(".unwrap()"));
+}
+
+#[test]
+fn plan_json_mode_writes_refactor_plan_without_applying() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-plan-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let value = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(value["schema_version"], "0.5");
+    assert!(value["plan_id"].as_str().is_some());
+    assert_eq!(value["impact"]["patchable_hardening_changes"], 1);
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+    let artifact_path = value["artifact_path"]
+        .as_str()
+        .expect("plan should persist artifact");
+    assert!(std::path::Path::new(artifact_path).exists());
 }
 
 #[test]

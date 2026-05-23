@@ -6,10 +6,11 @@
 
 - `mdx-rust`: CLI entrypoint and human or JSON command output.
 - `mdx-rust-core`: registry, runner, optimizer, hooks, ledgers, scoring, audit
-  packets, hardening reports, and the candidate safety pipeline.
+  packets, hardening reports, refactor plans, and the candidate safety
+  pipeline.
 - `mdx-rust-analysis`: Rust source discovery, prompt/tool finders, isolated
-  workspace creation, patch application, hardening analysis, validation, and
-  rollback snapshots.
+  workspace creation, patch application, hardening analysis, refactor impact
+  analysis, validation, and rollback snapshots.
 
 ## Optimization Lifecycle
 
@@ -104,3 +105,23 @@ Hardening transactions snapshot every touched file, validate in isolation,
 require `--apply` before landing, run final validation, run final behavior evals
 when supplied, and roll back on failure. General multi-file refactoring remains
 future work.
+
+## v0.5 Refactor Planning
+
+`v0.5` adds a plan-first refactoring path. It deliberately does not introduce a
+new mutation pathway.
+
+1. Scan the requested file, directory, or workspace.
+2. Summarize file size, function count, largest function size, test presence,
+   public items, and module or use edges.
+3. Reuse hardening analysis to identify patchable high-confidence candidates.
+4. Build a risk summary and candidate list.
+5. Persist a versioned plan under `.mdx-rust/plans/`.
+6. Print human output or emit the same plan as JSON.
+
+Patchable plan candidates point back to `mdx-rust improve --apply`, which means
+the existing hardening transaction remains responsible for real edits,
+validation, optional behavior eval gates, final validation, and rollback.
+Plan-only candidates such as extracting a function, splitting a module, or
+reviewing public API pressure are intentionally human-reviewed design work in
+`v0.5`.

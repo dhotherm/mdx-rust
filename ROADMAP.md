@@ -40,7 +40,7 @@ Primary goals:
   metadata, findings, proposed changes, validation records, transaction status,
   and rollback status.
 
-## v0.4.0 Focus
+## v0.4.0 - Released
 
 Behavior and policy-driven improvement for Rust services.
 
@@ -57,16 +57,29 @@ Behavior and policy-driven improvement for Rust services.
 - Hardening reports include policy matches, behavior eval evidence, risk
   summaries, and generated schemas.
 
-## v0.5.0 Direction
+## v0.5.0 Focus
 
 Guardrailed Rust refactoring assistant with impact analysis.
 
-- Plan-first workflow: `mdx-rust plan`, human review, then `mdx-rust apply`.
+- Plan-first workflow: `mdx-rust plan`, human review, then existing safe
+  mutation paths such as `mdx-rust improve --apply`.
 - Crate/module graph, touched-area model, and public API impact detection.
-- Safe refactor recipes such as extract function, split oversized module,
-  consolidate error handling, and isolate boundary validation.
+- Safe refactor recipe candidates such as extract function, split oversized
+  module, consolidate error handling, isolate boundary validation, and apply
+  patchable hardening.
 - Public API protection through semver and public API checks where applicable.
-- Multi-step transactions with plan hashes and rollback evidence.
+- Versioned refactor plan artifacts with plan hashes, required gates, risk
+  summaries, and explicit non-goals.
+
+## v0.6.0 Direction
+
+Apply reviewed refactor plans through dedicated transactions.
+
+- Plan hash verification before applying a reviewed plan.
+- Narrow multi-file recipe support with full transaction snapshots and rollback
+  evidence.
+- Public API compatibility checks for crates that opt in.
+- Deeper Rust-aware impact analysis before any broader refactor is allowed.
 
 ## Current Non-Goals
 

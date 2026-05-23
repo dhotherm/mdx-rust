@@ -58,11 +58,30 @@ The hardening path is separate from the agent optimizer.
   after final validation on the real tree. A final behavior failure must roll
   back the transaction and report no applied success.
 
+## Refactor Plan Scope
+
+`mdx-rust plan` is a planning and impact-analysis command. It must never mutate
+the user's source tree.
+
+- Plan generation may scan Rust files, parse public items, inspect module edges,
+  summarize policy and behavior eval references, and write a plan artifact
+  under `.mdx-rust/plans/`.
+- Plan generation may recommend `mdx-rust improve --apply` for patchable
+  hardening candidates, but that command remains the mutation boundary.
+- A refactor plan is not validation evidence and does not increment any
+  accepted, landed, applied, or validated counters.
+- A future command that applies a plan must re-run the appropriate safety
+  pipeline or hardening transaction. It must not trust stale plan evidence.
+- Broad multi-file refactors require explicit transaction design, plan hashes,
+  rollback evidence, and dedicated invariant tests before they can apply.
+
 ## Non-Bypass Rules
 
 - Hooks can only add gates. They must never skip isolated validation, net-positive scoring, landing validation, or rollback.
 - Budgets can only reduce candidate count or split evaluation data. They must never reduce the validation requirements for a candidate that is executed.
 - Ledgers are records only. A `PromptVariantRecord` means "considered", not "validated", "landed", or "accepted".
+- Refactor plans are records only. A `RefactorPlan` means "reviewed candidate
+  areas", not "validated", "applied", "landed", or "accepted".
 - The safety pipeline must keep stage-specific internal records for scoped,
   isolated-validated, and net-positive edits. A raw `ProposedEdit` is never
   enough to land or accept a change.
@@ -127,6 +146,8 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
 - At least one hardening test proves behavior eval failure blocks apply.
 - At least one CLI integration test proves workspace behavior eval JSON output
   is machine parseable.
+- At least one CLI integration test proves refactor plan JSON output is machine
+  parseable and does not mutate the source tree.
 
 The current invariant tests live primarily in:
 
@@ -135,6 +156,8 @@ The current invariant tests live primarily in:
 - `crates/mdx-rust-analysis/src/editing.rs`
 - `crates/mdx-rust-core/src/hardening.rs`
 - `crates/mdx-rust-analysis/src/hardening.rs`
+- `crates/mdx-rust-core/src/refactor.rs`
+- `crates/mdx-rust-analysis/src/refactor.rs`
 
 ## Change Discipline
 

@@ -2,6 +2,41 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.5.0 - 2026-05-23
+
+Plan-first guardrailed refactoring for Rust crates and service modules.
+
+### Added
+
+- `mdx-rust plan [target]` for refactor impact analysis without mutating the
+  workspace.
+- Versioned refactor plan artifacts under `.mdx-rust/plans/`.
+- Refactor impact summaries for scanned files, module edges, public API
+  pressure, long functions, large files, and patchable hardening candidates.
+- Plan candidates that route safe patchable work back through
+  `mdx-rust improve --apply` instead of creating a second mutation path.
+- JSON Schema export for `refactor-plan`.
+- Refactor analysis in `mdx-rust-analysis` for public items, module edges, file
+  size, function count, test presence, and largest function size.
+- CLI integration tests proving `plan --json` is machine parseable and does not
+  mutate source files.
+
+### Changed
+
+- `README.md`, `SAFETY_INVARIANTS.md`, and architecture docs now describe the
+  v0.5 plan-first refactor contract.
+- Release smoke coverage includes refactor plan schema and plan generation.
+- Crate-level stability language now targets `0.5.x`.
+
+### Known Limitations
+
+- Refactor plans are review and orchestration artifacts only. They do not apply
+  broad refactors.
+- Plan candidates are intentionally conservative and heuristic.
+- Patchable candidates still use the existing hardening engine and transaction
+  safety gates.
+- Public API impact detection is source-level analysis, not a semver proof.
+
 ## 0.4.0 - 2026-05-23
 
 Behavior and policy-driven hardening for Rust services and ordinary crates.

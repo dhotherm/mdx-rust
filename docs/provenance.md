@@ -15,7 +15,8 @@ mdx-rust schema audit-packet --json
 ```
 
 Other exported schemas include `candidate`, `optimization-run`,
-`hook-decision`, `trace-event`, `hardening-run`, and `hardening-finding`.
+`hook-decision`, `trace-event`, `hardening-run`, `hardening-finding`, and
+`refactor-plan`.
 
 ## Required Fields
 
@@ -121,4 +122,38 @@ Print the hardening schema with:
 mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
 mdx-rust schema project-policy --json
+```
+
+## Refactor Plans
+
+`v0.5` refactor plans produce separate reports:
+
+```text
+.mdx-rust/plans/refactor-plan-<timestamp>-<plan-id>.json
+```
+
+The refactor plan schema version is `"0.5"`.
+
+Refactor plans record:
+
+- workspace root and target
+- optional policy path and content hash
+- optional behavior eval spec path
+- file and module scan counts
+- public API pressure
+- patchable hardening candidate counts
+- required gates for any future application
+- explicit non-goals
+- candidate recipe, risk, status, rationale, touched files, and optional apply
+  command
+
+A refactor plan is not acceptance evidence. It is a review artifact. Patchable
+commands in the plan must still go through `mdx-rust improve --apply`, and
+future plan application commands must re-run safety gates rather than trusting
+stale plan output.
+
+Print the refactor plan schema with:
+
+```bash
+mdx-rust schema refactor-plan --json
 ```

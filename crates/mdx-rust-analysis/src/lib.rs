@@ -1,13 +1,13 @@
 //! Rust source analysis and safe edit helpers for `mdx-rust`.
 //!
 //! This crate owns source discovery, Rust code finders, bundle construction,
-//! conservative hardening analysis, isolated workspace creation, patch
-//! application, validation command records, and rollback snapshots used by the
-//! optimizer and hardening engine.
+//! conservative hardening analysis, refactor impact analysis, isolated
+//! workspace creation, patch application, validation command records, and
+//! rollback snapshots used by the optimizer and hardening engine.
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.4.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `0.5.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io, but the library API
 //! is intentionally unstable before `1.0`.
 
@@ -19,6 +19,8 @@ pub mod editing;
 pub mod finders;
 #[doc(hidden)]
 pub mod hardening;
+#[doc(hidden)]
+pub mod refactor;
 
 /// Analyze an agent crate and return the source scope mdx-rust may inspect.
 pub use bundler::{analyze_agent, build_bundle_scope, AgentBundle, BundleScope};
@@ -31,4 +33,9 @@ pub use finders::{
 pub use hardening::{
     analyze_hardening, HardeningAnalysis, HardeningAnalyzeConfig, HardeningFileChange,
     HardeningFinding, HardeningStrategy,
+};
+/// Plan-first refactor analysis for ordinary Rust modules.
+pub use refactor::{
+    analyze_refactor, ModuleEdge, ModuleEdgeKind, PublicItemSummary, RefactorAnalysis,
+    RefactorAnalyzeConfig, RefactorFileSummary,
 };

@@ -11,7 +11,7 @@
 `mdx-rust` points at Rust code, finds scoped hardening opportunities, validates
 changes in isolation, checks project policy and behavior evals when supplied,
 and only lands edits that pass Rust gates. It still supports agent optimization,
-but `v0.4` is aimed at ordinary Rust crates and service backends too.
+but `v0.5` is aimed at ordinary Rust crates and service backends too.
 
 The CLI is the supported product surface. The library crates are published for
 installation and inspection, but their APIs remain unstable before `1.0`.
@@ -20,10 +20,10 @@ installation and inspection, but their APIs remain unstable before `1.0`.
 
 `mdx-rust` is an early public beta. It is useful for experimentation and
 dogfooding on Rust agent crates, but it is intentionally conservative. In
-plain terms: `v0.4` is good at review-first, safety-gated hardening of scoped
-Rust modules, simple policy mapping, deterministic behavior evals, and the
-existing agent prompt/fallback optimizer. It is not a general autonomous
-refactoring engine yet.
+plain terms: `v0.5` is good at review-first, safety-gated hardening of scoped
+Rust modules, simple policy mapping, deterministic behavior evals, plan-first
+refactor impact analysis, and the existing agent prompt/fallback optimizer. It
+is not a general autonomous refactoring engine yet.
 
 Today it supports:
 
@@ -35,6 +35,8 @@ Today it supports:
 - Workspace behavior evals through `.mdx-rust/evals.json`.
 - Optional behavior eval gates for `improve --eval-spec`.
 - Repo doctor risk summaries with prioritized next actions.
+- Plan-first refactor impact analysis with public API, module edge, long
+  function, large file, and patchable hardening candidates.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -49,7 +51,7 @@ Today it supports:
 Not yet supported:
 
 - Arbitrary multi-file accepted edits outside the hardening transaction model.
-- General autonomous refactoring.
+- General autonomous refactoring or direct application of refactor plans.
 - Stable library APIs.
 - Coverage, mutation testing, or full semantic behavior proofs.
 - External hook runners.
@@ -80,9 +82,14 @@ rejected candidates.
 
 The hardening path for ordinary Rust modules is review-first by default:
 `mdx-rust improve` validates candidate changes in an isolated workspace and
-requires `--apply` before touching the real tree. In `v0.4`, passing
+requires `--apply` before touching the real tree. In `v0.5`, passing
 `--eval-spec` also requires the behavior commands in that spec to pass in the
 isolated workspace and again after final application.
+
+The refactor path is plan-first by design. `mdx-rust plan` never edits files.
+It writes a versioned plan artifact, classifies candidate risk, surfaces public
+API impact, and points patchable candidates back to `mdx-rust improve --apply`
+so all mutations still pass the existing hardening transaction gates.
 
 ## Quick Start
 
@@ -125,10 +132,12 @@ mdx-rust doctor
 mdx-rust audit --policy policies/backend-safety.md
 mdx-rust eval --spec .mdx-rust/evals.json
 mdx-rust improve src/api/config.rs
+mdx-rust plan src/api
 mdx-rust improve src/api/config.rs --eval-spec .mdx-rust/evals.json --apply
 ```
 
-Hardening artifacts are written under `.mdx-rust/hardening/`.
+Hardening artifacts are written under `.mdx-rust/hardening/`. Refactor plan
+artifacts are written under `.mdx-rust/plans/`.
 
 Behavior eval specs execute local commands from your repository. Treat them as
 trusted project code, review changes to them like test scripts, and prefer
@@ -146,6 +155,8 @@ mdx-rust doctor my-agent
 mdx-rust audit --policy policies/backend-safety.md
 mdx-rust audit my-agent
 mdx-rust improve src/lib.rs
+mdx-rust plan src/lib.rs
+mdx-rust plan src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
 mdx-rust improve src/lib.rs --eval-spec .mdx-rust/evals.json --apply
 mdx-rust eval --spec .mdx-rust/evals.json
 mdx-rust eval my-agent --dataset .mdx-rust/agents/my-agent/dataset.json
@@ -154,6 +165,7 @@ mdx-rust schema audit-packet --json
 mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
 mdx-rust schema project-policy --json
+mdx-rust schema refactor-plan --json
 ```
 
 Every command intended for automation supports `--json`.
@@ -176,10 +188,15 @@ directory. The optimizer `0.2` schema records:
 - Rollback status if rollback was attempted.
 
 See [docs/provenance.md](./docs/provenance.md) for the schema contract.
-`v0.4` hardening runs produce versioned JSON reports under
+`v0.4` and later hardening runs produce versioned JSON reports under
 `.mdx-rust/hardening/` with findings, proposed changes, validation outcomes,
 transaction status, rollback status, policy matches, behavior eval outcomes,
 and workspace metadata.
+
+`v0.5` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
+with impact summaries, public API pressure, module edges, required gates,
+policy/eval references, and candidate actions. Plan artifacts are evidence for
+review and orchestration; they are not proof that a change has been applied.
 
 Print the current JSON Schemas with:
 
@@ -187,6 +204,7 @@ Print the current JSON Schemas with:
 mdx-rust schema audit-packet --json
 mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
+mdx-rust schema refactor-plan --json
 ```
 
 ## API Stability
@@ -194,7 +212,7 @@ mdx-rust schema behavior-eval-report --json
 `mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis` are all published so the
 CLI can be installed from crates.io.
 
-For `0.4.x`:
+For `0.5.x`:
 
 - The `mdx-rust` CLI is supported.
 - The `mdx-rust-core` and `mdx-rust-analysis` APIs are unstable.
@@ -229,8 +247,9 @@ guessing which checks matter.
 
 ## Status
 
-`v0.4.0` is in development as the first behavior and policy-driven hardening
-release for ordinary Rust modules.
+`v0.5.0` is in development as the first plan-first guardrailed refactoring
+release. It adds impact analysis and refactor plans without granting autonomous
+multi-file rewrite authority.
 
 ## License
 

@@ -96,6 +96,24 @@ enum Commands {
         timeout_seconds: u64,
     },
 
+    /// Build a plan-first refactor report without mutating the workspace
+    Plan {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Optional policy file to hash and attach to the plan
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Optional behavior eval spec that future apply commands must pass
+        #[arg(long)]
+        eval_spec: Option<String>,
+
+        /// Maximum Rust files to scan
+        #[arg(long, default_value = "100")]
+        max_files: usize,
+    },
+
     /// Evaluate a registered agent or run behavior evals for the current workspace
     Eval {
         /// Optional agent name. Omit to run workspace behavior evals.
@@ -122,8 +140,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy
-        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy"])]
+        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, refactor-plan
+        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "refactor-plan"])]
         kind: String,
     },
 
@@ -199,6 +217,23 @@ fn main() {
                 json: cli.json,
             }) {
                 emit_error(cli.json, "improve", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Plan {
+            target,
+            policy,
+            eval_spec,
+            max_files,
+        } => {
+            if let Err(e) = cmd_plan(
+                target.as_deref(),
+                policy.as_deref(),
+                eval_spec.as_deref(),
+                max_files,
+                cli.json,
+            ) {
+                emit_error(cli.json, "plan", &e);
                 std::process::exit(1);
             }
         }
@@ -974,6 +1009,74 @@ fn cmd_improve(args: ImproveCommand<'_>) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cmd_plan(
+    target: Option<&str>,
+    policy: Option<&str>,
+    eval_spec: Option<&str>,
+    max_files: usize,
+    json: bool,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let plan = mdx_rust_core::build_refactor_plan(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::RefactorPlanConfig {
+            target: target.map(std::path::PathBuf::from),
+            policy_path: policy.map(std::path::PathBuf::from),
+            behavior_spec_path: eval_spec.map(std::path::PathBuf::from),
+            max_files,
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&plan)?);
+        return Ok(());
+    }
+
+    println!("🧭 mdx-rust plan — refactor review");
+    println!("   Plan: {}", plan.plan_id);
+    println!("   Root: {}", plan.root);
+    if let Some(target) = &plan.target {
+        println!("   Target: {}", target);
+    }
+    println!("   Files scanned: {}", plan.impact.files_scanned);
+    println!(
+        "   Impact: risk={:?}, public_items={}, public_files={}, patchable={}",
+        plan.impact.risk_level,
+        plan.impact.public_item_count,
+        plan.impact.public_files,
+        plan.impact.patchable_hardening_changes
+    );
+    println!("   Candidates: {}", plan.candidates.len());
+    if let Some(path) = &plan.artifact_path {
+        println!("   Artifact: {}", path);
+    }
+    for candidate in plan.candidates.iter().take(8) {
+        println!(
+            "   • [{:?}] {} ({})",
+            candidate.status, candidate.title, candidate.file
+        );
+        if let Some(command) = &candidate.apply_command {
+            println!("     apply: {}", command);
+        }
+    }
+    if plan.candidates.len() > 8 {
+        println!(
+            "   … {} more candidate(s) in the plan artifact",
+            plan.candidates.len() - 8
+        );
+    }
+    println!();
+    println!("Required gates:");
+    for gate in &plan.required_gates {
+        println!("   - {}", gate);
+    }
+
+    Ok(())
+}
+
 fn cmd_audit(name: Option<&str>, policy: Option<&str>, json: bool) -> anyhow::Result<()> {
     let Some(name) = name else {
         return cmd_workspace_audit(policy, json);
@@ -1081,6 +1184,9 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         }
         "project-policy" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::ProjectPolicy))?
+        }
+        "refactor-plan" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorPlan))?
         }
         other => anyhow::bail!("unknown schema kind: {other}"),
     };
