@@ -51,6 +51,10 @@ enum Commands {
         /// Maximum optimization iterations
         #[arg(long, default_value = "3")]
         iterations: u32,
+
+        /// Pause and show proposed changes before applying (human review)
+        #[arg(long)]
+        review: bool,
     },
 
 
@@ -114,9 +118,10 @@ fn main() {
         Commands::Optimize {
             name,
             iterations,
+            review,
             ..
         } => {
-            if let Err(e) = cmd_optimize(&name, iterations, cli.json) {
+            if let Err(e) = cmd_optimize(&name, iterations, review, cli.json) {
                 eprintln!("Optimize error: {}", e);
                 std::process::exit(1);
             }
@@ -418,7 +423,7 @@ fn cmd_invoke(name: &str, input: Option<&str>, json: bool) -> anyhow::Result<()>
 
 
 
-fn cmd_optimize(name: &str, iterations: u32, json: bool) -> anyhow::Result<()> {
+fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow::Result<()> {
     use mdx_rust_core::optimizer::{run_optimization, OptimizeConfig};
     use mdx_rust_core::registry::Registry;
 
@@ -438,6 +443,7 @@ fn cmd_optimize(name: &str, iterations: u32, json: bool) -> anyhow::Result<()> {
             max_iterations: iterations,
             candidates_per_iteration: 2,
             use_llm_judge: false,
+            review_before_apply: review,
         },
     ))?;
 

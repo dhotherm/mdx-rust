@@ -64,7 +64,8 @@
 - [x] Optimizer now executes a **complete real cycle**: low-score traces → real bundle analysis → LLM (or fallback) diagnosis → Candidate generation → safe edit application → persistence of the improvement → Accepted: 1 reported. First visible "the agent got better because of mdx-rust" run on the dogfood example.
 - [x] Workspace member issue resolved (`examples/rig-minimal-agent` now properly part of the root workspace) so `cargo metadata`, analysis, and validation all work cleanly.
 - [x] Optimizer now writes experiment JSON + human-readable report.md on every run. Mechanical scorer improved to reward reasoning behavior.
-- [x] Major analysis upgrade: real PromptFinder / ToolFinder / EntrypointFinder using tree-sitter + heuristics. Rich `AgentBundle` (preambles, tools, is_rig_agent, key files) now fed into diagnosis. The LLM (when key present) finally receives actual agent source understanding instead of just file counts.
+- [x] Major analysis upgrade: real PromptFinder / ToolFinder / EntrypointFinder using tree-sitter + heuristics. Rich `AgentBundle` now fed into diagnosis.
+- [x] LLM client now requests and parses structured JSON candidates (focus + description + expected_improvement). When OPENAI_API_KEY is present the optimizer receives typed, high-quality suggestions instead of free text.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI

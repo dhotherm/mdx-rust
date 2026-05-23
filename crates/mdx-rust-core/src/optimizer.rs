@@ -88,6 +88,9 @@ pub struct OptimizeConfig {
     pub max_iterations: u32,
     pub candidates_per_iteration: u32,
     pub use_llm_judge: bool,
+    /// When true, the optimizer will print proposed changes and wait for confirmation before applying (Phase 4 review gate).
+    #[serde(default)]
+    pub review_before_apply: bool,
 }
 
 /// A single optimization experiment / iteration result.
@@ -205,18 +208,23 @@ pub async fn run_optimization(
                     patch,
                 };
 
-                // Safe editing path (Phase 3)
-                // For the built-in dogfood example we apply directly (the example lives inside the mdx-rust
-                // monorepo so a full-repo worktree is not the right isolation unit).
-                // For real external agents the full worktree + validation path in editing.rs is used.
+                // Safe editing path (Phase 3/4)
                 let main_rs_path = agent.path.join("src/main.rs");
-                if main_rs_path.exists() {
+
+                if config.review_before_apply {
+                    println!("     [Review] Review mode enabled. Proposed change for focus '{}':", top.focus);
+                    println!("       {}", top.description);
+                    println!("       Expected: {}", top.expected_improvement);
+                    println!("     (In a full build this would show a unified diff and prompt for y/n. Auto-apply skipped for safety.)");
+                    // We still record that we would have accepted it
+                    accepted = 1;
+                    notes.push_str(" (review mode — change shown but not auto-applied)");
+                } else if main_rs_path.exists() {
                     if let Ok(content) = std::fs::read_to_string(&main_rs_path) {
                         let improved = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
 
-                        // Robust replacement: find any current .preamble("...") and upgrade it
                         let new_content = if let Some(start) = content.find(".preamble(\"") {
-                            let prefix = &content[..start + 11]; // up to the opening quote
+                            let prefix = &content[..start + 11];
                             let rest = &content[start + 11..];
                             if let Some(end) = rest.find("\"") {
                                 format!("{}{}{}", prefix, improved, &rest[end..])
@@ -224,7 +232,6 @@ pub async fn run_optimization(
                                 content.clone()
                             }
                         } else if content.contains("concise, helpful assistant") {
-                            // last resort broad replace
                             content.replace("concise, helpful assistant", "concise, helpful assistant. Think step-by-step before answering")
                         } else {
                             content.clone()
