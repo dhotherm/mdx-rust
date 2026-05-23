@@ -86,6 +86,8 @@ The optimizer is built around a conservative lifecycle:
 
 Experiment records include dataset version/hash, scorer version, git SHAs, validation commands, score deltas, hook decisions, holdout score, and prompt variant ledger entries.
 
+The full acceptance contract is documented in [SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md).
+
 ## Status
 
 **Active and usable (May 2026).**

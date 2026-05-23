@@ -8,6 +8,7 @@ This document exists because `mdx-rust` is itself a tool designed to be used by 
    - Every change that touches code editing, patching, or validation must preserve the invariant: "we never leave the user's repo in a broken state."
    - Prefer git worktrees or isolated temp copies for experiments.
    - `cargo check` + `clippy` are hard gates, not suggestions.
+   - Read and preserve `SAFETY_INVARIANTS.md` before changing optimization, hooks, scoring, patch application, validation, ledgers, or acceptance counters.
 
 2. **Clarity over cleverness**
    - Rust code in this project should be boring, well-named, and easy for both humans and LLMs to understand.
@@ -37,6 +38,7 @@ cargo clippy -- -D warnings
 ### Testing Changes to the Optimizer
 When modifying the core loop, analysis, or editing logic:
 - Always add or update a test that exercises the safety path (i.e., a bad patch must be rejected).
+- Preserve the invariant tests in `crates/mdx-rust-core/src/safety_pipeline.rs`: deny hooks cannot accept, net-negative candidates cannot land, and final validation failures roll back.
 - Use the `examples/` directory or `tests/fixtures/` for small Rig agents you can optimize against.
 
 ### Running the CLI during development

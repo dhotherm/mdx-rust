@@ -15,10 +15,12 @@
 
 use crate::registry::RegisteredAgent;
 use crate::runner::AgentRunResult;
+use crate::safety_pipeline::{
+    execute_candidate_edit, CandidateExecutionConfig, CandidateExecutionContext,
+};
 use crate::{
-    diagnose_run, evaluate_builtin_hook, split_dataset, EvaluationDataset, ExperimentLedger,
-    FailureKind, HookContext, HookDecision, HookPolicy, HookStage, OptimizationBudget,
-    PromptVariantRecord, ScorerMetadata, TraceDiagnosis,
+    diagnose_run, split_dataset, EvaluationDataset, ExperimentLedger, FailureKind, HookDecision,
+    HookPolicy, OptimizationBudget, PromptVariantRecord, ScorerMetadata, TraceDiagnosis,
 };
 use mdx_rust_analysis::editing::ProposedEdit;
 use mdx_rust_analysis::AgentBundle;
@@ -363,13 +365,18 @@ pub async fn run_optimization(
 
                 let outcome = execute_candidate_edit(CandidateExecutionContext {
                     agent,
-                    config,
+                    config: CandidateExecutionConfig {
+                        hook_policy: &config.hook_policy,
+                        review_before_apply: config.review_before_apply,
+                        quiet: config.quiet,
+                    },
                     iteration,
                     candidate_index,
                     edit: &edit,
                     test_inputs: &test_inputs,
                     holdout_inputs: &holdout_inputs,
                     baseline_score,
+                    scorer: mechanical_score,
                 })
                 .await;
 
@@ -684,255 +691,6 @@ fn summarize_trace_diagnoses(diagnoses: &[TraceDiagnosis]) -> String {
     }
 }
 
-#[derive(Debug, Default)]
-struct CandidateEditOutcome {
-    validated: u32,
-    landed: u32,
-    accepted: u32,
-    accepted_diff: Option<String>,
-    patched_score: Option<f32>,
-    holdout_score: Option<f32>,
-    delta: Option<f32>,
-    note: String,
-    hook_decisions: Vec<HookDecision>,
-}
-
-struct CandidateExecutionContext<'a> {
-    agent: &'a RegisteredAgent,
-    config: &'a OptimizeConfig,
-    iteration: u32,
-    candidate_index: usize,
-    edit: &'a ProposedEdit,
-    test_inputs: &'a [serde_json::Value],
-    holdout_inputs: &'a [serde_json::Value],
-    baseline_score: f32,
-}
-
-async fn execute_candidate_edit(context: CandidateExecutionContext<'_>) -> CandidateEditOutcome {
-    let agent = context.agent;
-    let config = context.config;
-    let edit = context.edit;
-    let mut outcome = CandidateEditOutcome::default();
-
-    let pre_edit = evaluate_builtin_hook(
-        &config.hook_policy,
-        &HookContext {
-            stage: HookStage::PreEdit,
-            agent_name: agent.name.clone(),
-            edit_description: Some(edit.description.clone()),
-            patch_bytes: edit.patch.len(),
-            command: None,
-            validation_passed: None,
-            score_delta: None,
-        },
-    );
-    let pre_edit_denied = pre_edit.denied();
-    outcome.hook_decisions.push(pre_edit);
-    if pre_edit_denied {
-        outcome.note = " (pre-edit hook denied candidate)".to_string();
-        return outcome;
-    }
-
-    let pre_command = evaluate_builtin_hook(
-        &config.hook_policy,
-        &HookContext {
-            stage: HookStage::PreCommand,
-            agent_name: agent.name.clone(),
-            edit_description: Some(edit.description.clone()),
-            patch_bytes: edit.patch.len(),
-            command: Some("cargo check && cargo clippy -- -D warnings".to_string()),
-            validation_passed: None,
-            score_delta: None,
-        },
-    );
-    let pre_command_denied = pre_command.denied();
-    outcome.hook_decisions.push(pre_command);
-    if pre_command_denied {
-        outcome.note = " (pre-command hook denied validation)".to_string();
-        return outcome;
-    }
-
-    // Always validate the proposed edit in an isolated workspace first.
-    let wt_name = format!("opt-{}-{}", context.iteration, context.candidate_index);
-    let validation_result =
-        mdx_rust_analysis::editing::apply_and_validate(&agent.path, edit, &wt_name);
-
-    let Ok(validation) = validation_result else {
-        if !config.quiet {
-            println!("     [Safe Apply] Validation in isolated workspace failed to run.");
-        }
-        outcome.note = " (validation failed to run)".to_string();
-        return outcome;
-    };
-
-    if !validation.passed {
-        let decision = evaluate_builtin_hook(
-            &config.hook_policy,
-            &HookContext {
-                stage: HookStage::PostValidation,
-                agent_name: agent.name.clone(),
-                edit_description: Some(edit.description.clone()),
-                patch_bytes: edit.patch.len(),
-                command: None,
-                validation_passed: Some(false),
-                score_delta: None,
-            },
-        );
-        outcome.hook_decisions.push(decision);
-        if !config.quiet {
-            println!("     [Safe Apply] Validation in isolated workspace failed.");
-        }
-        outcome.note = " (validation rejected candidate)".to_string();
-        return outcome;
-    }
-
-    outcome.validated = 1;
-    let post_validation = evaluate_builtin_hook(
-        &config.hook_policy,
-        &HookContext {
-            stage: HookStage::PostValidation,
-            agent_name: agent.name.clone(),
-            edit_description: Some(edit.description.clone()),
-            patch_bytes: edit.patch.len(),
-            command: None,
-            validation_passed: Some(true),
-            score_delta: None,
-        },
-    );
-    let post_validation_denied = post_validation.denied();
-    outcome.hook_decisions.push(post_validation);
-    if post_validation_denied {
-        outcome.note = " (post-validation hook denied candidate)".to_string();
-        return outcome;
-    }
-    if !config.quiet {
-        println!(
-            "     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK)."
-        );
-    }
-
-    let patched_score = {
-        let score_name = format!("score-{}-{}", context.iteration, context.candidate_index);
-        match mdx_rust_analysis::editing::create_isolated_workspace(&agent.path, &score_name) {
-            Ok(isolated) => {
-                let score = if mdx_rust_analysis::editing::apply_edit(&agent.path, &isolated, edit)
-                    .is_ok()
-                {
-                    evaluate_workspace(&isolated, context.test_inputs)
-                        .await
-                        .unwrap_or(context.baseline_score)
-                } else {
-                    context.baseline_score
-                };
-                mdx_rust_analysis::editing::cleanup_isolated_workspace(&agent.path, &isolated);
-                score
-            }
-            Err(_) => context.baseline_score,
-        }
-    };
-
-    let delta = patched_score - context.baseline_score;
-    let pre_accept = evaluate_builtin_hook(
-        &config.hook_policy,
-        &HookContext {
-            stage: HookStage::PreAccept,
-            agent_name: agent.name.clone(),
-            edit_description: Some(edit.description.clone()),
-            patch_bytes: edit.patch.len(),
-            command: None,
-            validation_passed: Some(true),
-            score_delta: Some(delta),
-        },
-    );
-    let pre_accept_denied = pre_accept.denied();
-    outcome.hook_decisions.push(pre_accept);
-    if pre_accept_denied {
-        outcome.note = format!(" (pre-accept hook denied delta {:.2})", delta);
-        return outcome;
-    }
-
-    if delta <= 0.0 {
-        if !config.quiet {
-            println!(
-                "     [Net-Negative] Patched score {:.2} vs baseline {:.2} (delta {:.2}) - change rejected.",
-                patched_score, context.baseline_score, delta
-            );
-        }
-        outcome.note = format!(
-            " (net-negative {:.2}->{:.2})",
-            context.baseline_score, patched_score
-        );
-        return outcome;
-    }
-
-    if config.review_before_apply {
-        if !config.quiet {
-            println!("     [Review] Change validated in isolation but not applied (--review).");
-        }
-        outcome.patched_score = Some(patched_score);
-        outcome.delta = Some(delta);
-        outcome.note = " (review mode: validated in isolation, not applied)".to_string();
-        return outcome;
-    }
-
-    let snapshot = match mdx_rust_analysis::editing::snapshot_file(&edit.file) {
-        Ok(snapshot) => snapshot,
-        Err(err) => {
-            outcome.note = format!(" (snapshot failed: {})", err);
-            return outcome;
-        }
-    };
-
-    if let Err(err) = mdx_rust_analysis::editing::apply_edit_to_agent(&agent.path, edit) {
-        if !config.quiet {
-            println!(
-                "     [Land Failed] Could not apply validated patch to real source: {}",
-                err
-            );
-        }
-        outcome.note = " (landing failed)".to_string();
-        return outcome;
-    }
-
-    outcome.landed = 1;
-    let (final_ok, _final_output) = mdx_rust_analysis::editing::validate_build(&agent.path);
-
-    if final_ok {
-        let holdout_score = if context.holdout_inputs.is_empty() {
-            None
-        } else {
-            evaluate_workspace(&agent.path, context.holdout_inputs)
-                .await
-                .ok()
-        };
-        outcome.accepted = 1;
-        outcome.accepted_diff = Some(edit.patch.clone());
-        outcome.patched_score = Some(patched_score);
-        outcome.holdout_score = holdout_score;
-        outcome.delta = Some(delta);
-        outcome.note = format!(" (accepted +{delta:.2})");
-
-        if !config.quiet {
-            println!(
-                "     [Accepted] Landed + final validation OK (score {:.2} -> {:.2}, delta {:.2}).",
-                context.baseline_score, patched_score, delta
-            );
-        }
-    } else {
-        let _ = mdx_rust_analysis::editing::restore_file(&snapshot);
-        let _ = mdx_rust_analysis::editing::validate_build(&agent.path);
-        outcome.landed = 0;
-        outcome.note = " (final validation failed and rolled back)".to_string();
-        if !config.quiet {
-            println!(
-                "     [Final Validation Failed] Change rolled back after re-validation failed."
-            );
-        }
-    }
-
-    outcome
-}
-
 fn build_edit_for_candidate(
     agent_root: &Path,
     bundle: Option<&AgentBundle>,
@@ -1041,31 +799,6 @@ fn normalize_prompt(value: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
-}
-
-/// Evaluate an arbitrary workspace dir (used for isolated patched scoring).
-async fn evaluate_workspace(
-    dir: &std::path::Path,
-    inputs: &[serde_json::Value],
-) -> anyhow::Result<f32> {
-    use crate::registry::{AgentContract, RegisteredAgent};
-
-    let temp_agent = RegisteredAgent {
-        name: "isolated-eval".to_string(),
-        path: dir.to_path_buf(),
-        contract: AgentContract::Process,
-        registered_at: "".to_string(),
-    };
-
-    let mut scores = vec![];
-    for input in inputs {
-        let res = crate::runner::run_agent(&temp_agent, input.clone()).await?;
-        scores.push(mechanical_score(&res));
-    }
-    if scores.is_empty() {
-        return Ok(0.0);
-    }
-    Ok(scores.iter().sum::<f32>() / scores.len() as f32)
 }
 
 /// Very rough mechanical scorer for the example agent.

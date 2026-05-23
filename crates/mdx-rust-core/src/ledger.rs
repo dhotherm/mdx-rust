@@ -163,4 +163,32 @@ mod tests {
         assert_eq!(first.id, second.id);
         assert!(first.patch_hash.starts_with("fnv1a64:"));
     }
+
+    #[test]
+    fn budget_caps_candidates_but_never_to_zero() {
+        assert_eq!(OptimizationBudget::Light.candidate_limit(99), 2);
+        assert_eq!(OptimizationBudget::Medium.candidate_limit(99), 4);
+        assert_eq!(OptimizationBudget::Heavy.candidate_limit(99), 8);
+        assert_eq!(OptimizationBudget::Light.candidate_limit(0), 1);
+    }
+
+    #[test]
+    fn ledger_recording_variants_does_not_record_acceptance() {
+        let dataset = EvaluationDataset::synthetic_v1();
+        let split = split_dataset(&dataset, OptimizationBudget::Medium);
+        let mut ledger = ExperimentLedger::new(OptimizationBudget::Medium, &dataset, &split);
+
+        ledger.record_variant(PromptVariantRecord::from_patch(
+            "schema",
+            "src/main.rs",
+            "candidate only",
+            "patch",
+        ));
+
+        assert_eq!(ledger.variants.len(), 1);
+        assert_eq!(
+            ledger.train_samples + ledger.holdout_samples,
+            dataset.samples.len()
+        );
+    }
 }

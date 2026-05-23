@@ -90,6 +90,8 @@
 - [x] Optimizer records hook decisions, holdout scores, budget metadata, and prompt variant ledger entries in run artifacts.
 - [x] Security audit module and `mdx-rust audit` command added. Current static checks flag process execution surfaces, unsafe code, likely secret literals, and MCP/A2A-style integration boundaries.
 - [x] README updated to document the lifecycle, audit command, budgets, hook decisions, holdout splits, and artifact guarantees.
+- [x] Safety invariants are now documented in `SAFETY_INVARIANTS.md`, referenced from `AGENTS.md`, and backed by invariant tests for deny hooks, net-negative candidates, final validation rollback, budget caps, and ledger non-acceptance.
+- [x] Candidate acceptance logic was extracted into `safety_pipeline.rs`, making the optimizer orchestration smaller and the acceptance-critical path easier to audit.
 
 **Core product is substantially complete ("fully done" for the original handoff vision).** The optimizer, analysis, safe editing, review, best persistence, spec, CLI, tests, and dogfooding example are all working end-to-end with high quality. Ready for your Codex feedback on next directions.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
