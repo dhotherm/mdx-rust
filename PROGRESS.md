@@ -67,6 +67,7 @@
 - [x] Major analysis upgrade: real PromptFinder / ToolFinder / EntrypointFinder using tree-sitter + heuristics. Rich `AgentBundle` now fed into diagnosis.
 - [x] LLM client now requests and parses structured JSON candidates (focus + description + expected_improvement). When OPENAI_API_KEY is present the optimizer receives typed, high-quality suggestions instead of free text.
 - [x] `optimize --review` flag wired + review gate implemented. The loop now supports human-in-the-loop: shows proposed change and skips auto-apply when review is requested.
+- [x] First unit tests for the analysis finders (preambles, Rig detection, entrypoints). NativeRust contract detection already prefers real Rig agents with run_agent functions.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI

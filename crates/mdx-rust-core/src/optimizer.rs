@@ -342,3 +342,42 @@ pub fn mechanical_score(result: &AgentRunResult) -> f32 {
 
     score.min(0.95)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::{AgentContract, RegisteredAgent};
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_mechanical_score_echo_vs_reasoned() {
+        let echo = AgentRunResult {
+            output: serde_json::json!({"answer": "Echo: hello", "reasoning": "no key"}),
+            duration_ms: 10,
+            success: true,
+            error: None,
+            traces: vec![],
+        };
+        let good = AgentRunResult {
+            output: serde_json::json!({"answer": "The answer is 42 because...", "reasoning": "Think step by step: 6*7"}),
+            duration_ms: 120,
+            success: true,
+            error: None,
+            traces: vec![],
+        };
+
+        assert!(mechanical_score(&echo) < 0.5);
+        assert!(mechanical_score(&good) > 0.8);
+    }
+
+    #[test]
+    fn test_optimize_config_defaults() {
+        let cfg = OptimizeConfig {
+            max_iterations: 1,
+            candidates_per_iteration: 1,
+            use_llm_judge: false,
+            review_before_apply: false,
+        };
+        assert_eq!(cfg.max_iterations, 1);
+    }
+}
