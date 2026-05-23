@@ -3,6 +3,7 @@
 //! Core logic for the MDx Rust agent optimizer.
 
 pub mod config;
+pub mod llm;
 pub mod optimizer;
 pub mod registry;
 pub mod runner;

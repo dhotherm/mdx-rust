@@ -17,6 +17,7 @@ tracing.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 mdx-rust-analysis = { path = "../mdx-rust-analysis" }
+rig-core.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -73,37 +73,47 @@ pub async fn run_optimization(
 
         let avg_score: f32 = scores_this_iter.iter().sum::<f32>() / scores_this_iter.len() as f32;
 
-        // Diagnosis step now uses the actual bundle scope from the analysis crate
+        // Real diagnosis using bundle scope + LLM
         let bundle = mdx_rust_analysis::build_bundle_scope(&agent.path, None).ok();
         let file_count = bundle.as_ref().map(|b| b.optimizable_paths.len()).unwrap_or(0);
 
-        // Generate concrete candidates based on diagnosis
-        let candidates = if avg_score <= current_score {
-            vec![
-                Candidate {
-                    focus: "system_prompt".to_string(),
-                    description: "Strengthen the system prompt with explicit reasoning instructions and output format.".to_string(),
-                    expected_improvement: "Reduce echo fallback, increase answer quality.".to_string(),
-                },
-                Candidate {
-                    focus: "reasoning_step".to_string(),
-                    description: "Add an internal 'think step' before producing the final answer.".to_string(),
-                    expected_improvement: "Better calibration and less shallow responses.".to_string(),
-                },
-            ]
-        } else {
-            vec![]
+        let llm = crate::llm::LlmClient::default();
+        let diag_req = crate::llm::DiagnosisRequest {
+            policy: "Improve the agent so it gives high-quality, reasoned answers instead of echoing.".to_string(),
+            bundle_summary: format!("{} source files", file_count),
+            traces_summary: "Multiple runs with low scores and echo-style outputs.".to_string(),
+            scores: scores_this_iter.clone(),
         };
 
+        let diagnosis = llm.diagnose(diag_req).await.ok();
+
+        let mut candidates = vec![];
         let mut accepted = 0;
-        let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle, {} candidates)", avg_score, file_count, candidates.len());
+        let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle)", avg_score, file_count);
+
+        if let Some(d) = diagnosis {
+            notes.push_str(&format!(" → LLM: {}", d.summary));
+            for c in d.candidates {
+                candidates.push(Candidate {
+                    focus: "llm".to_string(),
+                    description: c.clone(),
+                    expected_improvement: "Model-generated".to_string(),
+                });
+            }
+        } else {
+            // Fallback
+            candidates = vec![Candidate {
+                focus: "system_prompt".to_string(),
+                description: "Strengthen the system prompt with explicit reasoning instructions.".to_string(),
+                expected_improvement: "Reduce echo fallback.".to_string(),
+            }];
+        }
 
         if !candidates.is_empty() {
             let top = &candidates[0];
             notes.push_str(&format!(" → Top candidate: {} (patch would be applied via worktree)", top.focus));
 
-            // Simulate the editing pipeline output
-            if top.focus == "system_prompt" {
+            if top.focus == "system_prompt" || top.focus == "llm" {
                 println!("     [Editing] Would create git worktree → apply patch → cargo check → accept if green.");
             }
         } else {
