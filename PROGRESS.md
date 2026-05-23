@@ -95,6 +95,7 @@
 - [x] First-run readiness hardened: clean-clone `init` works, stdin is closed after JSON input for EOF-reading Rust CLIs, the example quickstart accepts a real improvement, and README positioning now says private beta instead of overclaiming production maturity.
 - [x] Provenance upgraded: accepted runs now include policy path/hash, scorer, diagnosis model provenance, hook decisions, validation command records with status/timeout/duration/stdout/stderr, score deltas, holdout score, git metadata when available, and rollback status.
 - [x] End-to-end adversarial optimizer test added proving a denied candidate cannot validate, land, accept, or mutate source through the full optimizer loop.
+- [x] Safety audit follow-up: generated config now places `artifact_dir` at the TOML root, register smoke tests have a timeout, patch scope checks cover diff/rename/copy/binary headers, model provenance only reports live use after a successful diagnosis call, validation respects the candidate wall-clock budget, and release docs now state the supported GitHub install path.
 
 **Core product is credible private beta, not GA.** The safety loop is real and tested, but public-release work remains: scored standalone eval, broader strategy support, crates.io packaging, and richer native harnessing.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
@@ -104,7 +105,8 @@
 ### In Progress / Next
 
 - [ ] Implement scored standalone `mdx-rust eval`
-- [ ] Prepare crates.io packaging or a documented GitHub-install release flow
+- [x] Document GitHub-install beta release flow
+- [ ] Decide crates.io packaging path for GA
 - [ ] Add richer native Rust harness support beyond process execution
 - [ ] Broaden edit strategies beyond prompt and common echo fallback patches
 - [ ] Add CI smoke coverage for the README quickstart

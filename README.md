@@ -97,7 +97,7 @@ v1 is deliberately conservative:
 - Current edit strategies cover prompts and common echo-style fallback behavior.
 - `eval` can load and hash datasets, but scored standalone evaluation is still being built.
 - Native Rust contracts currently execute through the process harness; richer in-process harnesses are future work.
-- crates.io packaging is pending, so install from GitHub for now.
+- crates.io packaging is pending, so install from GitHub for now. See [RELEASE.md](./RELEASE.md).
 
 ## Status
 

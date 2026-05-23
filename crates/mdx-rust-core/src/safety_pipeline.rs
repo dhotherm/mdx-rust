@@ -148,8 +148,17 @@ async fn execute_candidate_edit_inner(
     }
 
     let wt_name = format!("opt-{}-{}", context.iteration, context.candidate_index);
-    let validation_result =
-        mdx_rust_analysis::editing::apply_and_validate(&agent.path, edit, &wt_name);
+    let Some(validation_budget) =
+        remaining_budget(deadline_start, context.config.candidate_timeout)
+    else {
+        return timed_out_outcome(context.config.candidate_timeout, hook_decisions);
+    };
+    let validation_result = mdx_rust_analysis::editing::apply_and_validate_with_budget(
+        &agent.path,
+        edit,
+        &wt_name,
+        validation_budget,
+    );
 
     let Ok(validation) = validation_result else {
         if !context.config.quiet {
@@ -159,6 +168,7 @@ async fn execute_candidate_edit_inner(
     };
     if !validation.passed {
         let validation_commands = validation.command_records;
+        let validation_timed_out = validation_commands.iter().any(|record| record.timed_out);
         let decision = evaluate_builtin_hook(
             context.config.hook_policy,
             &HookContext {
@@ -177,6 +187,7 @@ async fn execute_candidate_edit_inner(
         }
         return CandidateExecutionOutcome {
             validation_commands,
+            timed_out: validation_timed_out,
             ..CandidateExecutionOutcome::empty(
                 format!(
                     " (validation rejected candidate: {})",
@@ -357,10 +368,16 @@ async fn execute_candidate_edit_inner(
         };
     }
 
-    let final_report = mdx_rust_analysis::editing::validate_build_detailed(&agent.path);
+    let final_budget = remaining_budget(deadline_start, context.config.candidate_timeout)
+        .unwrap_or_else(|| Duration::from_secs(0));
+    let final_report =
+        mdx_rust_analysis::editing::validate_build_detailed_with_budget(&agent.path, final_budget);
     let final_ok = final_report.passed;
     let final_validation_commands = final_report.command_records;
-    if deadline_start.elapsed() >= context.config.candidate_timeout {
+    let final_validation_timed_out = final_validation_commands
+        .iter()
+        .any(|record| record.timed_out);
+    if deadline_start.elapsed() >= context.config.candidate_timeout || final_validation_timed_out {
         let rollback_result = mdx_rust_analysis::editing::restore_file(&snapshot);
         let rollback_error = rollback_result.as_ref().err().map(ToString::to_string);
         let rollback_succeeded = rollback_result.is_ok();
@@ -459,6 +476,12 @@ fn timed_out_outcome(
     }
 }
 
+fn remaining_budget(start: Instant, total: Duration) -> Option<Duration> {
+    total
+        .checked_sub(start.elapsed())
+        .filter(|remaining| !remaining.is_zero())
+}
+
 fn ensure_single_file_patch_scope(agent_root: &Path, edit: &ProposedEdit) -> anyhow::Result<()> {
     let expected = if edit.file.is_absolute() {
         edit.file.strip_prefix(agent_root).map_err(|_| {
@@ -469,27 +492,70 @@ fn ensure_single_file_patch_scope(agent_root: &Path, edit: &ProposedEdit) -> any
     };
 
     for line in edit.patch.lines() {
-        let Some(path) = line
-            .strip_prefix("+++ b/")
-            .or_else(|| line.strip_prefix("--- a/"))
-        else {
-            continue;
-        };
+        for path in diff_paths_from_line(line) {
+            if path == "/dev/null" {
+                continue;
+            }
 
-        if path == "/dev/null" {
-            continue;
-        }
-
-        if Path::new(path) != expected {
-            anyhow::bail!(
-                "patch touches {}, but ProposedEdit.file is {}",
-                path,
-                expected.display()
-            );
+            if Path::new(&path) != expected {
+                anyhow::bail!(
+                    "patch touches {}, but ProposedEdit.file is {}",
+                    path,
+                    expected.display()
+                );
+            }
         }
     }
 
     Ok(())
+}
+
+fn diff_paths_from_line(line: &str) -> Vec<String> {
+    if let Some(path) = line
+        .strip_prefix("+++ ")
+        .or_else(|| line.strip_prefix("--- "))
+    {
+        return normalize_diff_path(path).into_iter().collect();
+    }
+
+    if let Some(rest) = line.strip_prefix("diff --git ") {
+        return rest
+            .split_whitespace()
+            .filter_map(normalize_diff_path)
+            .collect();
+    }
+
+    for prefix in ["rename from ", "rename to ", "copy from ", "copy to "] {
+        if let Some(path) = line.strip_prefix(prefix) {
+            return normalize_diff_path(path).into_iter().collect();
+        }
+    }
+
+    if let Some(rest) = line.strip_prefix("Binary files ") {
+        if let Some((left, right_with_suffix)) = rest.split_once(" and ") {
+            let right = right_with_suffix
+                .strip_suffix(" differ")
+                .unwrap_or(right_with_suffix);
+            return [left, right]
+                .into_iter()
+                .filter_map(normalize_diff_path)
+                .collect();
+        }
+    }
+
+    Vec::new()
+}
+
+fn normalize_diff_path(raw: &str) -> Option<String> {
+    let path = raw.trim().trim_matches('"');
+    if path == "/dev/null" {
+        return Some(path.to_string());
+    }
+
+    path.strip_prefix("a/")
+        .or_else(|| path.strip_prefix("b/"))
+        .or(Some(path))
+        .map(str::to_string)
 }
 
 async fn evaluate_workspace(
@@ -728,6 +794,64 @@ fn main() {
             std::fs::read_to_string(agent.path.join("src/main.rs")).unwrap(),
             before
         );
+    }
+
+    #[tokio::test]
+    async fn diff_git_scope_mismatch_is_rejected_before_validation() {
+        let (_dir, agent) = write_temp_agent(false);
+        let policy = HookPolicy::default();
+        let edit = ProposedEdit {
+            file: agent.path.join("src/main.rs"),
+            description: "bad diff header".to_string(),
+            patch: "diff --git a/src/main.rs b/src/lib.rs\n--- a/src/main.rs\n+++ b/src/lib.rs\n@@ -1,1 +1,1 @@\n-a\n+b\n".to_string(),
+        };
+
+        let outcome = execute_candidate_edit(CandidateExecutionContext {
+            agent: &agent,
+            config: execution_config(&policy),
+            iteration: 0,
+            candidate_index: 0,
+            edit: &edit,
+            test_inputs: &[serde_json::json!({"query":"hi"})],
+            holdout_inputs: &[],
+            baseline_score: 0.40,
+            scorer: mechanical_score,
+        })
+        .await;
+
+        assert_eq!(outcome.validated, 0);
+        assert_eq!(outcome.landed, 0);
+        assert_eq!(outcome.accepted, 0);
+        assert!(outcome.note.contains("edit scope rejected"));
+    }
+
+    #[tokio::test]
+    async fn rename_scope_mismatch_is_rejected_before_validation() {
+        let (_dir, agent) = write_temp_agent(false);
+        let policy = HookPolicy::default();
+        let edit = ProposedEdit {
+            file: agent.path.join("src/main.rs"),
+            description: "bad rename".to_string(),
+            patch: "diff --git a/src/main.rs b/src/lib.rs\nsimilarity index 100%\nrename from src/main.rs\nrename to src/lib.rs\n".to_string(),
+        };
+
+        let outcome = execute_candidate_edit(CandidateExecutionContext {
+            agent: &agent,
+            config: execution_config(&policy),
+            iteration: 0,
+            candidate_index: 0,
+            edit: &edit,
+            test_inputs: &[serde_json::json!({"query":"hi"})],
+            holdout_inputs: &[],
+            baseline_score: 0.40,
+            scorer: mechanical_score,
+        })
+        .await;
+
+        assert_eq!(outcome.validated, 0);
+        assert_eq!(outcome.landed, 0);
+        assert_eq!(outcome.accepted, 0);
+        assert!(outcome.note.contains("edit scope rejected"));
     }
 
     #[tokio::test]

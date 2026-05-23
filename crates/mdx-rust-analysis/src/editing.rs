@@ -326,7 +326,11 @@ pub fn validate_build(dir: &Path) -> (bool, String) {
 }
 
 pub fn validate_build_detailed(dir: &Path) -> ValidationReport {
-    const CARGO_TIMEOUT: Duration = Duration::from_secs(90);
+    validate_build_detailed_with_budget(dir, Duration::from_secs(180))
+}
+
+pub fn validate_build_detailed_with_budget(dir: &Path, budget: Duration) -> ValidationReport {
+    let started = Instant::now();
 
     fn run_cargo_with_timeout(
         dir: &Path,
@@ -349,7 +353,37 @@ pub fn validate_build_detailed(dir: &Path) -> ValidationReport {
             &["clippy", "--", "-D", "warnings"][..],
         ),
     ] {
-        if let Some(result) = run_cargo_with_timeout(dir, args, CARGO_TIMEOUT) {
+        let Some(remaining) = budget.checked_sub(started.elapsed()) else {
+            output.push_str(&format!("[{label} skipped: validation budget exhausted]\n"));
+            success = false;
+            command_records.push(ValidationCommandRecord {
+                command: label.to_string(),
+                success: false,
+                timed_out: true,
+                status_code: None,
+                duration_ms: started.elapsed().as_millis() as u64,
+                stdout: String::new(),
+                stderr: "validation budget exhausted before command started".to_string(),
+            });
+            continue;
+        };
+
+        if remaining.is_zero() {
+            output.push_str(&format!("[{label} skipped: validation budget exhausted]\n"));
+            success = false;
+            command_records.push(ValidationCommandRecord {
+                command: label.to_string(),
+                success: false,
+                timed_out: true,
+                status_code: None,
+                duration_ms: started.elapsed().as_millis() as u64,
+                stdout: String::new(),
+                stderr: "validation budget exhausted before command started".to_string(),
+            });
+            continue;
+        }
+
+        if let Some(result) = run_cargo_with_timeout(dir, args, remaining) {
             output.push_str(&result.combined_output());
             if !result.success() {
                 success = false;
@@ -525,10 +559,19 @@ pub fn apply_and_validate(
     edit: &ProposedEdit,
     name: &str,
 ) -> anyhow::Result<ValidationResult> {
+    apply_and_validate_with_budget(agent_path, edit, name, Duration::from_secs(180))
+}
+
+pub fn apply_and_validate_with_budget(
+    agent_path: &Path,
+    edit: &ProposedEdit,
+    name: &str,
+    validation_budget: Duration,
+) -> anyhow::Result<ValidationResult> {
     let isolated = create_isolated_workspace(agent_path, name)?;
     apply_edit(agent_path, &isolated, edit)?;
 
-    let report = validate_build_detailed(&isolated);
+    let report = validate_build_detailed_with_budget(&isolated, validation_budget);
 
     cleanup_isolated_workspace(agent_path, &isolated);
 
@@ -770,5 +813,23 @@ mod tests {
             .command_records
             .iter()
             .all(|record| record.duration_ms > 0));
+    }
+
+    #[test]
+    fn validate_build_budget_exhaustion_records_timeout() {
+        let src = tempdir().unwrap();
+        fs::create_dir_all(src.path().join("src")).unwrap();
+        fs::write(src.path().join("src/main.rs"), "fn main() {}").unwrap();
+        fs::write(
+            src.path().join("Cargo.toml"),
+            "[package]\nname=\"t\"\nversion=\"0.1.0\"\nedition=\"2021\"",
+        )
+        .unwrap();
+
+        let report = validate_build_detailed_with_budget(src.path(), Duration::from_secs(0));
+
+        assert!(!report.passed);
+        assert_eq!(report.command_records.len(), 2);
+        assert!(report.command_records.iter().all(|record| record.timed_out));
     }
 }

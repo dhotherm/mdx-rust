@@ -339,7 +339,9 @@ pub async fn run_optimization(
             scores: scores_this_iter.clone(),
         };
 
-        let diagnosis = llm.diagnose(diag_req).await.ok();
+        let diagnosis_result = llm.diagnose(diag_req).await;
+        let diagnosis_model_used = diagnosis_result.is_ok();
+        let diagnosis = diagnosis_result.ok();
 
         let mut candidates = vec![];
         let mut accepted = 0;
@@ -518,7 +520,7 @@ pub async fn run_optimization(
             policy_path: policy_info
                 .as_ref()
                 .map(|policy| policy.path.display().to_string()),
-            model: Some(llm.provenance(std::env::var("OPENAI_API_KEY").is_ok())),
+            model: Some(llm.provenance(diagnosis_model_used)),
             rollback_succeeded: accepted_rollback_succeeded,
             rollback_error: accepted_rollback_error,
             candidate_timed_out: any_candidate_timed_out,
