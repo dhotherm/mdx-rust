@@ -312,7 +312,7 @@ pub async fn run_optimization(
                 ));
 
                 // Try to capture a real diff of the main change for the report
-                if let Ok(original) = std::fs::read_to_string(&agent.path.join("src/main.rs")) {
+                if std::fs::read_to_string(&agent.path.join("src/main.rs")).is_ok() {
                     // We already applied, so we can't easily get the old version here.
                     // In a more advanced version we would snapshot before applying.
                     report.push_str("  (Change persisted to src/main.rs)\n");

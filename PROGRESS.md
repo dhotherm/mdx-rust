@@ -73,6 +73,8 @@
 - [x] First real integration test for the full optimizer (temp minimal agent → full diagnosis + editing cycle).
 - [x] CI workflow added: build + test + clippy -D warnings + fmt on every push/PR.
 - The project is now in a strong, testable, CI-ready state with a working end-to-end optimization loop, rich analysis, structured LLM suggestions, review support, and safe mutation isolation.
+- [x] Example dogfooding now shows dramatic, measurable improvement (weak echo → reasoned answers, score 0.35 → 0.95 after optimizer run).
+- [x] Richer human-readable experiment reports with candidate details.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI

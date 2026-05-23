@@ -43,7 +43,6 @@ pub fn find_run_agent_functions(source: &str) -> Vec<AgentEntrypoint> {
     let root = tree.root_node();
 
     for node in root.children(&mut root.walk()) {
-        let _cursor = node.walk(); // keep for future tree-sitter expansion
         if node.kind() == "function_item" {
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = name_node.utf8_text(source.as_bytes()).unwrap_or("");
@@ -69,7 +68,7 @@ pub fn find_preambles(source: &str, file_path: &Path) -> Vec<ExtractedPrompt> {
     // Tree-sitter walk for call expressions containing "preamble"
     if let Some(tree) = parse_rust_source(source) {
         let root = tree.root_node();
-        let mut cursor = root.walk();
+        let cursor = root.walk();
 
         fn walk(node: tree_sitter::Node, source: &str, file_path: &Path, prompts: &mut Vec<ExtractedPrompt>) {
             if node.kind() == "call_expression" {
