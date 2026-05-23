@@ -64,9 +64,11 @@ truth for `v0.5.0` release validation.
   proofs.
 - Do not imply `improve` applies changes unless `--apply` is passed.
 - Do not imply `plan` applies refactors or proves semver compatibility.
+- Do not imply `apply-plan` executes every refactor candidate. In v0.5 it only
+  executes supported low-risk candidates and rejects stale plans.
 
 The honest public phrase for `v0.5.0` is:
 
-> A safety-first public beta for plan-first Rust refactoring, policy and
-> behavior-gated hardening, validation gates, transaction rollback, and
-> versioned provenance.
+> A safety-first public beta for guardrailed Rust refactoring, with executable
+> low-risk plan candidates, stale-plan rejection, policy and behavior-gated
+> hardening, validation gates, transaction rollback, and versioned provenance.

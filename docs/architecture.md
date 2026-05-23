@@ -108,20 +108,26 @@ future work.
 
 ## v0.5 Refactor Planning
 
-`v0.5` adds a plan-first refactoring path. It deliberately does not introduce a
-new mutation pathway.
+`v0.5` adds a plan-first refactoring path and a narrow execution pathway for
+approved low-risk candidates. It does not introduce broad autonomous
+refactoring.
 
 1. Scan the requested file, directory, or workspace.
 2. Summarize file size, function count, largest function size, test presence,
    public items, and module or use edges.
 3. Reuse hardening analysis to identify patchable high-confidence candidates.
 4. Build a risk summary and candidate list.
-5. Persist a versioned plan under `.mdx-rust/plans/`.
+5. Snapshot source file hashes and persist a versioned plan under
+   `.mdx-rust/plans/`.
 6. Print human output or emit the same plan as JSON.
 
-Patchable plan candidates point back to `mdx-rust improve --apply`, which means
-the existing hardening transaction remains responsible for real edits,
-validation, optional behavior eval gates, final validation, and rollback.
+`mdx-rust apply-plan` reads a saved plan, verifies source snapshot hashes, finds
+the requested candidate, and either reviews or applies it. Executable v0.5
+candidates are deliberately narrow: contextual error hardening candidates are
+routed through the existing hardening engine. That keeps real edits,
+validation, optional behavior eval gates, final validation, and rollback in one
+place.
+
 Plan-only candidates such as extracting a function, splitting a module, or
-reviewing public API pressure are intentionally human-reviewed design work in
-`v0.5`.
+reviewing public API pressure are still human-reviewed design work in `v0.5`.
+Public API-impacting candidates require explicit allowance before execution.

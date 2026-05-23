@@ -61,12 +61,14 @@ Behavior and policy-driven improvement for Rust services.
 
 Guardrailed Rust refactoring assistant with impact analysis.
 
-- Plan-first workflow: `mdx-rust plan`, human review, then existing safe
-  mutation paths such as `mdx-rust improve --apply`.
+- Plan-first workflow: `mdx-rust plan`, human review, then
+  `mdx-rust apply-plan` for supported low-risk candidates.
 - Crate/module graph, touched-area model, and public API impact detection.
 - Safe refactor recipe candidates such as extract function, split oversized
   module, consolidate error handling, isolate boundary validation, and apply
   patchable hardening.
+- Stale-plan rejection through source snapshot hashes, plan hashes, and
+  candidate hashes.
 - Public API protection through semver and public API checks where applicable.
 - Versioned refactor plan artifacts with plan hashes, required gates, risk
   summaries, and explicit non-goals.

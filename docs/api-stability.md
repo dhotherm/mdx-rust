@@ -13,6 +13,7 @@ For `0.5.x`, the supported product surface is:
 - Versioned hardening report schemas.
 - Versioned behavior eval report and project policy schemas.
 - Versioned refactor plan schemas.
+- Versioned refactor apply-run schemas.
 
 The published library crates are intentionally unstable:
 
@@ -46,6 +47,7 @@ Automation should prefer:
 - Versioned audit packet JSON.
 - Versioned hardening report JSON.
 - Versioned refactor plan JSON.
+- Versioned refactor apply-run JSON.
 
 ## Strategy Interfaces
 
@@ -55,5 +57,7 @@ bounded transaction path for scoped module hardening and requires validation,
 optional behavior evals, and final validation before reporting applied success.
 
 Refactor planning records are stable enough for CLI automation through
-`mdx-rust plan --json` and `mdx-rust schema refactor-plan --json`. The Rust
-types and module paths that produce those records remain unstable before `1.0`.
+`mdx-rust plan --json`, `mdx-rust apply-plan --json`,
+`mdx-rust schema refactor-plan --json`, and
+`mdx-rust schema refactor-apply-run --json`. The Rust types and module paths
+that produce those records remain unstable before `1.0`.

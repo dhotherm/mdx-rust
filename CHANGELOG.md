@@ -11,15 +11,20 @@ Plan-first guardrailed refactoring for Rust crates and service modules.
 - `mdx-rust plan [target]` for refactor impact analysis without mutating the
   workspace.
 - Versioned refactor plan artifacts under `.mdx-rust/plans/`.
+- `mdx-rust apply-plan <plan> --candidate <id>` for reviewing or applying
+  executable low-risk plan candidates.
 - Refactor impact summaries for scanned files, module edges, public API
   pressure, long functions, large files, and patchable hardening candidates.
+- Source snapshot hashes, plan hashes, and candidate hashes for stale-plan
+  rejection.
 - Plan candidates that route safe patchable work back through
   `mdx-rust improve --apply` instead of creating a second mutation path.
-- JSON Schema export for `refactor-plan`.
+- JSON Schema export for `refactor-plan` and `refactor-apply-run`.
 - Refactor analysis in `mdx-rust-analysis` for public items, module edges, file
   size, function count, test presence, and largest function size.
-- CLI integration tests proving `plan --json` is machine parseable and does not
-  mutate source files.
+- CLI integration tests proving `plan --json` is machine parseable, does not
+  mutate source files, can execute approved plan candidates, and rejects stale
+  plans.
 
 ### Changed
 
@@ -35,6 +40,8 @@ Plan-first guardrailed refactoring for Rust crates and service modules.
 - Plan candidates are intentionally conservative and heuristic.
 - Patchable candidates still use the existing hardening engine and transaction
   safety gates.
+- `apply-plan` only executes supported low-risk candidates in v0.5; plan-only
+  structural candidates remain review artifacts.
 - Public API impact detection is source-level analysis, not a semver proof.
 
 ## 0.4.0 - 2026-05-23

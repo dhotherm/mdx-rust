@@ -15,8 +15,8 @@ mdx-rust schema audit-packet --json
 ```
 
 Other exported schemas include `candidate`, `optimization-run`,
-`hook-decision`, `trace-event`, `hardening-run`, `hardening-finding`, and
-`refactor-plan`.
+`hook-decision`, `trace-event`, `hardening-run`, `hardening-finding`,
+`refactor-plan`, and `refactor-apply-run`.
 
 ## Required Fields
 
@@ -139,6 +139,7 @@ Refactor plans record:
 - workspace root and target
 - optional policy path and content hash
 - optional behavior eval spec path
+- plan hash and source snapshot hashes
 - file and module scan counts
 - public API pressure
 - patchable hardening candidate counts
@@ -147,13 +148,25 @@ Refactor plans record:
 - candidate recipe, risk, status, rationale, touched files, and optional apply
   command
 
-A refactor plan is not acceptance evidence. It is a review artifact. Patchable
-commands in the plan must still go through `mdx-rust improve --apply`, and
-future plan application commands must re-run safety gates rather than trusting
-stale plan output.
+A refactor plan is not acceptance evidence. It is a review artifact.
+`mdx-rust apply-plan` must verify source snapshot hashes before it can execute
+an approved candidate. Executable v0.5 candidates still go through
+`mdx-rust improve`, and future broader plan application commands must re-run
+safety gates rather than trusting stale plan output.
+
+Apply-plan reports record:
+
+- plan id and plan hash
+- candidate id and candidate hash
+- review or apply mode
+- stale file evidence when hashes do not match
+- public API impact allowance
+- embedded hardening run when an executable candidate is reviewed or applied
+- final status: reviewed, applied, rejected, stale, or unsupported
 
 Print the refactor plan schema with:
 
 ```bash
 mdx-rust schema refactor-plan --json
+mdx-rust schema refactor-apply-run --json
 ```

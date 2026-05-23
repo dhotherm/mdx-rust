@@ -138,6 +138,10 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     let plan = assert_machine_pure_json(&["schema", "refactor-plan", "--json"]);
     assert_eq!(plan["title"], "RefactorPlan");
     assert!(plan["properties"]["plan_id"].is_object());
+
+    let apply_plan = assert_machine_pure_json(&["schema", "refactor-apply-run", "--json"]);
+    assert_eq!(apply_plan["title"], "RefactorApplyRun");
+    assert!(apply_plan["properties"]["candidate_id"].is_object());
 }
 
 #[test]
@@ -295,6 +299,218 @@ anyhow = "1"
         .as_str()
         .expect("plan should persist artifact");
     assert!(std::path::Path::new(artifact_path).exists());
+}
+
+#[test]
+fn apply_plan_json_mode_reviews_then_applies_executable_candidate() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-apply-plan-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let plan = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
+    let artifact_path = plan["artifact_path"]
+        .as_str()
+        .expect("plan should persist artifact");
+    let candidate_id = plan["candidates"]
+        .as_array()
+        .expect("candidate array")
+        .iter()
+        .find(|candidate| candidate["status"] == "ApplyViaImprove")
+        .and_then(|candidate| candidate["id"].as_str())
+        .expect("executable candidate");
+
+    let reviewed = assert_machine_pure_json_in(
+        &[
+            "apply-plan",
+            artifact_path,
+            "--candidate",
+            candidate_id,
+            "--json",
+        ],
+        dir.path(),
+    );
+    assert_eq!(reviewed["schema_version"], "0.5");
+    assert_eq!(reviewed["status"], "Reviewed");
+    assert_eq!(reviewed["hardening_run"]["outcome"]["status"], "Reviewed");
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+
+    let applied = assert_machine_pure_json_in(
+        &[
+            "apply-plan",
+            artifact_path,
+            "--candidate",
+            candidate_id,
+            "--apply",
+            "--timeout-seconds",
+            "90",
+            "--json",
+        ],
+        dir.path(),
+    );
+    assert_eq!(applied["status"], "Applied");
+    assert_eq!(
+        applied["hardening_run"]["outcome"]["final_validation_passed"],
+        true
+    );
+    let after = std::fs::read_to_string(&lib).unwrap();
+    assert!(after.contains("use anyhow::Context;"));
+    assert!(!after.contains(".unwrap()"));
+}
+
+#[test]
+fn apply_plan_json_mode_rejects_stale_plan() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-stale-plan-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+
+    let plan = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
+    let artifact_path = plan["artifact_path"]
+        .as_str()
+        .expect("plan should persist artifact");
+    let candidate_id = plan["candidates"]
+        .as_array()
+        .expect("candidate array")
+        .iter()
+        .find(|candidate| candidate["status"] == "ApplyViaImprove")
+        .and_then(|candidate| candidate["id"].as_str())
+        .expect("executable candidate");
+
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    Ok("changed after planning".to_string())
+}
+"#,
+    )
+    .unwrap();
+
+    let stale = assert_machine_pure_json_in(
+        &[
+            "apply-plan",
+            artifact_path,
+            "--candidate",
+            candidate_id,
+            "--apply",
+            "--json",
+        ],
+        dir.path(),
+    );
+
+    assert_eq!(stale["status"], "StalePlan");
+    assert_eq!(stale["stale_files"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn apply_plan_json_mode_rejects_tampered_plan_hash() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-tampered-plan-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+
+    let plan = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
+    let artifact_path = plan["artifact_path"]
+        .as_str()
+        .expect("plan should persist artifact");
+    let candidate_id = plan["candidates"]
+        .as_array()
+        .expect("candidate array")
+        .iter()
+        .find(|candidate| candidate["status"] == "ApplyViaImprove")
+        .and_then(|candidate| candidate["id"].as_str())
+        .expect("executable candidate");
+
+    let mut plan_json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(artifact_path).unwrap()).unwrap();
+    plan_json["candidates"][0]["title"] = serde_json::Value::String("tampered".to_string());
+    std::fs::write(
+        artifact_path,
+        serde_json::to_string_pretty(&plan_json).unwrap(),
+    )
+    .unwrap();
+
+    let rejected = assert_machine_pure_json_in(
+        &[
+            "apply-plan",
+            artifact_path,
+            "--candidate",
+            candidate_id,
+            "--apply",
+            "--json",
+        ],
+        dir.path(),
+    );
+
+    assert_eq!(rejected["status"], "Rejected");
+    assert!(rejected["note"]
+        .as_str()
+        .unwrap()
+        .contains("plan hash mismatch"));
 }
 
 #[test]

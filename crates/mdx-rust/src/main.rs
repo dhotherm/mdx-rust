@@ -114,6 +114,28 @@ enum Commands {
         max_files: usize,
     },
 
+    /// Execute an approved candidate from a saved refactor plan
+    ApplyPlan {
+        /// Path to a refactor plan JSON artifact
+        plan: String,
+
+        /// Candidate id from the plan artifact
+        #[arg(long)]
+        candidate: String,
+
+        /// Apply the candidate to the real tree. Without this, review mode is used.
+        #[arg(long)]
+        apply: bool,
+
+        /// Allow execution when the candidate is marked as public API impacting
+        #[arg(long)]
+        allow_public_api_impact: bool,
+
+        /// Validation timeout in seconds
+        #[arg(long, default_value = "180")]
+        timeout_seconds: u64,
+    },
+
     /// Evaluate a registered agent or run behavior evals for the current workspace
     Eval {
         /// Optional agent name. Omit to run workspace behavior evals.
@@ -140,8 +162,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, refactor-plan
-        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "refactor-plan"])]
+        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, refactor-plan, refactor-apply-run
+        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "refactor-plan", "refactor-apply-run"])]
         kind: String,
     },
 
@@ -234,6 +256,25 @@ fn main() {
                 cli.json,
             ) {
                 emit_error(cli.json, "plan", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::ApplyPlan {
+            plan,
+            candidate,
+            apply,
+            allow_public_api_impact,
+            timeout_seconds,
+        } => {
+            if let Err(e) = cmd_apply_plan(
+                &plan,
+                &candidate,
+                apply,
+                allow_public_api_impact,
+                timeout_seconds,
+                cli.json,
+            ) {
+                emit_error(cli.json, "apply-plan", &e);
                 std::process::exit(1);
             }
         }
@@ -1077,6 +1118,63 @@ fn cmd_plan(
     Ok(())
 }
 
+fn cmd_apply_plan(
+    plan_path: &str,
+    candidate_id: &str,
+    apply: bool,
+    allow_public_api_impact: bool,
+    timeout_seconds: u64,
+    json: bool,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let run = mdx_rust_core::apply_refactor_plan_candidate(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::RefactorApplyConfig {
+            plan_path: std::path::PathBuf::from(plan_path),
+            candidate_id: candidate_id.to_string(),
+            apply,
+            allow_public_api_impact,
+            validation_timeout: std::time::Duration::from_secs(timeout_seconds),
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&run)?);
+        return Ok(());
+    }
+
+    println!(
+        "🧰 mdx-rust apply-plan — {}",
+        if apply { "apply" } else { "review" }
+    );
+    println!("   Plan: {}", run.plan_id);
+    println!("   Candidate: {}", run.candidate_id);
+    println!("   Status: {:?}", run.status);
+    println!("   Note: {}", run.note);
+    if !run.stale_files.is_empty() {
+        println!("   Stale files:");
+        for stale in &run.stale_files {
+            println!(
+                "   - {} expected {} but found {}",
+                stale.file, stale.expected_hash, stale.actual_hash
+            );
+        }
+    }
+    if let Some(hardening) = &run.hardening_run {
+        println!("   Hardening status: {:?}", hardening.outcome.status);
+        println!("   Proposed changes: {}", hardening.changes.len());
+        println!("   Applied: {}", hardening.outcome.applied);
+    }
+    if let Some(path) = &run.artifact_path {
+        println!("   Report: {}", path);
+    }
+
+    Ok(())
+}
+
 fn cmd_audit(name: Option<&str>, policy: Option<&str>, json: bool) -> anyhow::Result<()> {
     let Some(name) = name else {
         return cmd_workspace_audit(policy, json);
@@ -1187,6 +1285,9 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         }
         "refactor-plan" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorPlan))?
+        }
+        "refactor-apply-run" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorApplyRun))?
         }
         other => anyhow::bail!("unknown schema kind: {other}"),
     };

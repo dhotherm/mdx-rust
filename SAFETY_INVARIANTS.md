@@ -70,8 +70,13 @@ the user's source tree.
   hardening candidates, but that command remains the mutation boundary.
 - A refactor plan is not validation evidence and does not increment any
   accepted, landed, applied, or validated counters.
-- A future command that applies a plan must re-run the appropriate safety
-  pipeline or hardening transaction. It must not trust stale plan evidence.
+- `mdx-rust apply-plan` must reject stale source snapshots before executing a
+  candidate.
+- `mdx-rust apply-plan` may execute only candidates marked as executable for
+  v0.5. Today that means contextual error hardening routed through
+  `mdx-rust improve`.
+- `mdx-rust apply-plan` must re-run the appropriate safety pipeline or
+  hardening transaction. It must not trust stale plan evidence.
 - Broad multi-file refactors require explicit transaction design, plan hashes,
   rollback evidence, and dedicated invariant tests before they can apply.
 
@@ -82,6 +87,8 @@ the user's source tree.
 - Ledgers are records only. A `PromptVariantRecord` means "considered", not "validated", "landed", or "accepted".
 - Refactor plans are records only. A `RefactorPlan` means "reviewed candidate
   areas", not "validated", "applied", "landed", or "accepted".
+- Refactor apply reports are records of an attempted plan execution. They must
+  include stale-plan status when source snapshots do not match.
 - The safety pipeline must keep stage-specific internal records for scoped,
   isolated-validated, and net-positive edits. A raw `ProposedEdit` is never
   enough to land or accept a change.
@@ -148,6 +155,10 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
   is machine parseable.
 - At least one CLI integration test proves refactor plan JSON output is machine
   parseable and does not mutate the source tree.
+- At least one CLI integration test proves `apply-plan` can review and apply an
+  executable candidate through hardening gates.
+- At least one CLI integration test proves `apply-plan` rejects stale source
+  snapshots before mutation.
 
 The current invariant tests live primarily in:
 

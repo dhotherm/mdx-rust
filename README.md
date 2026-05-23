@@ -22,8 +22,9 @@ installation and inspection, but their APIs remain unstable before `1.0`.
 dogfooding on Rust agent crates, but it is intentionally conservative. In
 plain terms: `v0.5` is good at review-first, safety-gated hardening of scoped
 Rust modules, simple policy mapping, deterministic behavior evals, plan-first
-refactor impact analysis, and the existing agent prompt/fallback optimizer. It
-is not a general autonomous refactoring engine yet.
+refactor impact analysis, approved plan execution for low-risk candidates, and
+the existing agent prompt/fallback optimizer. It is not a general autonomous
+refactoring engine yet.
 
 Today it supports:
 
@@ -37,6 +38,9 @@ Today it supports:
 - Repo doctor risk summaries with prioritized next actions.
 - Plan-first refactor impact analysis with public API, module edge, long
   function, large file, and patchable hardening candidates.
+- `apply-plan` execution for approved low-risk refactor candidates, with stale
+  source snapshot rejection and all real edits routed through hardening
+  transactions.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -51,7 +55,8 @@ Today it supports:
 Not yet supported:
 
 - Arbitrary multi-file accepted edits outside the hardening transaction model.
-- General autonomous refactoring or direct application of refactor plans.
+- General autonomous refactoring.
+- Direct application of stale plans or plan-only/high-risk candidates.
 - Stable library APIs.
 - Coverage, mutation testing, or full semantic behavior proofs.
 - External hook runners.
@@ -87,9 +92,11 @@ requires `--apply` before touching the real tree. In `v0.5`, passing
 isolated workspace and again after final application.
 
 The refactor path is plan-first by design. `mdx-rust plan` never edits files.
-It writes a versioned plan artifact, classifies candidate risk, surfaces public
-API impact, and points patchable candidates back to `mdx-rust improve --apply`
-so all mutations still pass the existing hardening transaction gates.
+It writes a versioned plan artifact, classifies candidate risk, snapshots source
+hashes, surfaces public API impact, and identifies which candidates are
+executable. `mdx-rust apply-plan` can review or execute approved low-risk
+candidates, but it rejects stale source snapshots and still routes real edits
+through the existing hardening transaction gates.
 
 ## Quick Start
 
@@ -133,6 +140,8 @@ mdx-rust audit --policy policies/backend-safety.md
 mdx-rust eval --spec .mdx-rust/evals.json
 mdx-rust improve src/api/config.rs
 mdx-rust plan src/api
+mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate <id>
+mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate <id> --apply
 mdx-rust improve src/api/config.rs --eval-spec .mdx-rust/evals.json --apply
 ```
 
@@ -157,6 +166,8 @@ mdx-rust audit my-agent
 mdx-rust improve src/lib.rs
 mdx-rust plan src/lib.rs
 mdx-rust plan src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
+mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate plan-hardening-src-lib-rs-2
+mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate plan-hardening-src-lib-rs-2 --apply
 mdx-rust improve src/lib.rs --eval-spec .mdx-rust/evals.json --apply
 mdx-rust eval --spec .mdx-rust/evals.json
 mdx-rust eval my-agent --dataset .mdx-rust/agents/my-agent/dataset.json
@@ -166,6 +177,7 @@ mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
 mdx-rust schema project-policy --json
 mdx-rust schema refactor-plan --json
+mdx-rust schema refactor-apply-run --json
 ```
 
 Every command intended for automation supports `--json`.
@@ -194,9 +206,12 @@ transaction status, rollback status, policy matches, behavior eval outcomes,
 and workspace metadata.
 
 `v0.5` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
-with impact summaries, public API pressure, module edges, required gates,
-policy/eval references, and candidate actions. Plan artifacts are evidence for
-review and orchestration; they are not proof that a change has been applied.
+with impact summaries, source snapshot hashes, public API pressure, module
+edges, required gates, policy/eval references, and candidate actions. Plan
+artifacts are evidence for review and orchestration; they are not proof that a
+change has been applied. `apply-plan` reports are also written under
+`.mdx-rust/plans/` and record whether the candidate was reviewed, applied,
+rejected, stale, or unsupported.
 
 Print the current JSON Schemas with:
 
@@ -205,6 +220,7 @@ mdx-rust schema audit-packet --json
 mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
 mdx-rust schema refactor-plan --json
+mdx-rust schema refactor-apply-run --json
 ```
 
 ## API Stability
@@ -247,9 +263,9 @@ guessing which checks matter.
 
 ## Status
 
-`v0.5.0` is in development as the first plan-first guardrailed refactoring
-release. It adds impact analysis and refactor plans without granting autonomous
-multi-file rewrite authority.
+`v0.5.0` is in development as the first guardrailed refactoring release. It adds
+impact analysis, stale-plan-resistant plan execution for low-risk candidates,
+and keeps broader refactors behind explicit review and future transaction work.
 
 ## License
 
