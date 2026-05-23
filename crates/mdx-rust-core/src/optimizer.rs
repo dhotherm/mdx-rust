@@ -225,6 +225,8 @@ pub async fn run_optimization(
                 let main_rs = std::fs::read_to_string(&main_rs_path).unwrap_or_default();
                 let _before_snapshot = main_rs.clone(); // captured for future rich diff in reports
 
+                // The concrete improvement text can be driven by the candidate in future;
+                // for now this is the default "strengthen reasoning" improvement for system_prompt candidates.
                 let old_preamble = "You are a concise, helpful assistant. Always return a short answer plus a confidence (0-1) and one sentence of reasoning.";
                 let new_preamble = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
 
@@ -245,9 +247,7 @@ pub async fn run_optimization(
                 if let Ok(val) = validation_result {
                     if val.passed {
                         if !config.quiet {
-                            if !config.quiet {
-                                println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
-                            }
+                            println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
                         }
 
                         if !config.review_before_apply {
@@ -257,9 +257,7 @@ pub async fn run_optimization(
                             accepted = 1;
                             accepted_diff = Some(edit.patch.clone());
                             if !config.quiet {
-                                if !config.quiet {
-                                    println!("     [Validated] Change passed all gates in isolated workspace. Ready to land.");
-                                }
+                                println!("     [Validated] Change passed all gates in isolated workspace. Ready to land.");
                             }
                         } else {
                             // Review mode: validated in isolation, but we do not apply.
@@ -277,6 +275,9 @@ pub async fn run_optimization(
             }
         } else {
             accepted = 1;
+            if !config.quiet {
+                // Note: this is internal; the final output is controlled by CLI
+            }
             notes.push_str(" → No new candidates — keeping current behavior");
         }
 

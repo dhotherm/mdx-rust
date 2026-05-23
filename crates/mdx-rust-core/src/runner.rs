@@ -10,11 +10,21 @@ use std::time::Instant;
 use tracing::{info, warn};
 
 /// A single trace event captured during an agent run.
+/// Made first-class for trace-to-patch optimization (per handoff).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraceEvent {
     pub timestamp_ms: u64,
     pub event_type: String, // "llm_call", "tool_call", "error", "decision", etc.
     pub data: serde_json::Value,
+    // Future span fields for richer tracing
+    #[serde(default)]
+    pub span_id: Option<String>,
+    #[serde(default)]
+    pub parent_span_id: Option<String>,
+    #[serde(default)]
+    pub latency_ms: Option<u64>,
+    #[serde(default)]
+    pub token_usage: Option<serde_json::Value>, // {prompt: , completion: , total: }
 }
 
 /// The result of running an agent on a single input, including traces.
@@ -52,6 +62,10 @@ pub async fn run_agent(
                     "success": result.success,
                     "duration_ms": result.duration_ms
                 }),
+                span_id: None,
+                parent_span_id: None,
+                latency_ms: Some(result.duration_ms),
+                token_usage: None,
             });
 
             if !result.success {

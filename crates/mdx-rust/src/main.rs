@@ -499,6 +499,11 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
         .get(name)
         .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered", name))?;
 
+    // For pure --json output, suppress tracing INFO logs (only errors)
+    if json {
+        std::env::set_var("RUST_LOG", "error");
+    }
+
     let rt = tokio::runtime::Runtime::new()?;
     let runs = rt.block_on(run_optimization(
         agent,
