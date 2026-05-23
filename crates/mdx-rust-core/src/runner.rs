@@ -37,20 +37,21 @@ async fn run_process_agent(
     agent: &RegisteredAgent,
     input: serde_json::Value,
 ) -> anyhow::Result<AgentRunResult> {
+    tracing::info!(agent = %agent.name, "starting agent run");
     let start = Instant::now();
 
-    // For a directory-based agent, we try `cargo run -q --manifest-path <Cargo.toml> --`
-    // This works well for the rig-minimal-agent example and many simple Rust agents.
-    let manifest = agent.path.join("Cargo.toml");
+    let manifest = agent.path.join("Cargo.toml").canonicalize()?;
     if !manifest.exists() {
-        return Err(anyhow::anyhow!(
-            "Cannot find Cargo.toml at {:?} for Process agent",
-            manifest
-        ));
+        return Err(anyhow::anyhow!("Cannot find Cargo.toml for Process agent"));
     }
 
-    let mut child = Command::new("cargo")
-        .args(["run", "-q", "--manifest-path", manifest.to_str().unwrap(), "--"])
+    let agent_dir = manifest.parent().unwrap().to_path_buf();
+
+    let mut cmd = Command::new("cargo");
+    cmd.current_dir(&agent_dir)
+        .args(["run", "-q", "--manifest-path", manifest.to_str().unwrap(), "--"]);
+
+    let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -67,6 +68,7 @@ async fn run_process_agent(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::warn!(agent = %agent.name, error = %stderr, "agent run failed");
         return Ok(AgentRunResult {
             output: serde_json::json!({"error": stderr.to_string()}),
             duration_ms: duration,
@@ -77,6 +79,8 @@ async fn run_process_agent(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|_| serde_json::json!({"raw": stdout.to_string()}));
+
+    tracing::info!(agent = %agent.name, duration_ms = duration, success = true, "agent run completed");
 
     Ok(AgentRunResult {
         output: parsed,

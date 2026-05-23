@@ -22,18 +22,10 @@ struct AgentOutput {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // This example can be run directly or used as a library.
-    // For mdx-rust registration we will expose a clean function contract.
-
-    if std::env::args().len() > 1 {
-        // Simple CLI mode for manual testing
-        let input: AgentInput = serde_json::from_reader(std::io::stdin())?;
-        let output = run_agent(input).await?;
-        println!("{}", serde_json::to_string_pretty(&output)?);
-    } else {
-        println!("rig-minimal-agent example. Pipe JSON AgentInput to stdin for execution.");
-    }
-
+    // Clean Process contract: always read JSON AgentInput from stdin, write JSON output.
+    let input: AgentInput = serde_json::from_reader(std::io::stdin())?;
+    let output = run_agent(input).await?;
+    println!("{}", serde_json::to_string(&output)?);
     Ok(())
 }
 
@@ -56,7 +48,7 @@ pub async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
             input.context.unwrap_or_default()
         );
 
-        let response = agent.prompt(&prompt).await?;
+        let response = agent.prompt(prompt).await?;
 
         AgentOutput {
             answer: response,
