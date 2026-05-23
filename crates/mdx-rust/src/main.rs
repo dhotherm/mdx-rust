@@ -462,7 +462,8 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
                 println!("       [Candidate {}] {} — {}", i+1, c.focus, c.description);
             }
         }
-        println!("\n(Real LLM diagnosis + safe patch application coming next)");
+        println!("\nArtifacts written under .mdx-rust/agents/{}/experiments/", name);
+        println!("Use `mdx-rust doctor {}` to inspect scope and state.", name);
     }
 
     Ok(())

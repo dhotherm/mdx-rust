@@ -69,7 +69,10 @@
 - [x] `optimize --review` flag wired + review gate implemented. The loop now supports human-in-the-loop: shows proposed change and skips auto-apply when review is requested.
 - [x] First unit tests for the analysis finders (preambles, Rig detection, entrypoints). NativeRust contract detection already prefers real Rig agents with run_agent functions.
 - [x] Unit tests added for mechanical scorer and optimizer config. The project now has real (growing) test coverage on the core optimization and analysis engines.
-- [x] Major safety upgrade: `create_isolated_workspace` now reliably creates either a git worktree or a full filesystem copy (with git init inside). This makes safe editing work for agents that live inside larger monorepos (the common dogfood case) as well as standalone repos. `apply_patch` tries real `git apply` first.
+- [x] Major safety upgrade: `create_isolated_workspace` now reliably creates either a git worktree or a full filesystem copy (with git init inside). Safe editing now works reliably for agents inside monorepos.
+- [x] First real integration test for the full optimizer (temp minimal agent → full diagnosis + editing cycle).
+- [x] CI workflow added: build + test + clippy -D warnings + fmt on every push/PR.
+- The project is now in a strong, testable, CI-ready state with a working end-to-end optimization loop, rich analysis, structured LLM suggestions, review support, and safe mutation isolation.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI
