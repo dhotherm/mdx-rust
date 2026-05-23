@@ -89,8 +89,24 @@ pub async fn run_optimization(
         }
     }
 
-    // Basic experiment recording (persist under agent's dir in real version)
-    // For now we just return the runs; the CLI can decide what to do with them.
+    // Persist this optimization experiment under the agent's directory
+    let experiment_dir = std::env::current_dir()?
+        .join(".mdx-rust")
+        .join("agents")
+        .join(&agent.name)
+        .join("experiments");
+
+    std::fs::create_dir_all(&experiment_dir).ok();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let experiment_file = experiment_dir.join(format!("run-{}.json", timestamp));
+    if let Ok(content) = serde_json::to_string_pretty(&runs) {
+        let _ = std::fs::write(experiment_file, content);
+    }
 
     Ok(runs)
 }
