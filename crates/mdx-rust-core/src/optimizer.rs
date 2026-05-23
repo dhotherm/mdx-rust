@@ -34,6 +34,14 @@ pub struct OptimizationRun {
     pub notes: String,
 }
 
+/// A proposed improvement generated during an optimization iteration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Candidate {
+    pub focus: String,           // e.g. "system_prompt", "tool_descriptions", "reasoning_step"
+    pub description: String,
+    pub expected_improvement: String,
+}
+
 /// Placeholder for the full optimization engine.
 /// In a real implementation this would orchestrate:
 /// - the runner
@@ -68,16 +76,34 @@ pub async fn run_optimization(
         let bundle = mdx_rust_analysis::build_bundle_scope(&agent.path, None).ok();
         let file_count = bundle.as_ref().map(|b| b.optimizable_paths.len()).unwrap_or(0);
 
-        // Smarter (but still simulated) diagnosis using the bundle info
-        let mut accepted = 0;
-        let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle)", avg_score, file_count);
+        // Generate concrete candidates based on diagnosis
+        let candidates = if avg_score <= current_score {
+            vec![
+                Candidate {
+                    focus: "system_prompt".to_string(),
+                    description: "Strengthen the system prompt with explicit reasoning instructions and output format.".to_string(),
+                    expected_improvement: "Reduce echo fallback, increase answer quality.".to_string(),
+                },
+                Candidate {
+                    focus: "reasoning_step".to_string(),
+                    description: "Add an internal 'think step' before producing the final answer.".to_string(),
+                    expected_improvement: "Better calibration and less shallow responses.".to_string(),
+                },
+            ]
+        } else {
+            vec![]
+        };
 
-        if avg_score <= current_score {
-            notes.push_str(" → Diagnosis: Low performance detected. Candidate: Strengthen preamble + add explicit reasoning step before final answer.");
+        let mut accepted = 0;
+        let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle, {} candidates)", avg_score, file_count, candidates.len());
+
+        if !candidates.is_empty() {
+            // In a real version we would validate + apply the best candidate here
+            notes.push_str(&format!(" → Top candidate: {}", candidates[0].focus));
         } else {
             current_score = avg_score;
             accepted = 1;
-            notes.push_str(" → Improvement accepted (simulated)");
+            notes.push_str(" → No new candidates — keeping current behavior");
         }
 
         runs.push(OptimizationRun {
