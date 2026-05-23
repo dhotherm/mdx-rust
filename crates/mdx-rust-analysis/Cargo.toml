@@ -21,7 +21,7 @@ tempfile.workspace = true
 
 # Code analysis
 syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
-tree-sitter = "0.20"
+tree-sitter = "0.22"
 tree-sitter-rust = "0.20"
 
 [dev-dependencies]
