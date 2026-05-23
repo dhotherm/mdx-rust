@@ -39,6 +39,7 @@ pub async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
             .agent("gpt-4o-mini")
             .preamble("You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.")
             .build();
+        // Note: .tool(echo_tool) would be here in a fuller agent — the finder will still detect tool usage patterns in richer code.
 
         let prompt = format!("Query: {}\nContext: {}", input.query, input.context.unwrap_or_default());
         let response = agent.prompt(prompt).await?;
