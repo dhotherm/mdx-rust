@@ -49,8 +49,9 @@ Today it supports:
 - `autopilot` multi-pass orchestration that maps, plans, applies the safe
   queue, replans after mutation, and persists an audit report.
 - `evolve` budget-bounded autonomous improvement for agent callers.
-- Four executable Tier 1 mechanical recipes: contextual error hardening,
-  private borrow parameter tightening, iterator clone cleanup, and
+- Five executable Tier 1 mechanical recipes: contextual error hardening,
+  boundary error context propagation, private borrow parameter tightening,
+  iterator clone cleanup, and
   `#[must_use]` annotations for public value-returning functions.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
@@ -97,6 +98,8 @@ The executable Tier 1 recipe set is now deliberately broader than panic cleanup:
 
 - Replace panic-prone `unwrap`/`expect` inside `anyhow::Result` functions with
   contextual errors and `?`.
+- Add `anyhow::Context` to fallible filesystem and environment boundary calls
+  that already use `?`.
 - Tighten private parameters from `&String` to `&str` and from `&Vec<T>` to
   `&[T]` when compile and clippy gates prove the change.
 - Replace clone-mapping collection with a simpler validated form such as
@@ -165,9 +168,12 @@ Evidence controls proportional aggression. A target with no Cargo metadata gets
 `None` evidence and cannot run autonomous changes. A normal Cargo target starts
 at `Compiled`, which unlocks Tier 1 mechanical recipes that still must pass
 `cargo check` and clippy before landing. Tests or a behavior eval spec raise the
-visible grade to `Tested`. Coverage, mutation, and proof-grade gates are
-reported as unlock paths for later Tier 2 and Tier 3 recipes; v0.6 detects the
-tooling but does not run those heavier gates automatically.
+visible grade to `Tested`, switch the analysis depth to boundary-aware, and
+surface extra plan-only review candidates for process execution, unsafe code,
+environment access, filesystem boundaries, and HTTP surfaces. Coverage,
+mutation, and proof-grade gates are reported as unlock paths for later Tier 2
+and Tier 3 recipes; v0.6 detects the tooling but does not run those heavier
+gates automatically.
 
 ## Quick Start
 

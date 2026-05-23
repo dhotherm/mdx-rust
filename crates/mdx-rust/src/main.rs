@@ -1458,6 +1458,10 @@ fn cmd_autopilot(args: AutopilotCommand<'_>) -> anyhow::Result<()> {
         "   Quality before: {:?} (debt score {})",
         run.quality_before.grade, run.quality_before.debt_score
     );
+    println!(
+        "   Evidence: {:?} / {:?} (max tier {})",
+        run.evidence.grade, run.evidence.analysis_depth, run.evidence.max_autonomous_tier
+    );
     if let Some(after) = &run.quality_after {
         println!(
             "   Quality after: {:?} (debt score {})",
@@ -1469,6 +1473,10 @@ fn cmd_autopilot(args: AutopilotCommand<'_>) -> anyhow::Result<()> {
     println!("   Planned candidates: {}", run.total_planned_candidates);
     println!("   Executed candidates: {}", run.total_executed_candidates);
     println!("   Skipped candidates: {}", run.total_skipped_candidates);
+    println!(
+        "   Validated/applied transactions: {}/{}",
+        run.execution_summary.validated_transactions, run.execution_summary.applied_transactions
+    );
     println!("   Note: {}", run.note);
     for pass in &run.passes {
         println!(

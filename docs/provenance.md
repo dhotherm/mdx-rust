@@ -196,8 +196,8 @@ Codebase maps record:
 - workspace root and target
 - optional policy path and content hash
 - optional behavior eval spec path
-- evidence grade, evidence signals, max autonomous tier, and unlock
-  suggestions
+- evidence grade, analysis depth, evidence signals, unlocked recipe tiers, max
+  autonomous tier, and unlock suggestions
 - quality grade and debt score
 - patchable and review-only finding counts
 - public API pressure
@@ -219,6 +219,9 @@ Autopilot runs record:
 
 - review or apply mode
 - optional budget seconds and whether the budget was exhausted
+- evidence grade, analysis depth, and max autonomous tier used for the run
+- execution summary with plans created, executable candidates seen, validated
+  transactions, applied transactions, and blocked or plan-only candidates
 - quality before and after when apply mode changes the tree
 - max pass and candidate budgets
 - one pass record per fresh plan

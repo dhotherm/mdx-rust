@@ -146,9 +146,14 @@ unchanged. The evolve apply run should then execute Tier 1 candidates with the
 compiled evidence default.
 
 The v0.6 recipe smoke should include at least contextual error hardening,
-private borrow parameter tightening, iterator clone cleanup, and `#[must_use]`
-annotation in a throwaway crate. The apply run must show each recipe only lands
-after isolated validation and final validation.
+boundary error context propagation, private borrow parameter tightening,
+iterator clone cleanup, and `#[must_use]` annotation in a throwaway crate. The
+apply run must show each recipe only lands after isolated validation and final
+validation.
+
+The evidence smoke should include a `Tested` fixture with a review-only
+boundary finding and prove the plan surfaces a Tier 2 plan-only candidate
+without making it executable.
 
 ## Performance Sanity
 

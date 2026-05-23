@@ -428,6 +428,9 @@ fn category_for_finding(finding: &HardeningFinding) -> PolicyCategory {
         | mdx_rust_analysis::HardeningStrategy::IteratorCloned
         | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
         | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => PolicyCategory::General,
+        mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation => {
+            PolicyCategory::ErrorContext
+        }
         mdx_rust_analysis::HardeningStrategy::ResultUnwrapContext => PolicyCategory::PanicSafety,
         mdx_rust_analysis::HardeningStrategy::ProcessExecutionReview => {
             PolicyCategory::ProcessExecution
@@ -461,7 +464,8 @@ fn summarize_risk(findings: &[HardeningFinding]) -> HardeningRiskSummary {
             | mdx_rust_analysis::HardeningStrategy::IteratorCloned
             | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
             | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => summary.low += 1,
-            mdx_rust_analysis::HardeningStrategy::ResultUnwrapContext
+            mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation
+            | mdx_rust_analysis::HardeningStrategy::ResultUnwrapContext
             | mdx_rust_analysis::HardeningStrategy::EnvAccessReview
             | mdx_rust_analysis::HardeningStrategy::FileIoReview
             | mdx_rust_analysis::HardeningStrategy::HttpSurfaceReview => summary.medium += 1,

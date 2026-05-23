@@ -168,8 +168,18 @@ pub struct CodebaseQualitySummary {
 pub struct EvidenceSummary {
     pub grade: EvidenceGrade,
     pub max_autonomous_tier: u8,
+    pub analysis_depth: EvidenceAnalysisDepth,
     pub signals: Vec<EvidenceSignal>,
+    pub unlocked_recipe_tiers: Vec<String>,
     pub unlock_suggestions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum EvidenceAnalysisDepth {
+    None,
+    Mechanical,
+    BoundaryAware,
+    Structural,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -229,6 +239,8 @@ pub struct AutopilotRun {
     pub max_candidates_per_pass: usize,
     pub quality_before: CodebaseQualitySummary,
     pub quality_after: Option<CodebaseQualitySummary>,
+    pub evidence: EvidenceSummary,
+    pub execution_summary: AutopilotExecutionSummary,
     pub passes: Vec<AutopilotPass>,
     pub total_planned_candidates: usize,
     pub total_executed_candidates: usize,
@@ -236,6 +248,17 @@ pub struct AutopilotRun {
     pub budget_exhausted: bool,
     pub note: String,
     pub artifact_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AutopilotExecutionSummary {
+    pub plans_created: usize,
+    pub executable_candidates_seen: usize,
+    pub validated_transactions: usize,
+    pub applied_transactions: usize,
+    pub blocked_or_plan_only_candidates: usize,
+    pub evidence_grade: EvidenceGrade,
+    pub analysis_depth: EvidenceAnalysisDepth,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -335,9 +358,11 @@ pub enum RecipeTier {
 pub enum RefactorRecipe {
     BorrowParameterTightening,
     ContextualErrorHardening,
+    ErrorContextPropagation,
     ExtractFunctionCandidate,
     IteratorCloned,
     MustUsePublicReturn,
+    SecurityBoundaryReview,
     SplitModuleCandidate,
     BoundaryValidationReview,
     PublicApiReview,
@@ -600,6 +625,8 @@ pub fn run_autopilot(
         max_files: config.max_files,
     };
     let before_map = build_codebase_map(&root, artifact_root, &map_config)?;
+    let evidence = before_map.evidence.clone();
+    let quality_before = before_map.quality.clone();
     let mode = if config.apply {
         RefactorApplyMode::Apply
     } else {
@@ -618,8 +645,18 @@ pub fn run_autopilot(
         budget_seconds: config.budget.map(|duration| duration.as_secs()),
         max_passes: config.max_passes,
         max_candidates_per_pass: config.max_candidates,
-        quality_before: before_map.quality,
+        quality_before,
         quality_after: None,
+        evidence,
+        execution_summary: AutopilotExecutionSummary {
+            plans_created: 0,
+            executable_candidates_seen: 0,
+            validated_transactions: 0,
+            applied_transactions: 0,
+            blocked_or_plan_only_candidates: 0,
+            evidence_grade: before_map.evidence.grade,
+            analysis_depth: before_map.evidence.analysis_depth.clone(),
+        },
         passes: Vec::new(),
         total_planned_candidates: 0,
         total_executed_candidates: 0,
@@ -750,6 +787,7 @@ pub fn run_autopilot(
     run.quality_after = after_map.map(|map| map.quality);
     run.status = autopilot_status(config.apply, &run.passes, run.total_executed_candidates);
     run.note = autopilot_note(&run);
+    run.execution_summary = autopilot_execution_summary(&run);
     persist_autopilot_run(artifact_root, run)
 }
 
@@ -1160,6 +1198,7 @@ fn summarize_evidence(
         EvidenceGrade::Compiled
     };
     let max_autonomous_tier = max_tier_for_evidence(grade);
+    let analysis_depth = analysis_depth_for_evidence(grade);
 
     let signals = vec![
         EvidenceSignal {
@@ -1224,9 +1263,39 @@ fn summarize_evidence(
     EvidenceSummary {
         grade,
         max_autonomous_tier,
+        analysis_depth,
         signals,
+        unlocked_recipe_tiers: unlocked_recipe_tiers(grade),
         unlock_suggestions,
     }
+}
+
+fn analysis_depth_for_evidence(grade: EvidenceGrade) -> EvidenceAnalysisDepth {
+    match grade {
+        EvidenceGrade::None => EvidenceAnalysisDepth::None,
+        EvidenceGrade::Compiled => EvidenceAnalysisDepth::Mechanical,
+        EvidenceGrade::Tested => EvidenceAnalysisDepth::BoundaryAware,
+        EvidenceGrade::Covered | EvidenceGrade::Hardened | EvidenceGrade::Proven => {
+            EvidenceAnalysisDepth::Structural
+        }
+    }
+}
+
+fn unlocked_recipe_tiers(grade: EvidenceGrade) -> Vec<String> {
+    let mut tiers = Vec::new();
+    if grade >= EvidenceGrade::Compiled {
+        tiers.push("Tier 1 executable mechanical recipes".to_string());
+    }
+    if grade >= EvidenceGrade::Tested {
+        tiers.push("Tier 2 boundary review candidates".to_string());
+    }
+    if grade >= EvidenceGrade::Covered {
+        tiers.push("Tier 2 structural candidates in review".to_string());
+    }
+    if grade >= EvidenceGrade::Hardened {
+        tiers.push("Tier 3 semantic candidates in review".to_string());
+    }
+    tiers
 }
 
 fn max_tier_for_evidence(grade: EvidenceGrade) -> u8 {
@@ -1341,33 +1410,62 @@ fn hardening_candidates(
 ) -> Vec<RefactorCandidate> {
     findings
         .iter()
-        .filter(|finding| finding.patchable)
-        .map(|finding| {
+        .filter_map(|finding| {
             let file = finding.file.display().to_string();
-            let required_evidence = EvidenceGrade::Compiled;
+            let required_evidence = if finding.patchable {
+                EvidenceGrade::Compiled
+            } else {
+                EvidenceGrade::Tested
+            };
             let evidence_satisfied = evidence.grade >= required_evidence;
             let recipe = recipe_for_hardening_strategy(&finding.strategy);
-            RefactorCandidate {
+            if !finding.patchable && !evidence_satisfied {
+                return None;
+            }
+
+            Some(RefactorCandidate {
                 id: format!("plan-hardening-{}-{}", sanitize_id(&file), finding.line),
                 candidate_hash: String::new(),
                 recipe,
                 title: finding.title.clone(),
-                rationale: "Patchable Tier 1 mechanical hardening can be applied through the existing isolated validation transaction.".to_string(),
+                rationale: if finding.patchable {
+                    "Patchable Tier 1 mechanical hardening can be applied through the existing isolated validation transaction.".to_string()
+                } else {
+                    "Higher-evidence review candidate surfaced from security or boundary analysis; it remains plan-only until a safe executable recipe exists.".to_string()
+                },
                 file: file.clone(),
                 line: finding.line,
-                risk: RefactorRiskLevel::Low,
+                risk: risk_for_hardening_strategy(&finding.strategy),
                 status: if evidence_satisfied {
-                    RefactorCandidateStatus::ApplyViaImprove
+                    if finding.patchable {
+                        RefactorCandidateStatus::ApplyViaImprove
+                    } else {
+                        RefactorCandidateStatus::PlanOnly
+                    }
                 } else {
                     RefactorCandidateStatus::PlanOnly
                 },
-                tier: RecipeTier::Tier1,
+                tier: if finding.patchable {
+                    RecipeTier::Tier1
+                } else {
+                    RecipeTier::Tier2
+                },
                 required_evidence,
                 evidence_satisfied,
                 public_api_impact: false,
-                apply_command: evidence_satisfied.then(|| apply_command(&file, config)),
-                required_gates: required_gates(config.behavior_spec_path.is_some()),
-            }
+                apply_command: (finding.patchable && evidence_satisfied)
+                    .then(|| apply_command(&file, config)),
+                required_gates: if finding.patchable {
+                    required_gates(config.behavior_spec_path.is_some())
+                } else {
+                    vec![
+                        "human review of boundary contract".to_string(),
+                        "behavior evals or tests must cover the boundary".to_string(),
+                        "future executable recipe must route through hardening transactions"
+                            .to_string(),
+                    ]
+                },
+            })
         })
         .collect()
 }
@@ -1379,11 +1477,38 @@ fn recipe_for_hardening_strategy(
         mdx_rust_analysis::HardeningStrategy::BorrowParameterTightening => {
             RefactorRecipe::BorrowParameterTightening
         }
+        mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation => {
+            RefactorRecipe::ErrorContextPropagation
+        }
         mdx_rust_analysis::HardeningStrategy::IteratorCloned => RefactorRecipe::IteratorCloned,
         mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => {
             RefactorRecipe::MustUsePublicReturn
         }
+        mdx_rust_analysis::HardeningStrategy::HttpSurfaceReview => {
+            RefactorRecipe::BoundaryValidationReview
+        }
+        mdx_rust_analysis::HardeningStrategy::EnvAccessReview
+        | mdx_rust_analysis::HardeningStrategy::FileIoReview => {
+            RefactorRecipe::BoundaryValidationReview
+        }
+        mdx_rust_analysis::HardeningStrategy::ProcessExecutionReview
+        | mdx_rust_analysis::HardeningStrategy::UnsafeReview => {
+            RefactorRecipe::SecurityBoundaryReview
+        }
         _ => RefactorRecipe::ContextualErrorHardening,
+    }
+}
+
+fn risk_for_hardening_strategy(
+    strategy: &mdx_rust_analysis::HardeningStrategy,
+) -> RefactorRiskLevel {
+    match strategy {
+        mdx_rust_analysis::HardeningStrategy::ProcessExecutionReview
+        | mdx_rust_analysis::HardeningStrategy::UnsafeReview => RefactorRiskLevel::High,
+        mdx_rust_analysis::HardeningStrategy::EnvAccessReview
+        | mdx_rust_analysis::HardeningStrategy::FileIoReview
+        | mdx_rust_analysis::HardeningStrategy::HttpSurfaceReview => RefactorRiskLevel::Medium,
+        _ => RefactorRiskLevel::Low,
     }
 }
 
@@ -1718,6 +1843,7 @@ fn is_supported_mechanical_recipe(recipe: &RefactorRecipe) -> bool {
         recipe,
         RefactorRecipe::BorrowParameterTightening
             | RefactorRecipe::ContextualErrorHardening
+            | RefactorRecipe::ErrorContextPropagation
             | RefactorRecipe::IteratorCloned
             | RefactorRecipe::MustUsePublicReturn
     )
@@ -1811,6 +1937,50 @@ fn autopilot_note(run: &AutopilotRun) -> String {
         AutopilotStatus::Rejected => {
             "autopilot stopped because a planning or execution gate rejected the run".to_string()
         }
+    }
+}
+
+fn autopilot_execution_summary(run: &AutopilotRun) -> AutopilotExecutionSummary {
+    let plans_created = run.passes.len();
+    let executable_candidates_seen = run
+        .passes
+        .iter()
+        .map(|pass| pass.executable_candidates)
+        .sum();
+    let validated_transactions = run
+        .passes
+        .iter()
+        .filter_map(|pass| pass.batch.as_ref())
+        .flat_map(|batch| batch.steps.iter())
+        .filter(|step| {
+            step.hardening_run
+                .as_ref()
+                .is_some_and(|hardening| hardening.outcome.isolated_validation_passed)
+        })
+        .count();
+    let applied_transactions = run
+        .passes
+        .iter()
+        .filter_map(|pass| pass.batch.as_ref())
+        .flat_map(|batch| batch.steps.iter())
+        .filter(|step| {
+            step.hardening_run
+                .as_ref()
+                .is_some_and(|hardening| hardening.outcome.applied)
+        })
+        .count();
+    let blocked_or_plan_only_candidates = run
+        .total_planned_candidates
+        .saturating_sub(executable_candidates_seen);
+
+    AutopilotExecutionSummary {
+        plans_created,
+        executable_candidates_seen,
+        validated_transactions,
+        applied_transactions,
+        blocked_or_plan_only_candidates,
+        evidence_grade: run.evidence.grade,
+        analysis_depth: run.evidence.analysis_depth.clone(),
     }
 }
 
@@ -1988,5 +2158,56 @@ anyhow = "1"
                 .apply_command
                 .as_deref()
                 .is_some_and(|command| command.contains("--eval-spec"))));
+    }
+
+    #[test]
+    fn tested_evidence_surfaces_boundary_review_candidates() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "tested-plan-fixture"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            r#"pub fn shell(cmd: &str) {
+    std::process::Command::new(cmd);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn smoke() {
+        assert_eq!(1, 1);
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let plan = build_refactor_plan(
+            dir.path(),
+            None,
+            &RefactorPlanConfig {
+                target: Some(PathBuf::from("src/lib.rs")),
+                ..RefactorPlanConfig::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(plan.evidence.grade, EvidenceGrade::Tested);
+        assert_eq!(
+            plan.evidence.analysis_depth,
+            EvidenceAnalysisDepth::BoundaryAware
+        );
+        assert!(plan.candidates.iter().any(|candidate| candidate.status
+            == RefactorCandidateStatus::PlanOnly
+            && candidate.required_evidence == EvidenceGrade::Tested
+            && candidate.tier == RecipeTier::Tier2));
     }
 }

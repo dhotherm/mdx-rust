@@ -176,13 +176,17 @@ Evidence grades control proportional aggression:
 - `None`: no autonomous source changes.
 - `Compiled`: Tier 1 mechanical recipes may attempt compile/clippy-gated
   transactions.
-- `Tested`: Tier 1 remains executable and reports stronger evidence.
+- `Tested`: Tier 1 remains executable, analysis depth becomes
+  boundary-aware, and plan generation surfaces extra Tier 2 review candidates
+  for boundary and security-sensitive findings.
 - `Covered`, `Hardened`, and `Proven`: reserved for future Tier 2 and Tier 3
   recipes once coverage, mutation, and property evidence are actually run.
 
 The v0.6 executable Tier 1 recipe set is intentionally mechanical:
 
 - contextual error hardening in `anyhow::Result` functions
+- boundary error context propagation for filesystem and environment calls that
+  already use `?`
 - private borrow parameter tightening from owned container references to
   borrowed views
 - iterator clone cleanup from clone-mapping collection to a simpler validated

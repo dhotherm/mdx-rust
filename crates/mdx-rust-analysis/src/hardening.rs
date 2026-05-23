@@ -30,6 +30,7 @@ pub struct HardeningFinding {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum HardeningStrategy {
     BorrowParameterTightening,
+    ErrorContextPropagation,
     IteratorCloned,
     MechanicalTier1Cleanup,
     MustUsePublicReturn,
@@ -196,6 +197,13 @@ fn build_tier1_mechanical_change(
         &mut finding_ids,
         &mut findings,
     );
+    apply_error_context_recipe(
+        &rel,
+        &mut lines,
+        function_ranges,
+        &mut finding_ids,
+        &mut findings,
+    );
     apply_borrow_parameter_recipe(
         &rel,
         &mut lines,
@@ -221,10 +229,12 @@ fn build_tier1_mechanical_change(
     if content.ends_with('\n') {
         new_content.push('\n');
     }
-    if findings
-        .iter()
-        .any(|finding| finding.strategy == HardeningStrategy::ResultUnwrapContext)
-    {
+    if findings.iter().any(|finding| {
+        matches!(
+            finding.strategy,
+            HardeningStrategy::ErrorContextPropagation | HardeningStrategy::ResultUnwrapContext
+        )
+    }) {
         new_content = ensure_anyhow_context_import(&new_content);
     }
     if syn::parse_file(&new_content).is_err() {
@@ -290,6 +300,87 @@ fn apply_result_context_recipe(
             }
         }
     }
+}
+
+fn apply_error_context_recipe(
+    rel: &Path,
+    lines: &mut [String],
+    function_ranges: &[FunctionRange],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    for range in function_ranges {
+        if !range.returns_anyhow_result {
+            continue;
+        }
+
+        for line_index in range.start_line.saturating_sub(1)..range.end_line.min(lines.len()) {
+            let original = lines[line_index].clone();
+            if original.trim_start().starts_with("//")
+                || original.contains(".context(")
+                || original.contains(".with_context(")
+            {
+                continue;
+            }
+
+            let pattern_line = line_without_comments_or_strings(&original);
+            let Some(boundary) = boundary_call_kind(&pattern_line) else {
+                continue;
+            };
+            if !pattern_line.contains('?') {
+                continue;
+            }
+
+            let Some(rewritten) = add_context_before_question_mark(
+                &original,
+                &format!("{} failed at {boundary} boundary", range.name),
+            ) else {
+                continue;
+            };
+            if rewritten == original {
+                continue;
+            }
+
+            lines[line_index] = rewritten;
+            let line = line_index + 1;
+            let id = format!("error-context-propagation:{}:{line}", rel.display());
+            finding_ids.push(id.clone());
+            findings.push(HardeningFinding {
+                id,
+                title: "Propagate boundary errors with context".to_string(),
+                description: "Add anyhow Context to fallible boundary calls that already use ? so failures explain where they came from.".to_string(),
+                file: rel.to_path_buf(),
+                line,
+                strategy: HardeningStrategy::ErrorContextPropagation,
+                patchable: true,
+            });
+        }
+    }
+}
+
+fn boundary_call_kind(line: &str) -> Option<&'static str> {
+    if line.contains("std::fs::")
+        || line.contains("fs::read")
+        || line.contains("fs::write")
+        || line.contains("File::open(")
+    {
+        Some("filesystem")
+    } else if line.contains("std::env::var(") || line.contains("env::var(") {
+        Some("environment")
+    } else {
+        None
+    }
+}
+
+fn add_context_before_question_mark(line: &str, message: &str) -> Option<String> {
+    let question = line.find('?')?;
+    let (before, after) = line.split_at(question);
+    Some(format!(
+        "{}.context(\"{}\"){}",
+        before,
+        escape_string(message),
+        after
+    ))
 }
 
 fn apply_borrow_parameter_recipe(
@@ -783,6 +874,43 @@ mod tests {
         assert!(change
             .new_content
             .contains(".context(\"load failed instead of panicking\")?"));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
+    fn hardening_adds_context_to_question_mark_boundaries() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"pub fn load(path: &str) -> anyhow::Result<String> {
+    let value = std::fs::read_to_string(path)?;
+    Ok(value)
+}
+"#,
+        )
+        .unwrap();
+
+        let analysis = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(analysis.changes.len(), 1);
+        let change = &analysis.changes[0];
+        assert!(change.new_content.contains("use anyhow::Context;"));
+        assert!(change
+            .new_content
+            .contains(".context(\"load failed at filesystem boundary\")?"));
+        assert!(change
+            .finding_ids
+            .iter()
+            .any(|id| id.contains("error-context-propagation")));
         assert!(syn::parse_file(&change.new_content).is_ok());
     }
 

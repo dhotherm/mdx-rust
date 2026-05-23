@@ -25,12 +25,19 @@ continuing.
   autonomous improvement entrypoint.
 - Versioned codebase map artifacts under `.mdx-rust/maps/`.
 - Versioned autopilot artifacts under `.mdx-rust/autopilot/`.
-- Evidence summaries on codebase maps and refactor plans, including grade,
-  signals, unlock suggestions, and max autonomous tier.
+- Evidence summaries on codebase maps, refactor plans, and autopilot runs,
+  including grade, analysis depth, signals, unlocked recipe tiers, unlock
+  suggestions, and max autonomous tier.
 - Candidate tier and required-evidence fields, enforced before queue execution.
-- Tier 1 mechanical recipes for private borrow parameter tightening, iterator
-  clone collection cleanup, and `#[must_use]` annotations for public
-  value-returning functions.
+- Tier 1 mechanical recipes for boundary error context propagation, private
+  borrow parameter tightening, iterator clone collection cleanup, and
+  `#[must_use]` annotations for public value-returning functions.
+- Boundary-aware plan-only review candidates for process execution, unsafe
+  code, environment access, filesystem boundaries, and HTTP surfaces when a
+  target reaches `Tested` evidence.
+- Autopilot execution summaries with plans created, executable candidates seen,
+  validated transactions, applied transactions, blocked candidates, evidence
+  grade, and analysis depth.
 - JSON Schema export for `codebase-map` and `autopilot-run`.
 - Capability gate detection for `cargo-nextest`, `cargo-llvm-cov`,
   `cargo-mutants`, and `cargo-semver-checks`.

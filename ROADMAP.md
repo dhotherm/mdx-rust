@@ -90,8 +90,12 @@ Autonomous Rust evolution for safe executable work.
 - `mdx-rust evolve --budget <time> --tier <n>` as the direct command coding
   agents can call for bounded autonomous Rust improvement.
 - Candidate tiers and required evidence gates that control what can execute.
-- Four compile-gated Tier 1 recipes: contextual error hardening, private borrow
-  parameter tightening, iterator clone cleanup, and `#[must_use]` annotation.
+- Five compile-gated Tier 1 recipes: contextual error hardening, boundary error
+  context propagation, private borrow parameter tightening, iterator clone
+  cleanup, and `#[must_use]` annotation.
+- Boundary-aware Tier 2 review candidates are surfaced only after `Tested`
+  evidence so higher evidence changes what the engine discovers, not only what
+  it may execute.
 - Fresh planning before every autonomous apply pass.
 - Versioned codebase map and autopilot artifacts for agents, CI, and future MCP
   or API surfaces.
