@@ -507,8 +507,26 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
             candidates_per_iteration: 2,
             use_llm_judge: false,
             review_before_apply: review,
+            quiet: json, // pure JSON output when requested
         },
     ))?;
+
+    // Land validated changes on the real agent source (only after successful isolated validation).
+    // This is the controlled, auditable path. The optimizer itself never mutates the original tree.
+    if !review {
+        for run in &runs {
+            if run.accepted_changes > 0 {
+                if let Some(patch) = &run.diff {
+                    if let Err(e) = mdx_rust_analysis::editing::apply_patch(&agent.path, patch) {
+                        eprintln!(
+                            "Warning: could not land validated patch for iteration {}: {}",
+                            run.iteration, e
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     // Persist "best" version if any improvement was accepted (per original plan)
     if runs.iter().any(|r| r.accepted_changes > 0) {
@@ -525,10 +543,12 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
             let _ = std::fs::write(best_dir.join("Cargo.toml"), cargo);
         }
 
-        println!(
-            "   ✓ Best improved version saved to .mdx-rust/agents/{}/best/",
-            name
-        );
+        if !json {
+            println!(
+                "   ✓ Best improved version saved to .mdx-rust/agents/{}/best/",
+                name
+            );
+        }
     }
 
     if json {

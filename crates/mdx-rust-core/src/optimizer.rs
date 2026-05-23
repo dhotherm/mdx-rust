@@ -91,6 +91,9 @@ pub struct OptimizeConfig {
     /// When true, the optimizer will print proposed changes and wait for confirmation before applying (Phase 4 review gate).
     #[serde(default)]
     pub review_before_apply: bool,
+    /// When true, suppress all human progress output (used for --json mode).
+    #[serde(default)]
+    pub quiet: bool,
 }
 
 /// A single optimization experiment / iteration result.
@@ -236,34 +239,40 @@ pub async fn run_optimization(
                 // Always validate the proposed edit in an isolated workspace first.
                 // This is the required safety gate.
                 let wt_name = format!("opt-{}", iteration);
-                let validation_result = mdx_rust_analysis::editing::apply_and_validate(
-                    &agent.path,
-                    &edit,
-                    &wt_name,
-                );
+                let validation_result =
+                    mdx_rust_analysis::editing::apply_and_validate(&agent.path, &edit, &wt_name);
 
                 if let Ok(val) = validation_result {
                     if val.passed {
-                        println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
+                        if !config.quiet {
+                            if !config.quiet {
+                                println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
+                            }
+                        }
 
                         if !config.review_before_apply {
-                            // Only after successful isolated validation do we consider landing the change
-                            // on the real source, and we do it via the controlled apply_patch path.
-                            if let Err(e) = mdx_rust_analysis::editing::apply_patch(&agent.path, &edit.patch) {
-                                println!("     [Warning] Could not land validated patch on original source: {}", e);
-                            } else {
-                                accepted = 1;
-                                println!("     [Accept] Validated change landed on real agent source.");
-                                accepted_diff = Some(edit.patch.clone());
+                            // Validation succeeded in isolation.
+                            // We record the validated patch so the caller (CLI) can decide to land it
+                            // on the real source in a controlled, auditable way.
+                            accepted = 1;
+                            accepted_diff = Some(edit.patch.clone());
+                            if !config.quiet {
+                                if !config.quiet {
+                                    println!("     [Validated] Change passed all gates in isolated workspace. Ready to land.");
+                                }
                             }
                         } else {
-                            // Review mode: we validated it, but we do not apply it.
-                            println!("     [Review] Change was validated in isolation but not applied (--review).");
+                            // Review mode: validated in isolation, but we do not apply.
+                            if !config.quiet {
+                                println!("     [Review] Change validated in isolation but not applied (--review).");
+                            }
                             notes.push_str(" (review mode — validated in isolation, not applied)");
                         }
                     }
                 } else {
-                    println!("     [Safe Apply] Validation in isolated workspace failed.");
+                    if !config.quiet {
+                        println!("     [Safe Apply] Validation in isolated workspace failed.");
+                    }
                 }
             }
         } else {
@@ -304,11 +313,19 @@ pub async fn run_optimization(
         let _ = std::fs::write(experiment_file, content);
     }
 
-    // Also write a rich human-readable report
+    // Also write a rich human-readable report with provenance
     if runs.iter().any(|r| r.accepted_changes > 0) {
+        let git_sha = std::process::Command::new("git")
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
         let mut report = format!(
-            "# Optimization Report for '{}'\n\nTimestamp: {}\n\n## Summary\n\n",
-            agent.name, timestamp
+            "# Optimization Report for '{}'\n\nTimestamp: {}\nGit SHA: {}\n\n## Summary\n\n",
+            agent.name, timestamp, git_sha
         );
 
         for run in &runs {
@@ -355,10 +372,12 @@ pub async fn run_optimization(
         }
         if !final_scores.is_empty() {
             let final_avg = final_scores.iter().sum::<f32>() / final_scores.len() as f32;
-            println!(
-                "   Final re-evaluation after accepted changes: {:.2}",
-                final_avg
-            );
+            if !config.quiet {
+                println!(
+                    "   Final re-evaluation after accepted changes: {:.2}",
+                    final_avg
+                );
+            }
         }
     }
 

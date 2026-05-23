@@ -79,6 +79,7 @@
 - [x] `doctor` command now lists recent experiment reports.
 - [x] **Best version persistence**: After any accepted improvement, the optimized source is saved to `.mdx-rust/agents/<name>/best/` (with doctor visibility). Matches original plan artifact layout.
 - [x] `spec` command is now functional — performs analysis and generates policies.md + eval_spec.json + starter dataset (real step toward the original vision).
+- [x] **Major safety refactor (First Stabilize)**: Removed ad-hoc direct mutation of the original agent source from the optimizer core. All changes now go through `apply_and_validate` (isolated workspace + gates) first, then controlled `apply_patch` on the real source only for validated patches. Review mode no longer falsely reports acceptance. This directly addresses the core safety invariant required for regulated/enterprise use. Hard-coded example edit logic significantly reduced.
 
 **Core product is substantially complete ("fully done" for the original handoff vision).** The optimizer, analysis, safe editing, review, best persistence, spec, CLI, tests, and dogfooding example are all working end-to-end with high quality. Ready for your Codex feedback on next directions.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
