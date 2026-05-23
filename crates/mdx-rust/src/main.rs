@@ -67,8 +67,8 @@ enum Commands {
 
     /// Inspect what would be bundled, editable scope, and current state
     Doctor {
-        /// Agent name
-        name: String,
+        /// Agent name (optional; if omitted, lists all registered agents)
+        name: Option<String>,
     },
 
     /// Evaluate the current (or a specific) version of the agent on a dataset
@@ -135,7 +135,7 @@ fn main() {
             // TODO: full loop with tracing, diagnosis, candidate generation, validation
         }
         Commands::Doctor { name } => {
-            if let Err(e) = cmd_doctor(&name, cli.json) {
+            if let Err(e) = cmd_doctor(name.as_deref(), cli.json) {
                 if cli.json {
                     println!(r#"{{"status":"error","error":"{}"}}"#, e);
                 } else {
@@ -158,11 +158,12 @@ fn main() {
 }
 
 /// Initialize tracing with nice human output by default, or JSON when requested.
+/// Supports RUST_LOG for fine-grained control (e.g. RUST_LOG=mdx_rust_core::runner=debug)
 fn init_tracing(json: bool) {
     use tracing_subscriber::EnvFilter;
 
     let filter = EnvFilter::from_default_env()
-        .add_directive("mdx_rust=info".parse().unwrap());
+        .add_directive("mdx_rust=info".parse().unwrap_or_else(|_| "info".parse().unwrap()));
 
     if json {
         tracing_subscriber::fmt()
