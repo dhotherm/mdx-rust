@@ -43,6 +43,7 @@ pub fn find_run_agent_functions(source: &str) -> Vec<AgentEntrypoint> {
     let root = tree.root_node();
 
     for node in root.children(&mut root.walk()) {
+        let _cursor = node.walk(); // keep for future tree-sitter expansion
         if node.kind() == "function_item" {
             if let Some(name_node) = node.child_by_field_name("name") {
                 let name = name_node.utf8_text(source.as_bytes()).unwrap_or("");

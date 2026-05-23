@@ -201,14 +201,24 @@ pub async fn run_optimization(
 
                 let patch = generate_preamble_patch(&main_rs, old_preamble, new_preamble);
 
-                // We still construct the ProposedEdit for future worktree / report use
-                let _edit = mdx_rust_analysis::editing::ProposedEdit {
+                let edit = mdx_rust_analysis::editing::ProposedEdit {
                     file: agent.path.join("src/main.rs"),
                     description: top.description.clone(),
-                    patch,
+                    patch: patch.clone(),
                 };
 
-                // Safe editing path (Phase 3/4)
+                // Real safe editing via isolated workspace (git worktree or filesystem copy)
+                if !config.review_before_apply {
+                    let wt_name = format!("opt-{}", iteration);
+                    if let Ok(val) = mdx_rust_analysis::editing::apply_and_validate(&agent.path, &edit, &wt_name) {
+                        if val.passed {
+                            println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
+                            accepted = 1;
+                        }
+                    }
+                }
+
+                // Safe editing path (Phase 3/4) + review gate
                 let main_rs_path = agent.path.join("src/main.rs");
 
                 if config.review_before_apply {
