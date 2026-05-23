@@ -2,15 +2,16 @@
 
 `mdx-rust` is a CLI-first project.
 
-## v0.3 Stability Contract
+## v0.4 Stability Contract
 
-For `0.3.x`, the supported product surface is:
+For `0.4.x`, the supported product surface is:
 
 - The `mdx-rust` binary.
 - Command names, flags, exit behavior, and documented `--json` outputs.
 - The documented safety invariants.
 - Versioned optimizer audit packet schemas.
 - Versioned hardening report schemas.
+- Versioned behavior eval report and project policy schemas.
 
 The published library crates are intentionally unstable:
 
@@ -45,7 +46,7 @@ Automation should prefer:
 
 ## Strategy Interfaces
 
-Strategy traits and planners are not stable in `0.3.x`. The agent optimizer
+Strategy traits and planners are not stable in `0.4.x`. The agent optimizer
 still keeps accepted edits single-file. The hardening engine has a separate
-bounded transaction path for scoped module hardening and requires validation
-before reporting or applying changes.
+bounded transaction path for scoped module hardening and requires validation,
+optional behavior evals, and final validation before reporting applied success.

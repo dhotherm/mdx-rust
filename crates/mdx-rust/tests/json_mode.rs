@@ -128,6 +128,12 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     let hardening = assert_machine_pure_json(&["schema", "hardening-run", "--json"]);
     assert_eq!(hardening["title"], "HardeningRun");
     assert!(hardening["properties"]["outcome"].is_object());
+
+    let behavior = assert_machine_pure_json(&["schema", "behavior-eval-report", "--json"]);
+    assert_eq!(behavior["title"], "BehaviorEvalReport");
+
+    let policy = assert_machine_pure_json(&["schema", "project-policy", "--json"]);
+    assert_eq!(policy["title"], "ProjectPolicy");
 }
 
 #[test]
@@ -148,6 +154,7 @@ fn init_json_writes_artifact_dir_at_config_root() {
 
     let config_path = dir.path().join(".mdx-rust/config.toml");
     let config = std::fs::read_to_string(config_path).expect("generated config");
+    assert!(dir.path().join(".mdx-rust/evals.json").exists());
     let artifact_pos = config
         .find("artifact_dir = \".mdx-rust\"")
         .expect("artifact_dir key should exist");
@@ -189,7 +196,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["improve", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.3");
+    assert_eq!(value["schema_version"], "0.4");
     assert_eq!(value["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
 }
@@ -234,7 +241,7 @@ anyhow = "1"
         dir.path(),
     );
 
-    assert_eq!(value["schema_version"], "0.3");
+    assert_eq!(value["schema_version"], "0.4");
     assert_eq!(value["outcome"]["status"], "Applied");
     assert_eq!(value["outcome"]["isolated_validation_passed"], true);
     assert_eq!(value["outcome"]["final_validation_passed"], true);
@@ -243,4 +250,35 @@ anyhow = "1"
     assert!(after.contains("use anyhow::Context;"));
     assert!(after.contains(".context(\"load failed instead of panicking\")?"));
     assert!(!after.contains(".unwrap()"));
+}
+
+#[test]
+fn workspace_eval_json_mode_runs_behavior_spec() {
+    let dir = tempdir().expect("temp dir");
+    let eval_dir = dir.path().join(".mdx-rust");
+    std::fs::create_dir_all(&eval_dir).unwrap();
+    std::fs::write(
+        eval_dir.join("evals.json"),
+        r#"{
+  "version": "v1",
+  "commands": [
+    {
+      "id": "cargo-version",
+      "command": "cargo",
+      "args": ["--version"],
+      "expect_success": true,
+      "expect_stdout_contains": ["cargo"],
+      "timeout_seconds": 30
+    }
+  ]
+}"#,
+    )
+    .unwrap();
+
+    let value = assert_machine_pure_json_in(&["eval", "--json"], dir.path());
+
+    assert_eq!(value["schema_version"], "0.4");
+    assert_eq!(value["total"], 1);
+    assert_eq!(value["passed"], 1);
+    assert_eq!(value["failed"], 0);
 }

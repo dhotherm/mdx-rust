@@ -9,9 +9,9 @@
 **A Rust-native safe-change system for codebases.**
 
 `mdx-rust` points at Rust code, finds scoped hardening opportunities, validates
-changes in isolation, and only lands edits that pass Rust gates. It still
-supports agent optimization, but `v0.3` starts the broader path: safe, measured,
-auditable improvement for ordinary Rust modules.
+changes in isolation, checks project policy and behavior evals when supplied,
+and only lands edits that pass Rust gates. It still supports agent optimization,
+but `v0.4` is aimed at ordinary Rust crates and service backends too.
 
 The CLI is the supported product surface. The library crates are published for
 installation and inspection, but their APIs remain unstable before `1.0`.
@@ -20,9 +20,10 @@ installation and inspection, but their APIs remain unstable before `1.0`.
 
 `mdx-rust` is an early public beta. It is useful for experimentation and
 dogfooding on Rust agent crates, but it is intentionally conservative. In
-plain terms: `v0.3` is good at review-first, safety-gated hardening of scoped
-Rust modules plus the existing agent prompt/fallback optimizer. It is not a
-general autonomous refactoring engine yet.
+plain terms: `v0.4` is good at review-first, safety-gated hardening of scoped
+Rust modules, simple policy mapping, deterministic behavior evals, and the
+existing agent prompt/fallback optimizer. It is not a general autonomous
+refactoring engine yet.
 
 Today it supports:
 
@@ -30,6 +31,10 @@ Today it supports:
 - Process-based agent invocation with lifecycle traces.
 - Prompt and AST-guarded fallback-behavior improvement strategies.
 - Review-first scoped Rust hardening for normal modules through `improve`.
+- Structured markdown policy parsing and policy-to-finding matches.
+- Workspace behavior evals through `.mdx-rust/evals.json`.
+- Optional behavior eval gates for `improve --eval-spec`.
+- Repo doctor risk summaries with prioritized next actions.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -46,7 +51,7 @@ Not yet supported:
 - Arbitrary multi-file accepted edits outside the hardening transaction model.
 - General autonomous refactoring.
 - Stable library APIs.
-- Complete standalone scored `mdx-rust eval`.
+- Coverage, mutation testing, or full semantic behavior proofs.
 - External hook runners.
 - Multi-language optimization.
 
@@ -73,9 +78,11 @@ The implementation also uses typed rejection records and internal stage
 wrappers so accepted changes cannot be represented the same way as proposed or
 rejected candidates.
 
-`v0.3` also adds a separate hardening path for ordinary Rust modules. It is
-review-first by default: `mdx-rust improve` validates candidate changes in an
-isolated workspace and requires `--apply` before touching the real tree.
+The hardening path for ordinary Rust modules is review-first by default:
+`mdx-rust improve` validates candidate changes in an isolated workspace and
+requires `--apply` before touching the real tree. In `v0.4`, passing
+`--eval-spec` also requires the behavior commands in that spec to pass in the
+isolated workspace and again after final application.
 
 ## Quick Start
 
@@ -116,8 +123,9 @@ cd your-rust-service
 mdx-rust init
 mdx-rust doctor
 mdx-rust audit --policy policies/backend-safety.md
+mdx-rust eval --spec .mdx-rust/evals.json
 mdx-rust improve src/api/config.rs
-mdx-rust improve src/api/config.rs --apply
+mdx-rust improve src/api/config.rs --eval-spec .mdx-rust/evals.json --apply
 ```
 
 Hardening artifacts are written under `.mdx-rust/hardening/`.
@@ -133,11 +141,14 @@ mdx-rust doctor my-agent
 mdx-rust audit --policy policies/backend-safety.md
 mdx-rust audit my-agent
 mdx-rust improve src/lib.rs
-mdx-rust improve src/lib.rs --apply
+mdx-rust improve src/lib.rs --eval-spec .mdx-rust/evals.json --apply
+mdx-rust eval --spec .mdx-rust/evals.json
 mdx-rust eval my-agent --dataset .mdx-rust/agents/my-agent/dataset.json
 mdx-rust optimize my-agent --iterations 3 --budget medium --review
 mdx-rust schema audit-packet --json
 mdx-rust schema hardening-run --json
+mdx-rust schema behavior-eval-report --json
+mdx-rust schema project-policy --json
 ```
 
 Every command intended for automation supports `--json`.
@@ -160,15 +171,17 @@ directory. The optimizer `0.2` schema records:
 - Rollback status if rollback was attempted.
 
 See [docs/provenance.md](./docs/provenance.md) for the schema contract.
-`v0.3` hardening runs produce versioned JSON reports under
+`v0.4` hardening runs produce versioned JSON reports under
 `.mdx-rust/hardening/` with findings, proposed changes, validation outcomes,
-transaction status, rollback status, policy hash, and workspace metadata.
+transaction status, rollback status, policy matches, behavior eval outcomes,
+and workspace metadata.
 
 Print the current JSON Schemas with:
 
 ```bash
 mdx-rust schema audit-packet --json
 mdx-rust schema hardening-run --json
+mdx-rust schema behavior-eval-report --json
 ```
 
 ## API Stability
@@ -176,7 +189,7 @@ mdx-rust schema hardening-run --json
 `mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis` are all published so the
 CLI can be installed from crates.io.
 
-For `0.3.x`:
+For `0.4.x`:
 
 - The `mdx-rust` CLI is supported.
 - The `mdx-rust-core` and `mdx-rust-analysis` APIs are unstable.
@@ -211,8 +224,8 @@ guessing which checks matter.
 
 ## Status
 
-`v0.3.0` is in development as the first safe scoped hardening release for
-ordinary Rust modules.
+`v0.4.0` is in development as the first behavior and policy-driven hardening
+release for ordinary Rust modules.
 
 ## License
 

@@ -85,13 +85,13 @@ and external compliance integrations are future work.
 
 ## Hardening Reports
 
-`v0.3` hardening runs produce separate reports:
+`v0.4` hardening runs produce separate reports:
 
 ```text
 .mdx-rust/hardening/hardening-<mode>-<timestamp>.json
 ```
 
-The hardening report schema version is `"0.3"`.
+The hardening report schema version is `"0.4"`.
 
 Hardening reports record:
 
@@ -99,12 +99,15 @@ Hardening reports record:
 - review or apply mode
 - `cargo metadata` workspace summary when available
 - optional policy path and content hash
-- extracted policy rule lines for reviewer context
+- structured policy rules and policy-to-finding matches for reviewer context
+- risk summary and recommended next actions
 - files scanned
 - findings and whether each finding is patchable
 - proposed change summaries and old/new content hashes
 - isolated validation command records
+- isolated behavior eval command records when `--eval-spec` is supplied
 - final validation command records when `--apply` is used
+- final behavior eval command records when `--eval-spec --apply` is used
 - transaction status
 - rollback status and rollback error when rollback is attempted
 
@@ -112,4 +115,6 @@ Print the hardening schema with:
 
 ```bash
 mdx-rust schema hardening-run --json
+mdx-rust schema behavior-eval-report --json
+mdx-rust schema project-policy --json
 ```

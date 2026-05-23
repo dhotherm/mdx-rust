@@ -33,6 +33,8 @@ pub enum HardeningStrategy {
     ProcessExecutionReview,
     UnsafeReview,
     EnvAccessReview,
+    FileIoReview,
+    HttpSurfaceReview,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -107,6 +109,45 @@ pub fn analyze_hardening(
                     file: rel.clone(),
                     line: line_no,
                     strategy: HardeningStrategy::EnvAccessReview,
+                    patchable: false,
+                });
+            }
+
+            let filesystem_call = trimmed.contains("std::fs::read_to_string(")
+                || trimmed.contains("fs::read_to_string(")
+                || trimmed.contains("std::fs::write(")
+                || trimmed.contains("fs::write(");
+            let has_visible_error_handling = trimmed.contains('?')
+                || trimmed.contains(".unwrap(")
+                || trimmed.contains(".expect(");
+            if filesystem_call && !has_visible_error_handling {
+                findings.push(HardeningFinding {
+                    id: format!("file-io:{}:{line_no}", rel.display()),
+                    title: "Filesystem boundary".to_string(),
+                    description:
+                        "Filesystem access should preserve contextual errors and validated paths."
+                            .to_string(),
+                    file: rel.clone(),
+                    line: line_no,
+                    strategy: HardeningStrategy::FileIoReview,
+                    patchable: false,
+                });
+            }
+
+            if trimmed.contains("Router::new(")
+                || trimmed.contains(".route(")
+                || trimmed.contains("#[get(")
+                || trimmed.contains("#[post(")
+            {
+                findings.push(HardeningFinding {
+                    id: format!("http-surface:{}:{line_no}", rel.display()),
+                    title: "HTTP or route surface".to_string(),
+                    description:
+                        "HTTP-facing surfaces should validate inputs and preserve typed errors."
+                            .to_string(),
+                    file: rel.clone(),
+                    line: line_no,
+                    strategy: HardeningStrategy::HttpSurfaceReview,
                     patchable: false,
                 });
             }

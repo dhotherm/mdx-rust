@@ -3,12 +3,12 @@ name = "mdx-rust"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Rust-native optimizer for LLM agents CLI"
+description = "Rust-native safe-change and hardening CLI"
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme = "../../README.md"
-keywords = ["llm", "agents", "rust", "cli"]
+keywords = ["llm", "agents", "rust", "cli", "hardening"]
 categories = ["development-tools", "command-line-utilities"]
 publish = true
 
@@ -17,8 +17,8 @@ name = "mdx-rust"
 path = "src/main.rs"
 
 [dependencies]
-mdx-rust-core = { path = "../mdx-rust-core", version = "0.3.0" }
-mdx-rust-analysis = { path = "../mdx-rust-analysis", version = "0.3.0" }
+mdx-rust-core = { path = "../mdx-rust-core", version = "0.4.0" }
+mdx-rust-analysis = { path = "../mdx-rust-analysis", version = "0.4.0" }
 
 anyhow.workspace = true
 clap.workspace = true

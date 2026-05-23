@@ -1,6 +1,6 @@
 # Release Notes And Publishing
 
-`mdx-rust v0.3.0` is the current release target. Publish only from an exact
+`mdx-rust v0.4.0` is the current release target. Publish only from an exact
 commit that has passed local release validation, GitHub CI, and external
 pressure testing.
 
@@ -53,18 +53,18 @@ Wait for the crates.io index to update between dependent publishes.
 ## Release Gate
 
 Use [docs/release-readiness.md](./docs/release-readiness.md) as the source of
-truth for `v0.3.0` release validation.
+truth for `v0.4.0` release validation.
 
 ## Public Claims To Avoid
 
 - Do not call the tool generally production-ready.
 - Do not claim arbitrary autonomous refactoring.
 - Do not imply the library API is stable.
-- Do not imply scored standalone `mdx-rust eval` is complete.
+- Do not imply behavior evals are coverage, mutation testing, or full semantic
+  proofs.
 - Do not imply `improve` applies changes unless `--apply` is passed.
 
-The honest public phrase for `v0.3.0` is:
+The honest public phrase for `v0.4.0` is:
 
-> A safety-first public beta for scoped Rust hardening and Rust agent
-> optimization, with validation gates, transaction rollback, and versioned
-> provenance.
+> A safety-first public beta for policy and behavior-gated Rust hardening, with
+> validation gates, transaction rollback, and versioned provenance.

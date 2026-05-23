@@ -7,6 +7,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EvaluationSample {
@@ -94,6 +95,171 @@ pub struct ScorerMetadata {
     pub version: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BehaviorEvalSpec {
+    pub version: String,
+    pub commands: Vec<BehaviorCommand>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BehaviorCommand {
+    pub id: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub cwd: Option<String>,
+    #[serde(default = "default_expect_success")]
+    pub expect_success: bool,
+    #[serde(default)]
+    pub expect_stdout_contains: Vec<String>,
+    #[serde(default)]
+    pub expect_stderr_contains: Vec<String>,
+    pub timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BehaviorEvalReport {
+    pub schema_version: String,
+    pub spec_path: String,
+    pub spec_hash: String,
+    pub total: usize,
+    pub passed: usize,
+    pub failed: usize,
+    pub command_records: Vec<BehaviorCommandRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BehaviorCommandRecord {
+    pub id: String,
+    pub command: String,
+    pub success: bool,
+    pub timed_out: bool,
+    pub status_code: Option<i32>,
+    pub duration_ms: u64,
+    pub stdout: String,
+    pub stderr: String,
+    pub failure_reason: Option<String>,
+}
+
+impl BehaviorEvalReport {
+    pub fn passed(&self) -> bool {
+        self.failed == 0
+    }
+}
+
+pub fn run_behavior_evals(root: &Path, spec_path: &Path) -> anyhow::Result<BehaviorEvalReport> {
+    let path = if spec_path.is_absolute() {
+        spec_path.to_path_buf()
+    } else {
+        root.join(spec_path)
+    };
+    let content = std::fs::read(&path)?;
+    let spec: BehaviorEvalSpec = serde_json::from_slice(&content)?;
+    let mut command_records = Vec::with_capacity(spec.commands.len());
+
+    for command_spec in &spec.commands {
+        let record = run_behavior_command(root, command_spec);
+        command_records.push(record);
+    }
+
+    let passed = command_records
+        .iter()
+        .filter(|record| record.success)
+        .count();
+    let failed = command_records.len().saturating_sub(passed);
+
+    Ok(BehaviorEvalReport {
+        schema_version: "0.4".to_string(),
+        spec_path: path.display().to_string(),
+        spec_hash: stable_hash_hex(&content),
+        total: command_records.len(),
+        passed,
+        failed,
+        command_records,
+    })
+}
+
+fn run_behavior_command(root: &Path, spec: &BehaviorCommand) -> BehaviorCommandRecord {
+    let started = std::time::Instant::now();
+    let mut command = std::process::Command::new(&spec.command);
+    command.args(&spec.args);
+    if let Some(cwd) = &spec.cwd {
+        command.current_dir(root.join(cwd));
+    } else {
+        command.current_dir(root);
+    }
+
+    let timeout = Duration::from_secs(spec.timeout_seconds.unwrap_or(120));
+    let Some(output) = mdx_rust_analysis::editing::run_command_with_timeout(&mut command, timeout)
+    else {
+        return BehaviorCommandRecord {
+            id: spec.id.clone(),
+            command: command_label(spec),
+            success: false,
+            timed_out: true,
+            status_code: None,
+            duration_ms: elapsed_millis_u64(started),
+            stdout: String::new(),
+            stderr: String::new(),
+            failure_reason: Some("command timed out".to_string()),
+        };
+    };
+
+    let mut failure_reason = None;
+    if output.success() != spec.expect_success {
+        failure_reason = Some(format!(
+            "expected success={} but command success={}",
+            spec.expect_success,
+            output.success()
+        ));
+    }
+    if failure_reason.is_none() {
+        if let Some(missing) = spec
+            .expect_stdout_contains
+            .iter()
+            .find(|needle| !output.stdout.contains(*needle))
+        {
+            failure_reason = Some(format!("stdout did not contain {missing:?}"));
+        }
+    }
+    if failure_reason.is_none() {
+        if let Some(missing) = spec
+            .expect_stderr_contains
+            .iter()
+            .find(|needle| !output.stderr.contains(*needle))
+        {
+            failure_reason = Some(format!("stderr did not contain {missing:?}"));
+        }
+    }
+
+    BehaviorCommandRecord {
+        id: spec.id.clone(),
+        command: command_label(spec),
+        success: failure_reason.is_none(),
+        timed_out: output.timed_out,
+        status_code: output.status.and_then(|status| status.code()),
+        duration_ms: output.duration_ms,
+        stdout: output.stdout,
+        stderr: output.stderr,
+        failure_reason,
+    }
+}
+
+fn command_label(spec: &BehaviorCommand) -> String {
+    std::iter::once(spec.command.as_str())
+        .chain(spec.args.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn elapsed_millis_u64(started: std::time::Instant) -> u64 {
+    started.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
+}
+
+fn default_expect_success() -> bool {
+    true
+}
+
 impl ScorerMetadata {
     pub fn mechanical_v1() -> Self {
         Self {
@@ -160,5 +326,33 @@ mod tests {
 
         assert_eq!(dataset.version, "v9");
         assert_eq!(dataset.samples[0].id, "a");
+    }
+
+    #[test]
+    fn behavior_eval_runs_command_specs() {
+        let dir = tempdir().unwrap();
+        let spec_path = dir.path().join("evals.json");
+        std::fs::write(
+            &spec_path,
+            r#"{
+  "version": "v1",
+  "commands": [
+    {
+      "id": "hello",
+      "command": "cargo",
+      "args": ["--version"],
+      "expect_stdout_contains": ["cargo"],
+      "timeout_seconds": 30
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        let report = run_behavior_evals(dir.path(), &spec_path).unwrap();
+
+        assert!(report.passed());
+        assert_eq!(report.total, 1);
+        assert_eq!(report.command_records[0].id, "hello");
     }
 }

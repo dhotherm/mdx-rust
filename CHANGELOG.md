@@ -2,6 +2,41 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.4.0 - Unreleased
+
+Behavior and policy-driven hardening for Rust services and ordinary crates.
+
+### Added
+
+- Structured project policy parsing for markdown rules in `.mdx-rust/policies.md`
+  or a supplied `--policy` file.
+- Policy-to-finding matches in hardening reports so reviewers can see which
+  rule explains a finding.
+- Workspace behavior eval specs through `.mdx-rust/evals.json` and
+  `mdx-rust eval --json`.
+- Optional `mdx-rust improve --eval-spec <path>` gating. Proposed hardening
+  changes must pass behavior evals in isolation before review/apply can
+  succeed, and applied changes must pass final behavior evals before success.
+- JSON Schema export for `behavior-eval-report` and `project-policy`.
+- Repo doctor risk summaries with high, medium, patchable, and recommended
+  next-action counts.
+- Additional advisory findings for filesystem and HTTP/route boundaries.
+
+### Changed
+
+- Hardening report schema version is now `0.4`.
+- `mdx-rust init` writes a starter `.mdx-rust/evals.json` behavior eval spec.
+- `mdx-rust eval` can now run workspace behavior evals when no agent name is
+  supplied.
+
+### Known Limitations
+
+- Behavior eval specs run deterministic commands; they are not a coverage or
+  mutation-testing system yet.
+- Policy parsing is intentionally simple markdown extraction, not a full policy
+  language.
+- General autonomous refactoring remains out of scope.
+
 ## 0.3.0 - 2026-05-23
 
 Safe scoped hardening for ordinary Rust modules.

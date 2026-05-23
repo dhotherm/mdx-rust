@@ -79,6 +79,10 @@ enum Commands {
         #[arg(long)]
         policy: Option<String>,
 
+        /// Optional behavior eval spec to run after compile validation
+        #[arg(long)]
+        eval_spec: Option<String>,
+
         /// Apply validated changes to the real tree. Without this, review mode is used.
         #[arg(long)]
         apply: bool,
@@ -92,14 +96,18 @@ enum Commands {
         timeout_seconds: u64,
     },
 
-    /// Evaluate the current (or a specific) version of the agent on a dataset
+    /// Evaluate a registered agent or run behavior evals for the current workspace
     Eval {
-        /// Agent name
-        name: String,
+        /// Optional agent name. Omit to run workspace behavior evals.
+        name: Option<String>,
 
         /// Path to dataset JSON file
         #[arg(long)]
         dataset: Option<String>,
+
+        /// Path to workspace behavior eval spec JSON
+        #[arg(long)]
+        spec: Option<String>,
     },
 
     /// Run deterministic static security checks against an agent or current workspace
@@ -114,8 +122,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding
-        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding"])]
+        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy
+        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy"])]
         kind: String,
     },
 
@@ -175,25 +183,36 @@ fn main() {
             target,
             goal,
             policy,
+            eval_spec,
             apply,
             max_files,
             timeout_seconds,
         } => {
-            if let Err(e) = cmd_improve(
-                target.as_deref(),
-                goal.as_deref(),
-                policy.as_deref(),
+            if let Err(e) = cmd_improve(ImproveCommand {
+                target: target.as_deref(),
+                goal: goal.as_deref(),
+                policy: policy.as_deref(),
+                eval_spec: eval_spec.as_deref(),
                 apply,
                 max_files,
                 timeout_seconds,
-                cli.json,
-            ) {
+                json: cli.json,
+            }) {
                 emit_error(cli.json, "improve", &e);
                 std::process::exit(1);
             }
         }
-        Commands::Eval { name, dataset } => {
-            if let Err(e) = cmd_eval(&name, dataset.as_deref(), cli.json) {
+        Commands::Eval {
+            name,
+            dataset,
+            spec,
+        } => {
+            if let Err(e) = cmd_eval(
+                name.as_deref(),
+                dataset.as_deref(),
+                spec.as_deref(),
+                cli.json,
+            ) {
                 emit_error(cli.json, "eval", &e);
                 std::process::exit(1);
             }
@@ -363,6 +382,20 @@ Cargo.lock
 }"#;
     fs::write(format!("{}/eval_spec.json", artifact_dir), eval_spec)?;
 
+    let behavior_evals = r#"{
+  "version": "v1",
+  "commands": [
+    {
+      "id": "cargo-check",
+      "command": "cargo",
+      "args": ["check"],
+      "expect_success": true,
+      "timeout_seconds": 120
+    }
+  ]
+}"#;
+    fs::write(format!("{}/evals.json", artifact_dir), behavior_evals)?;
+
     if json {
         println!(
             "{}",
@@ -377,6 +410,7 @@ Cargo.lock
         println!("  {}/.mdx-rustignore", artifact_dir);
         println!("  {}/policies.md", artifact_dir);
         println!("  {}/eval_spec.json", artifact_dir);
+        println!("  {}/evals.json", artifact_dir);
         println!();
         println!("Next: mdx-rust doctor");
         println!("Or:   mdx-rust register <name> [path]");
@@ -428,8 +462,15 @@ fn cmd_workspace_doctor(json: bool) -> anyhow::Result<()> {
     );
     println!("   Scanned Rust files: {}", run.files_scanned);
     println!("   Findings: {}", run.findings.len());
+    println!(
+        "   Risk: high={}, medium={}, patchable={}",
+        run.risk_summary.high, run.risk_summary.medium, run.risk_summary.patchable
+    );
     println!("   Proposed hardening changes: {}", run.changes.len());
     println!("   Outcome: {:?}", run.outcome.status);
+    for recommendation in &run.risk_summary.top_recommendations {
+        println!("   → {}", recommendation);
+    }
     if !run.changes.is_empty() {
         println!();
         println!("Suggested next step:");
@@ -653,7 +694,15 @@ fn cmd_invoke(name: &str, input: Option<&str>, json: bool) -> anyhow::Result<()>
     Ok(())
 }
 
-fn cmd_eval(name: &str, dataset: Option<&str>, json: bool) -> anyhow::Result<()> {
+fn cmd_eval(
+    name: Option<&str>,
+    dataset: Option<&str>,
+    spec: Option<&str>,
+    json: bool,
+) -> anyhow::Result<()> {
+    let Some(name) = name else {
+        return cmd_workspace_eval(spec, json);
+    };
     use mdx_rust_core::registry::Registry;
     use mdx_rust_core::EvaluationDataset;
     use std::path::Path;
@@ -695,6 +744,34 @@ fn cmd_eval(name: &str, dataset: Option<&str>, json: bool) -> anyhow::Result<()>
             sample_count, evaluation_dataset.version, dataset_hash
         );
         println!("Scored evaluation execution is not implemented yet.");
+    }
+
+    Ok(())
+}
+
+fn cmd_workspace_eval(spec: Option<&str>, json: bool) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let spec_path = spec
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(".mdx-rust/evals.json"));
+    let report = mdx_rust_core::run_behavior_evals(&cwd, &spec_path)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Behavior evals for workspace: {}", cwd.display());
+        println!("  Passed: {}/{} command(s)", report.passed, report.total);
+        for record in &report.command_records {
+            println!(
+                "  [{}] {} - {}",
+                if record.success { "pass" } else { "fail" },
+                record.id,
+                record.command
+            );
+            if let Some(reason) = &record.failure_reason {
+                println!("       {}", reason);
+            }
+        }
     }
 
     Ok(())
@@ -829,15 +906,18 @@ fn cmd_optimize(
     Ok(())
 }
 
-fn cmd_improve(
-    target: Option<&str>,
-    goal: Option<&str>,
-    policy: Option<&str>,
+struct ImproveCommand<'a> {
+    target: Option<&'a str>,
+    goal: Option<&'a str>,
+    policy: Option<&'a str>,
+    eval_spec: Option<&'a str>,
     apply: bool,
     max_files: usize,
     timeout_seconds: u64,
     json: bool,
-) -> anyhow::Result<()> {
+}
+
+fn cmd_improve(args: ImproveCommand<'_>) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let config = Config::load_from_project(&cwd).unwrap_or_default();
     let artifact_root = cwd.join(&config.artifact_dir);
@@ -845,17 +925,18 @@ fn cmd_improve(
         &cwd,
         Some(&artifact_root),
         &mdx_rust_core::HardeningConfig {
-            target: target.map(std::path::PathBuf::from),
-            policy_path: policy.map(std::path::PathBuf::from),
-            apply,
-            max_files,
-            validation_timeout: std::time::Duration::from_secs(timeout_seconds),
+            target: args.target.map(std::path::PathBuf::from),
+            policy_path: args.policy.map(std::path::PathBuf::from),
+            behavior_spec_path: args.eval_spec.map(std::path::PathBuf::from),
+            apply: args.apply,
+            max_files: args.max_files,
+            validation_timeout: std::time::Duration::from_secs(args.timeout_seconds),
         },
     )?;
 
-    if json {
+    if args.json {
         let mut value = serde_json::to_value(&run)?;
-        if let Some(goal) = goal {
+        if let Some(goal) = args.goal {
             value["goal"] = serde_json::Value::String(goal.to_string());
         }
         println!("{}", serde_json::to_string_pretty(&value)?);
@@ -864,13 +945,16 @@ fn cmd_improve(
 
     println!(
         "🛠️  mdx-rust improve — {}",
-        if apply { "apply" } else { "review" }
+        if args.apply { "apply" } else { "review" }
     );
-    if let Some(target) = target {
+    if let Some(target) = args.target {
         println!("   Target: {}", target);
     }
-    if let Some(goal) = goal {
+    if let Some(goal) = args.goal {
         println!("   Goal: {}", goal);
+    }
+    if let Some(eval_spec) = args.eval_spec {
+        println!("   Behavior eval spec: {}", eval_spec);
     }
     println!("   Findings: {}", run.findings.len());
     println!("   Proposed changes: {}", run.changes.len());
@@ -882,7 +966,7 @@ fn cmd_improve(
     for change in &run.changes {
         println!("   • {} — {}", change.file, change.description);
     }
-    if !apply && !run.changes.is_empty() {
+    if !args.apply && !run.changes.is_empty() {
         println!();
         println!("Validated in isolation. Re-run with --apply to land the transaction.");
     }
@@ -991,6 +1075,12 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         }
         "hardening-finding" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_analysis::HardeningFinding))?
+        }
+        "behavior-eval-report" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::BehaviorEvalReport))?
+        }
+        "project-policy" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::ProjectPolicy))?
         }
         other => anyhow::bail!("unknown schema kind: {other}"),
     };

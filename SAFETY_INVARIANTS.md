@@ -35,9 +35,9 @@ The agent optimizer safety contract remains intentionally single-file.
 - Future multi-file strategies must update this document and add rollback tests before landing.
 - The current optimizer edit scope label in audit packets is `single-file-v0.2`.
 
-## v0.3 Hardening Transaction Scope
+## Hardening Transaction Scope
 
-The `v0.3` hardening path is separate from the agent optimizer.
+The hardening path is separate from the agent optimizer.
 
 - `mdx-rust improve` runs in review mode by default.
 - Hardening changes must validate in an isolated workspace before they can be
@@ -48,9 +48,15 @@ The `v0.3` hardening path is separate from the agent optimizer.
   from the transaction snapshot.
 - A hardening transaction must reject absolute paths, parent-directory escapes,
   and any path outside the workspace root.
-- The `0.3` hardening report schema records findings, change summaries,
+- The `0.4` hardening report schema records findings, change summaries,
   validation command records, final validation command records, policy hash,
-  workspace metadata, transaction status, and rollback status.
+  policy-to-finding matches, behavior eval records when supplied, workspace
+  metadata, transaction status, and rollback status.
+- When `--eval-spec` is supplied, behavior evals must pass in the isolated
+  workspace before a hardening review/apply can succeed.
+- When `--eval-spec` and `--apply` are supplied, behavior evals must also pass
+  after final validation on the real tree. A final behavior failure must roll
+  back the transaction and report no applied success.
 
 ## Non-Bypass Rules
 
@@ -118,6 +124,9 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
 - At least one hardening test proves `--apply` uses transaction snapshots and
   final validation before reporting success.
 - At least one hardening test proves unscoped transaction paths are rejected.
+- At least one hardening test proves behavior eval failure blocks apply.
+- At least one CLI integration test proves workspace behavior eval JSON output
+  is machine parseable.
 
 The current invariant tests live primarily in:
 

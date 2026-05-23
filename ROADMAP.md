@@ -20,7 +20,7 @@ First serious safety-first release.
 - Rustdoc and docs.rs gates in CI.
 - Clear first-run and release-readiness documentation.
 
-## v0.3.0 Focus
+## v0.3.0 - Released
 
 Safe scoped hardening for ordinary Rust modules.
 
@@ -40,16 +40,22 @@ Primary goals:
   metadata, findings, proposed changes, validation records, transaction status,
   and rollback status.
 
-## v0.4.0 Direction
+## v0.4.0 Focus
 
 Behavior and policy-driven improvement for Rust services.
 
-- CLI, HTTP, and golden-file eval harnesses for non-agent Rust services.
-- Policy language for backend safety rules such as no panics in request paths,
-  contextual errors, validated external inputs, and handler/layer boundaries.
-- `doctor` ranks findings by confidence and suggests regression tests.
-- Optional `cargo nextest`, coverage, and mutation-probe integrations.
-- Audit packets include before/after behavior evidence and generated tests.
+- Workspace behavior eval specs in `.mdx-rust/evals.json`.
+- `mdx-rust eval` runs deterministic command-based evals without requiring an
+  agent registration.
+- `mdx-rust improve --eval-spec` requires behavior evals to pass in isolation
+  and after final application.
+- Structured markdown policy parsing for backend safety rules such as no panics
+  in request paths, contextual errors, validated external inputs, and boundary
+  handling.
+- `doctor` summarizes high, medium, and patchable findings and prints
+  recommended next actions.
+- Hardening reports include policy matches, behavior eval evidence, risk
+  summaries, and generated schemas.
 
 ## v0.5.0 Direction
 

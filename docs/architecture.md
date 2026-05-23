@@ -62,7 +62,7 @@ stable validation target without making the Rust library API stable before
 
 ## Hardening Lifecycle
 
-`v0.3` adds a separate path for ordinary Rust modules:
+The hardening engine is a separate path for ordinary Rust modules:
 
 1. Discover the Rust workspace with `cargo metadata` when available.
 2. Scan the requested target or workspace for high-confidence hardening
@@ -85,9 +85,17 @@ single-file acceptance contract.
 `v0.2` hard-enforces single-file accepted edits. A diff that touches a file other
 than `ProposedEdit.file` is rejected before validation.
 
-## v0.3 Hardening Scope
+## v0.4 Policy And Behavior Gates
 
-`v0.3` allows bounded hardening transactions outside the optimizer. These
-transactions snapshot every touched file, validate in isolation, require
-`--apply` before landing, run final validation, and roll back on failure.
-General multi-file refactoring remains future work.
+`v0.4` keeps bounded hardening transactions outside the optimizer and adds two
+evidence layers:
+
+- Structured markdown policy rules are parsed into categorized records and
+  matched back to findings for reviewer context.
+- Optional behavior eval specs run deterministic commands after isolated
+  validation and again after final validation when `--apply` is used.
+
+Hardening transactions snapshot every touched file, validate in isolation,
+require `--apply` before landing, run final validation, run final behavior evals
+when supplied, and roll back on failure. General multi-file refactoring remains
+future work.

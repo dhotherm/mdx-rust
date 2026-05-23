@@ -6,7 +6,7 @@
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.3.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `0.4.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io and so advanced
 //! users can inspect the internal data structures, but the library API is not
 //! yet stable. Public items may change before `1.0`.
@@ -30,6 +30,8 @@ pub mod llm;
 #[doc(hidden)]
 pub mod optimizer;
 #[doc(hidden)]
+pub mod policy;
+#[doc(hidden)]
 pub mod registry;
 #[doc(hidden)]
 pub mod runner;
@@ -43,11 +45,15 @@ pub mod trace;
 /// Configuration loading and defaults used by the CLI.
 pub use config::Config;
 /// Dataset and scorer metadata used by optimizer reports.
-pub use eval::{EvaluationDataset, EvaluationSample, ScorerMetadata};
+pub use eval::{
+    run_behavior_evals, BehaviorCommand, BehaviorCommandRecord, BehaviorEvalReport,
+    BehaviorEvalSpec, EvaluationDataset, EvaluationSample, ScorerMetadata,
+};
 /// Scoped Rust hardening engine for ordinary Rust modules. Unstable before `1.0`.
 pub use hardening::{
     run_hardening, HardeningChangeSummary, HardeningConfig, HardeningMode, HardeningOutcome,
-    HardeningPolicyRecord, HardeningRun, HardeningStatus, WorkspaceSummary,
+    HardeningPolicyRecord, HardeningRiskSummary, HardeningRun, HardeningStatus, PolicyFindingMatch,
+    WorkspaceSummary,
 };
 /// Built-in lifecycle hook primitives. These are unstable before `1.0`.
 pub use hooks::{
@@ -62,6 +68,8 @@ pub use optimizer::{
     mechanical_score, run_optimization, AcceptedEditSummary, AuditPacket, AuditProvenance,
     Candidate, EditStrategy, ModelProvenance, OptimizationRun, OptimizeConfig, ScoreProvenance,
 };
+/// Structured project policy records used by v0.4 hardening reports.
+pub use policy::{load_project_policy, PolicyCategory, PolicyRule, PolicySeverity, ProjectPolicy};
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};
 /// Agent runner result and trace events. These are unstable before `1.0`.

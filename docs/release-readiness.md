@@ -1,6 +1,6 @@
 # Release Readiness
 
-This document is the release checklist for `v0.3.0`.
+This document is the release checklist for `v0.4.0`.
 
 ## Required Automated Gates
 
@@ -22,7 +22,7 @@ dependency is indexed.
 
 `mdx-rust` intentionally uses a moderate dependency tree because it needs Rust
 parsing, CLI ergonomics, async process execution, and optional model-provider
-support. Before `v0.3.0` is published:
+support. Before `v0.4.0` is published:
 
 - No yanked crates should be present.
 - Known RustSec advisories must be fixed or documented with a dated
@@ -49,6 +49,9 @@ mdx-rust init
 test -f .mdx-rust/config.toml
 mdx-rust schema audit-packet --json >/tmp/mdx-rust-audit-schema.json
 mdx-rust schema hardening-run --json >/tmp/mdx-rust-hardening-schema.json
+mdx-rust schema behavior-eval-report --json >/tmp/mdx-rust-behavior-schema.json
+mdx-rust schema project-policy --json >/tmp/mdx-rust-policy-schema.json
+mdx-rust eval --json >/tmp/mdx-rust-eval.json
 mdx-rust doctor --json >/tmp/mdx-rust-doctor.json
 ```
 
@@ -73,11 +76,13 @@ From a clean checkout:
 ```bash
 cargo run -p mdx-rust -- doctor --json
 cargo run -p mdx-rust -- audit --json
-cargo run -p mdx-rust -- improve crates/mdx-rust-analysis/src/hardening.rs --json
+cargo run -p mdx-rust -- eval --spec examples/evals/cargo-check.json --json
+cargo run -p mdx-rust -- improve crates/mdx-rust-analysis/src/hardening.rs --eval-spec examples/evals/cargo-check.json --json
 ```
 
 Confirm that review mode does not mutate the working tree and that any proposed
-change has isolated validation command records.
+change has isolated validation command records and behavior eval evidence when
+an eval spec is supplied.
 
 ## Performance Sanity
 
@@ -94,7 +99,7 @@ does not hang or produce confusing output.
 
 ## Publish Order
 
-Do not publish `v0.3.0` until the candidate commit has passed external pressure
+Do not publish `v0.4.0` until the candidate commit has passed external pressure
 testing.
 
 When approved, publish in dependency order:

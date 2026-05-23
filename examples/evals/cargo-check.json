@@ -1,0 +1,12 @@
+{
+  "version": "v1",
+  "commands": [
+    {
+      "id": "cargo-check",
+      "command": "cargo",
+      "args": ["check"],
+      "expect_success": true,
+      "timeout_seconds": 120
+    }
+  ]
+}
