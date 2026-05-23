@@ -41,22 +41,63 @@ pub struct OptimizationRun {
 /// - an LLM client (for diagnosis + candidate generation)
 /// - the safe editing/validation pipeline
 pub async fn run_optimization(
-    _agent: &RegisteredAgent,
-    _config: &OptimizeConfig,
+    agent: &RegisteredAgent,
+    config: &OptimizeConfig,
 ) -> anyhow::Result<Vec<OptimizationRun>> {
-    // For now we just return a fake successful run so the architecture
-    // can be exercised and tested.
-    Ok(vec![OptimizationRun {
-        iteration: 0,
-        scores: vec![0.72],
-        accepted_changes: 0,
-        notes: "Skeleton optimization run (real loop not yet implemented)".to_string(),
-    }])
+    let mut runs = vec![];
+
+    // Simple synthetic dataset for the example agent
+    let test_inputs: Vec<serde_json::Value> = (0..5)
+        .map(|i| serde_json::json!({"query": format!("What is {} + {}?", i, i+1), "context": null}))
+        .collect();
+
+    let mut current_score = 0.55f32;
+
+    for iteration in 0..config.max_iterations {
+        let mut scores_this_iter = vec![];
+
+        for input in &test_inputs {
+            let run_result = crate::runner::run_agent(agent, input.clone()).await?;
+            let score = mechanical_score(&run_result);
+            scores_this_iter.push(score);
+        }
+
+        let avg_score: f32 = scores_this_iter.iter().sum::<f32>() / scores_this_iter.len() as f32;
+
+        // Very naive "improvement" simulation
+        let mut accepted = 0;
+        let mut notes = format!("Avg score this iter: {:.2}", avg_score);
+
+        if avg_score > current_score + 0.03 {
+            current_score = avg_score;
+            accepted = 1;
+            notes.push_str(" → Improvement detected (simulated)");
+        }
+
+        runs.push(OptimizationRun {
+            iteration,
+            scores: scores_this_iter,
+            accepted_changes: accepted,
+            notes,
+        });
+
+        if accepted > 0 && iteration > 0 {
+            // In real version we'd apply a safe edit here
+        }
+    }
+
+    Ok(runs)
 }
 
-/// Very rough mechanical scorer (placeholder).
-/// Real scoring will be configurable and can include LLM-as-Judge.
-pub fn mechanical_score(_result: &AgentRunResult) -> f32 {
-    // TODO: implement real scoring based on eval_spec
-    0.5
+/// Very rough mechanical scorer for the example agent.
+/// Gives higher score if the output is not the echo fallback.
+pub fn mechanical_score(result: &AgentRunResult) -> f32 {
+    if let Some(answer) = result.output.get("answer").and_then(|v| v.as_str()) {
+        if answer.starts_with("Echo:") {
+            return 0.45;
+        } else {
+            return 0.85; // "real" response
+        }
+    }
+    0.3
 }

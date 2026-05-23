@@ -341,9 +341,11 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
     // Basic contract detection (improve later with real analysis)
     let contract = detect_contract(&target_path);
 
+    let absolute_path = target_path.canonicalize().unwrap_or(target_path.clone());
+
     let agent = RegisteredAgent {
         name: name.to_string(),
-        path: target_path.clone(),
+        path: absolute_path.clone(),
         contract,
         registered_at: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

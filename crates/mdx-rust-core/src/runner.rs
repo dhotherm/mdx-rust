@@ -40,10 +40,9 @@ pub async fn run_agent(
     info!(agent = %agent.name, "starting agent run");
 
     match agent.contract {
-        AgentContract::Process => {
-            // For now we re-use the simple process runner logic.
-            // In a real implementation we would stream output and emit
-            // fine-grained trace events (LLM calls, tool calls, etc.).
+        AgentContract::Process | AgentContract::NativeRust => {
+            // For development and the example agent, we treat both as "runnable via cargo".
+            // Real NativeRust support (in-process or harness) will come later.
             let result = run_process_agent(agent, input).await?;
 
             traces.push(TraceEvent {
@@ -66,14 +65,6 @@ pub async fn run_agent(
                 error: result.error,
                 traces,
             })
-        }
-        AgentContract::NativeRust => {
-            // Placeholder – we will generate a small harness binary during
-            // register that links against the agent's crate and exposes the
-            // run_agent function over stdin/stdout.
-            Err(anyhow::anyhow!(
-                "NativeRust contract execution not yet implemented (will use generated harness)"
-            ))
         }
     }
 }
