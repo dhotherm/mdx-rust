@@ -1,64 +1,109 @@
-//! Basic agent execution harness.
+//! Agent execution harness with tracing support.
 //!
-//! Phase 1 focus: Support Process contracts reliably (stdin/stdout JSON).
+//! This module is responsible for actually invoking registered agents
+//! (either as separate processes or, later, as native Rust entrypoints)
+//! while collecting rich traces for diagnosis and optimization.
 
 use crate::registry::{AgentContract, RegisteredAgent};
-use std::io::Write;
-use std::path::Path;
-use std::process::{Command, Stdio};
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
+use tracing::{info, warn};
 
-/// Result of running an agent on one input.
-#[derive(Debug, Clone, serde::Serialize)]
+/// A single trace event captured during an agent run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraceEvent {
+    pub timestamp_ms: u64,
+    pub event_type: String, // "llm_call", "tool_call", "error", "decision", etc.
+    pub data: serde_json::Value,
+}
+
+/// The result of running an agent on a single input, including traces.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRunResult {
     pub output: serde_json::Value,
     pub duration_ms: u64,
     pub success: bool,
     pub error: Option<String>,
+    pub traces: Vec<TraceEvent>,
 }
 
 /// Run a registered agent with the given input.
-/// Currently supports Process contracts by spawning a command and piping JSON.
+/// Currently supports Process contracts (spawns the agent binary and pipes JSON).
+/// NativeRust support will be added when we generate harnesses.
 pub async fn run_agent(
     agent: &RegisteredAgent,
     input: serde_json::Value,
 ) -> anyhow::Result<AgentRunResult> {
+    let start = Instant::now();
+    let mut traces = vec![];
+
+    info!(agent = %agent.name, "starting agent run");
+
     match agent.contract {
-        AgentContract::Process => run_process_agent(agent, input).await,
+        AgentContract::Process => {
+            // For now we re-use the simple process runner logic.
+            // In a real implementation we would stream output and emit
+            // fine-grained trace events (LLM calls, tool calls, etc.).
+            let result = run_process_agent(agent, input).await?;
+
+            traces.push(TraceEvent {
+                timestamp_ms: start.elapsed().as_millis() as u64,
+                event_type: "run_completed".to_string(),
+                data: serde_json::json!({
+                    "success": result.success,
+                    "duration_ms": result.duration_ms
+                }),
+            });
+
+            if !result.success {
+                warn!(agent = %agent.name, error = ?result.error, "agent run failed");
+            }
+
+            Ok(AgentRunResult {
+                output: result.output,
+                duration_ms: result.duration_ms,
+                success: result.success,
+                error: result.error,
+                traces,
+            })
+        }
         AgentContract::NativeRust => {
-            // For now fall back to trying to run via cargo if it's a directory
-            // (we'll improve NativeRust support significantly in later phases)
-            run_process_agent(agent, input).await
+            // Placeholder – we will generate a small harness binary during
+            // register that links against the agent's crate and exposes the
+            // run_agent function over stdin/stdout.
+            Err(anyhow::anyhow!(
+                "NativeRust contract execution not yet implemented (will use generated harness)"
+            ))
         }
     }
 }
 
+// Internal helper – the actual process invocation.
+// In the future this will parse stdout for structured trace events.
 async fn run_process_agent(
     agent: &RegisteredAgent,
     input: serde_json::Value,
 ) -> anyhow::Result<AgentRunResult> {
-    tracing::info!(agent = %agent.name, "starting agent run");
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
     let start = Instant::now();
 
-    let manifest = agent.path.join("Cargo.toml").canonicalize()?;
+    let manifest = agent.path.join("Cargo.toml");
     if !manifest.exists() {
         return Err(anyhow::anyhow!("Cannot find Cargo.toml for Process agent"));
     }
 
-    let agent_dir = manifest.parent().unwrap().to_path_buf();
-
-    let mut cmd = Command::new("cargo");
-    cmd.current_dir(&agent_dir)
-        .args(["run", "-q", "--manifest-path", manifest.to_str().unwrap(), "--"]);
-
-    let mut child = cmd
+    let mut child = Command::new("cargo")
+        .current_dir(&agent.path)
+        .args(["run", "-q", "--manifest-path", manifest.to_str().unwrap(), "--"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
 
     {
-        let stdin = child.stdin.as_mut().ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
+        let stdin = child.stdin.as_mut().ok_or_else(|| anyhow::anyhow!("no stdin"))?;
         stdin.write_all(serde_json::to_string(&input)?.as_bytes())?;
         stdin.write_all(b"\n")?;
     }
@@ -67,25 +112,25 @@ async fn run_process_agent(
     let duration = start.elapsed().as_millis() as u64;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        tracing::warn!(agent = %agent.name, error = %stderr, "agent run failed");
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         return Ok(AgentRunResult {
-            output: serde_json::json!({"error": stderr.to_string()}),
+            output: serde_json::json!({"error": stderr}),
             duration_ms: duration,
             success: false,
-            error: Some(stderr.to_string()),
+            error: Some(stderr),
+            traces: vec![],
         });
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|_| serde_json::json!({"raw": stdout.to_string()}));
-
-    tracing::info!(agent = %agent.name, duration_ms = duration, success = true, "agent run completed");
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).unwrap_or_else(|_| serde_json::json!({"raw": stdout.to_string()}));
 
     Ok(AgentRunResult {
         output: parsed,
         duration_ms: duration,
         success: true,
         error: None,
+        traces: vec![],
     })
 }

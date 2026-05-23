@@ -67,8 +67,8 @@ enum Commands {
 
     /// Inspect what would be bundled, editable scope, and current state
     Doctor {
-        /// Agent name (optional; if omitted, lists all registered agents)
-        name: Option<String>,
+        /// Agent name
+        name: String,
     },
 
     /// Evaluate the current (or a specific) version of the agent on a dataset
@@ -135,7 +135,7 @@ fn main() {
             // TODO: full loop with tracing, diagnosis, candidate generation, validation
         }
         Commands::Doctor { name } => {
-            if let Err(e) = cmd_doctor(name.as_deref(), cli.json) {
+            if let Err(e) = cmd_doctor(&name, cli.json) {
                 if cli.json {
                     println!(r#"{{"status":"error","error":"{}"}}"#, e);
                 } else {
@@ -279,6 +279,7 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let config = Config::load_from_project(&cwd).unwrap_or_default();
     let artifact_root = &config.artifact_dir;
+
     let agent_dir = format!("{}/agents/{}", artifact_root, name);
 
     if json {
@@ -410,6 +411,8 @@ fn cmd_invoke(name: &str, input: Option<&str>, json: bool) -> anyhow::Result<()>
 
     Ok(())
 }
+
+
 
 fn detect_contract(path: &std::path::Path) -> mdx_rust_core::registry::AgentContract {
     use mdx_rust_analysis::finders::find_run_agent_functions;
