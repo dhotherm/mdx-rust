@@ -61,6 +61,7 @@
 - [x] Full editing pipeline (worktree → apply → validate) is now simulated in the optimizer output
 - [x] Real LLM client (Rig) wired into optimizer for actual diagnosis (graceful fallback when no key)
 - [x] End-to-end: register → run → optimize with real model diagnosis + candidate generation + experiment persistence
+- [x] Optimizer now attempts **real** git worktree + patch application from a generated candidate (first end-to-end safe edit attempt)
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI

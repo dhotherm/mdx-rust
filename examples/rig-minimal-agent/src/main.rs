@@ -39,7 +39,7 @@ pub async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
         let client = openai::Client::from_env();
         let agent = client
             .agent("gpt-4o-mini")
-            .preamble("You are a concise, helpful assistant. Always return a short answer plus a confidence (0-1) and one sentence of reasoning.")
+            .preamble("You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.")
             .build();
 
         let prompt = format!(
