@@ -15,6 +15,11 @@ tokio.workspace = true
 tracing.workspace = true
 ignore.workspace = true
 
-# Will add syn + tree-sitter in Phase 2
+# Code analysis
+syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
+quote = "1"
+tree-sitter = "0.22"
+tree-sitter-rust = "0.20"
+
 [dev-dependencies]
 tempfile.workspace = true
