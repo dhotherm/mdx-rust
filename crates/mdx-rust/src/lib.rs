@@ -9,6 +9,12 @@
 //! ```text
 //! cargo install mdx-rust
 //! ```
+//!
+//! ## Stability contract
+//!
+//! The CLI is the supported product surface for `0.2.x`. The re-exported
+//! library crates are available for inspection and experiments, but their APIs
+//! remain unstable before `1.0`.
 
 pub use mdx_rust_analysis as analysis;
 pub use mdx_rust_core as core;

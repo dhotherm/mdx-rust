@@ -157,18 +157,39 @@ fn main() {
 }
 
 fn emit_error(json: bool, command: &str, error: &anyhow::Error) {
+    let suggestion = error_suggestion(command, &error.to_string());
     if json {
         println!(
             "{}",
             serde_json::json!({
                 "status": "error",
                 "command": command,
-                "error": error.to_string()
+                "error": error.to_string(),
+                "suggestion": suggestion
             })
         );
     } else {
         eprintln!("{} error: {}", command, error);
+        if let Some(suggestion) = suggestion {
+            eprintln!("next step: {}", suggestion);
+        }
     }
+}
+
+fn error_suggestion(command: &str, error: &str) -> Option<&'static str> {
+    if error.contains("not registered") {
+        return Some("run `mdx-rust register <name> <path>` and then retry");
+    }
+    if error.contains("No Cargo.toml") || error.contains("Cannot find Cargo.toml") {
+        return Some("point mdx-rust at a Rust crate root that contains Cargo.toml");
+    }
+    if error.contains("dataset") && command == "eval" {
+        return Some("run `mdx-rust spec <name>` to generate a starter dataset, or pass --dataset");
+    }
+    if error.contains("unknown optimization budget") {
+        return Some("use one of: light, medium, heavy");
+    }
+    None
 }
 
 /// Initialize tracing with nice human output by default, or JSON when requested.
@@ -666,6 +687,12 @@ fn cmd_optimize(
             );
             if !run.notes.is_empty() {
                 println!("     → {}", run.notes);
+            }
+            if let Some(packet) = &run.audit_packet {
+                println!(
+                    "     Audit packet schema: {} | scope: {}",
+                    packet.schema_version, packet.edit_scope_contract
+                );
             }
             for (i, c) in run.candidates.iter().enumerate() {
                 println!(

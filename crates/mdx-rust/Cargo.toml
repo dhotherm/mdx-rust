@@ -17,8 +17,8 @@ name = "mdx-rust"
 path = "src/main.rs"
 
 [dependencies]
-mdx-rust-core = { path = "../mdx-rust-core", version = "0.1.1" }
-mdx-rust-analysis = { path = "../mdx-rust-analysis", version = "0.1.1" }
+mdx-rust-core = { path = "../mdx-rust-core", version = "0.2.0" }
+mdx-rust-analysis = { path = "../mdx-rust-analysis", version = "0.2.0" }
 
 anyhow.workspace = true
 clap.workspace = true

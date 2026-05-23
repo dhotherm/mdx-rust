@@ -1,69 +1,39 @@
 # Roadmap
 
-`mdx-rust` is an early Rust-native optimizer for LLM agents. The current public
-release is useful for experimentation and early adopters, but still intentionally
-conservative.
+`mdx-rust` is an early Rust-native optimizer for LLM agents. The project is
+staying narrow on purpose: go deep on Rust safety, provenance, and evaluation
+before expanding into broader agent orchestration.
 
-## Current Release
+## v0.2.0 Focus
 
-Version `0.1.0` is published on crates.io:
+`v0.2.0` is the first serious safety-first release candidate.
 
-```bash
-cargo install mdx-rust
-```
+Primary goals:
 
-Current strengths:
+- CLI-first API stability contract.
+- Explicitly unstable library APIs before `1.0`.
+- Versioned audit packets for accepted changes.
+- Single-file edit scope hard-enforced and documented.
+- First narrow parser-guarded Rust fallback edit strategy.
+- Positive and negative end-to-end safety proof tests.
+- Rustdoc and docs.rs gates in CI.
+- Clear first-run and release-readiness documentation.
 
-- Rust-aware source analysis using `syn` and `tree-sitter-rust`.
-- Agent registration, invocation, diagnosis, optimization, evaluation stubs,
-  doctor checks, and static audit checks.
-- Single-file prompt and fallback-behavior edits.
-- Isolated candidate validation with `cargo check` and `cargo clippy`.
-- Net-positive acceptance gates, final validation, rollback, hook decisions,
-  experiment ledgers, and provenance records.
-- Machine-readable `--json` output for automation and coding agents.
+## Current Non-Goals
 
-## Current Scope
+- Multi-file accepted edits.
+- Stable SDK APIs.
+- External hook execution.
+- MCP/A2A runtime integration.
+- Multi-agent orchestration.
+- Multi-language support.
+- TUI or UI work.
 
-The first public release is a private-beta quality tool, not a general-purpose
-autonomous refactoring system.
-
-- Accepted edits are single-file only.
-- Current strategies focus on prompts and common fallback behavior.
-- Standalone scored `mdx-rust eval` is not complete yet.
-- Native Rust contracts currently run through a process harness.
-- External lifecycle hooks are not enabled yet.
-
-See [SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md) for the acceptance contract.
-
-## Near-Term Work
+## Next After v0.2
 
 - Complete scored standalone `mdx-rust eval`.
-- Expand edit strategies beyond prompt and simple fallback changes.
-- Add richer native Rust harness support.
-- Add example-level CI smoke tests for the README quickstart.
-- Add docs.rs-oriented library documentation for the internal crates.
+- Add a narrow structural Rust edit strategy using `syn`.
+- Add transaction snapshots for future multi-file edits.
+- Add richer policy/evaluation language support.
+- Add signed or attestable provenance export.
 - Add optional security gates that can turn audit findings into hook denials.
-
-## Release Checklist
-
-Before publishing a new version:
-
-```bash
-cargo fmt --all -- --check
-cargo check --workspace --locked
-cargo test --workspace --locked
-cargo clippy --workspace --locked -- -D warnings
-cargo build --workspace --release --locked
-cargo package -p mdx-rust-analysis --locked
-cargo package -p mdx-rust-core --locked
-cargo package -p mdx-rust --locked
-```
-
-Publish crates in dependency order:
-
-```bash
-cargo publish -p mdx-rust-analysis
-cargo publish -p mdx-rust-core
-cargo publish -p mdx-rust
-```

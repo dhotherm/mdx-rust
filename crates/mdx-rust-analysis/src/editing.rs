@@ -245,14 +245,10 @@ fn apply_patch_with_target(dir: &Path, target: Option<&Path>, patch: &str) -> an
         }
 
         let content = std::fs::read_to_string(&target_path)?;
-        if patch.contains("Best-effort answer after reasoning") {
-            let new_content = content
-                .replace("Echo: {}", "Best-effort answer after reasoning: {}")
-                .replace("Echo: ", "Best-effort answer after reasoning: ");
-            if new_content != content {
-                std::fs::write(&target_path, new_content)?;
-                return Ok(());
-            }
+        if patch.contains("Best-effort answer after reasoning")
+            && apply_syn_guarded_echo_rewrite(&target_path, &content)?
+        {
+            return Ok(());
         }
 
         let improved = if patch.contains("Think step-by-step before answering") {
@@ -289,6 +285,24 @@ fn apply_patch_with_target(dir: &Path, target: Option<&Path>, patch: &str) -> an
     Err(anyhow::anyhow!(
         "apply_patch could not apply the edit (neither git apply nor fallback succeeded)"
     ))
+}
+
+fn apply_syn_guarded_echo_rewrite(target_path: &Path, content: &str) -> anyhow::Result<bool> {
+    syn::parse_file(content)
+        .map_err(|err| anyhow::anyhow!("source did not parse before fallback rewrite: {err}"))?;
+
+    let new_content = content
+        .replace("Echo: {}", "Best-effort answer after reasoning: {}")
+        .replace("Echo: ", "Best-effort answer after reasoning: ");
+
+    if new_content == content {
+        return Ok(false);
+    }
+
+    syn::parse_file(&new_content)
+        .map_err(|err| anyhow::anyhow!("source did not parse after fallback rewrite: {err}"))?;
+    std::fs::write(target_path, new_content)?;
+    Ok(true)
 }
 
 fn relative_edit_path(agent_root: &Path, file: &Path) -> anyhow::Result<PathBuf> {
@@ -743,6 +757,28 @@ mod tests {
         let main_after = fs::read_to_string(main).unwrap();
         assert!(main_after.contains("Best-effort answer after reasoning"));
         assert!(!main_after.contains("Echo:"));
+    }
+
+    #[test]
+    fn echo_fallback_rewrite_requires_parseable_rust_before_writing() {
+        let root = tempdir().unwrap();
+        let src = root.path().join("src");
+        fs::create_dir_all(&src).unwrap();
+
+        let main = src.join("main.rs");
+        let broken = r#"fn main( { println!("Echo: {}", "hello"); }"#;
+        fs::write(&main, broken).unwrap();
+
+        let edit = ProposedEdit {
+            file: main.clone(),
+            description: "replace echo fallback".to_string(),
+            patch: "not a real diff, but Best-effort answer after reasoning".to_string(),
+        };
+
+        let error = apply_edit(root.path(), root.path(), &edit).unwrap_err();
+
+        assert!(error.to_string().contains("source did not parse"));
+        assert_eq!(fs::read_to_string(main).unwrap(), broken);
     }
 
     #[test]

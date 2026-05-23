@@ -25,14 +25,15 @@ Every accepted change must pass this sequence:
 11. If final validation fails, restore the pre-land snapshot and do not count the change as landed or accepted.
 12. Only after final validation succeeds may the run increment `accepted_changes`.
 
-## V1 Edit Scope
+## v0.2 Edit Scope
 
-The current public safety contract is intentionally single-file.
+The `v0.2` public safety contract is intentionally single-file.
 
 - A candidate patch must match `ProposedEdit.file`.
 - A patch that advertises another file in its diff headers is rejected before validation.
 - Multi-file or structural edits require transaction snapshots for every touched file before they can be allowed.
 - Future multi-file strategies must update this document and add rollback tests before landing.
+- The current edit scope label in audit packets is `single-file-v0.2`.
 
 ## Non-Bypass Rules
 
@@ -67,6 +68,10 @@ Accepted runs must record enough evidence for another engineer or agent to inspe
 - train score, accepted patched score, score delta, and holdout score when available
 - rollback status and error when rollback is attempted
 
+For `v0.2`, every accepted change must also emit a versioned JSON audit packet
+under `.mdx-rust/agents/<name>/experiments/`. See
+`docs/provenance.md` for the `0.2` schema.
+
 ## Required Tests
 
 Changes touching optimization, hooks, validation, scoring, patch application, or ledgers must include or preserve tests proving:
@@ -79,6 +84,7 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
 - A patch whose diff touches a different file than `ProposedEdit.file` is rejected before validation.
 - Candidate timeout exhaustion prevents validation, landing, or acceptance.
 - At least one end-to-end optimizer test proves a denied candidate cannot land or accept.
+- At least one end-to-end optimizer test proves a real improvement can be accepted, improves the final on-disk score, and includes a complete audit packet.
 
 The current invariant tests live primarily in:
 

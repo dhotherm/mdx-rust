@@ -182,6 +182,9 @@ pub struct OptimizationRun {
     pub rollback_error: Option<String>,
     #[serde(default)]
     pub candidate_timed_out: bool,
+    /// Versioned machine-readable evidence packet for an accepted change.
+    #[serde(default)]
+    pub audit_packet: Option<AuditPacket>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,6 +193,61 @@ pub struct ModelProvenance {
     pub provider: String,
     pub model: String,
     pub used: bool,
+}
+
+/// Versioned machine-readable evidence for one accepted optimizer change.
+///
+/// Audit packets are designed for agents, reviewers, and compliance tooling.
+/// They intentionally duplicate the most important run fields so a single JSON
+/// file can be reviewed without reconstructing state from several reports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditPacket {
+    pub schema_version: String,
+    pub agent_name: String,
+    pub iteration: u32,
+    pub edit_scope_contract: String,
+    pub accepted_edit: AcceptedEditSummary,
+    pub provenance: AuditProvenance,
+    pub scores: ScoreProvenance,
+    pub hook_decisions: Vec<HookDecision>,
+    pub validation_command_records: Vec<ValidationCommandRecord>,
+    pub final_validation_command_records: Vec<ValidationCommandRecord>,
+    pub rollback_succeeded: Option<bool>,
+    pub rollback_error: Option<String>,
+    pub candidate_timed_out: bool,
+}
+
+/// Summary of the accepted source edit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptedEditSummary {
+    pub description: String,
+    pub changed_file: String,
+    pub diff_hash: String,
+    pub diff: String,
+}
+
+/// Provenance fields that identify what inputs and tools produced the change.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditProvenance {
+    pub git_sha_before: Option<String>,
+    pub git_sha_after: Option<String>,
+    pub working_tree_dirty_after: Option<bool>,
+    pub policy_path: Option<String>,
+    pub policy_hash: Option<String>,
+    pub dataset_version: String,
+    pub dataset_hash: String,
+    pub scorer_id: String,
+    pub scorer_version: String,
+    pub model: ModelProvenance,
+}
+
+/// Score evidence for the accepted change.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScoreProvenance {
+    pub baseline_score: f32,
+    pub patched_score: f32,
+    pub score_delta: f32,
+    pub holdout_score: Option<f32>,
 }
 
 /// A proposed improvement generated during an optimization iteration.
@@ -286,6 +344,8 @@ pub async fn run_optimization(
         let mut accepted_final_validation_commands = Vec::new();
         let mut accepted_rollback_succeeded = None;
         let mut accepted_rollback_error = None;
+        let mut accepted_edit_description: Option<String> = None;
+        let mut accepted_edit_file: Option<String> = None;
         let mut any_candidate_timed_out = false;
 
         for input in &test_inputs {
@@ -433,6 +493,8 @@ pub async fn run_optimization(
                     accepted_final_validation_commands = outcome.final_validation_commands;
                     accepted_rollback_succeeded = outcome.rollback_succeeded;
                     accepted_rollback_error = outcome.rollback_error;
+                    accepted_edit_description = Some(edit.description.clone());
+                    accepted_edit_file = Some(edit.file.display().to_string());
                 }
 
                 notes.push_str(&outcome.note);
@@ -489,6 +551,41 @@ pub async fn run_optimization(
                 (None, None, None, None, None, None)
             };
 
+        let model_provenance = llm.provenance(diagnosis_model_used);
+        let audit_packet = if accepted > 0 {
+            build_audit_packet(AuditPacketInput {
+                agent_name: &agent.name,
+                iteration,
+                edit_description: accepted_edit_description.as_deref(),
+                edit_file: accepted_edit_file.as_deref(),
+                diff: accepted_diff.as_deref(),
+                diff_hash: prov_diff_hash.as_deref(),
+                git_sha_before: prov_before.clone(),
+                git_sha_after: prov_after.clone(),
+                working_tree_dirty_after: prov_dirty,
+                policy_path: policy_info
+                    .as_ref()
+                    .map(|policy| policy.path.display().to_string()),
+                policy_hash: policy_info.as_ref().map(|policy| policy.hash.clone()),
+                dataset_version: &dataset.version,
+                dataset_hash: &dataset_hash,
+                scorer: &scorer,
+                model: model_provenance.clone(),
+                baseline_score,
+                patched_score: accepted_patched,
+                score_delta: accepted_delta,
+                holdout_score: accepted_holdout_score,
+                hook_decisions: hook_decisions.clone(),
+                validation_command_records: accepted_validation_commands.clone(),
+                final_validation_command_records: accepted_final_validation_commands.clone(),
+                rollback_succeeded: accepted_rollback_succeeded,
+                rollback_error: accepted_rollback_error.clone(),
+                candidate_timed_out: any_candidate_timed_out,
+            })
+        } else {
+            None
+        };
+
         runs.push(OptimizationRun {
             iteration,
             scores: scores_this_iter,
@@ -520,10 +617,11 @@ pub async fn run_optimization(
             policy_path: policy_info
                 .as_ref()
                 .map(|policy| policy.path.display().to_string()),
-            model: Some(llm.provenance(diagnosis_model_used)),
+            model: Some(model_provenance),
             rollback_succeeded: accepted_rollback_succeeded,
             rollback_error: accepted_rollback_error,
             candidate_timed_out: any_candidate_timed_out,
+            audit_packet,
         });
 
         if accepted > 0 && iteration > 0 {
@@ -548,6 +646,18 @@ pub async fn run_optimization(
     let experiment_file = experiment_dir.join(format!("run-{}.json", timestamp));
     if let Ok(content) = serde_json::to_string_pretty(&runs) {
         let _ = std::fs::write(experiment_file, content);
+    }
+
+    for run in &runs {
+        if let Some(packet) = &run.audit_packet {
+            let audit_file = experiment_dir.join(format!(
+                "audit-packet-{}-iteration-{}.json",
+                timestamp, run.iteration
+            ));
+            if let Ok(content) = serde_json::to_string_pretty(packet) {
+                let _ = std::fs::write(audit_file, content);
+            }
+        }
     }
 
     // Also write a rich human-readable report with provenance
@@ -667,6 +777,84 @@ pub async fn run_optimization(
 struct PolicyInfo {
     path: PathBuf,
     hash: String,
+}
+
+struct AuditPacketInput<'a> {
+    agent_name: &'a str,
+    iteration: u32,
+    edit_description: Option<&'a str>,
+    edit_file: Option<&'a str>,
+    diff: Option<&'a str>,
+    diff_hash: Option<&'a str>,
+    git_sha_before: Option<String>,
+    git_sha_after: Option<String>,
+    working_tree_dirty_after: Option<bool>,
+    policy_path: Option<String>,
+    policy_hash: Option<String>,
+    dataset_version: &'a str,
+    dataset_hash: &'a str,
+    scorer: &'a ScorerMetadata,
+    model: ModelProvenance,
+    baseline_score: f32,
+    patched_score: Option<f32>,
+    score_delta: Option<f32>,
+    holdout_score: Option<f32>,
+    hook_decisions: Vec<HookDecision>,
+    validation_command_records: Vec<ValidationCommandRecord>,
+    final_validation_command_records: Vec<ValidationCommandRecord>,
+    rollback_succeeded: Option<bool>,
+    rollback_error: Option<String>,
+    candidate_timed_out: bool,
+}
+
+fn build_audit_packet(input: AuditPacketInput<'_>) -> Option<AuditPacket> {
+    let diff = input.diff?.to_string();
+    let diff_hash = input
+        .diff_hash
+        .map(str::to_string)
+        .unwrap_or_else(|| stable_hash_hex(diff.as_bytes()));
+    let patched_score = input.patched_score?;
+    let score_delta = input.score_delta?;
+
+    Some(AuditPacket {
+        schema_version: "0.2".to_string(),
+        agent_name: input.agent_name.to_string(),
+        iteration: input.iteration,
+        edit_scope_contract: "single-file-v0.2".to_string(),
+        accepted_edit: AcceptedEditSummary {
+            description: input
+                .edit_description
+                .unwrap_or("accepted optimizer edit")
+                .to_string(),
+            changed_file: input.edit_file.unwrap_or("unknown").to_string(),
+            diff_hash,
+            diff,
+        },
+        provenance: AuditProvenance {
+            git_sha_before: input.git_sha_before,
+            git_sha_after: input.git_sha_after,
+            working_tree_dirty_after: input.working_tree_dirty_after,
+            policy_path: input.policy_path,
+            policy_hash: input.policy_hash,
+            dataset_version: input.dataset_version.to_string(),
+            dataset_hash: input.dataset_hash.to_string(),
+            scorer_id: input.scorer.id.clone(),
+            scorer_version: input.scorer.version.clone(),
+            model: input.model,
+        },
+        scores: ScoreProvenance {
+            baseline_score: input.baseline_score,
+            patched_score,
+            score_delta,
+            holdout_score: input.holdout_score,
+        },
+        hook_decisions: input.hook_decisions,
+        validation_command_records: input.validation_command_records,
+        final_validation_command_records: input.final_validation_command_records,
+        rollback_succeeded: input.rollback_succeeded,
+        rollback_error: input.rollback_error,
+        candidate_timed_out: input.candidate_timed_out,
+    })
 }
 
 fn load_policy_info(agent_name: &str) -> Option<PolicyInfo> {

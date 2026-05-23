@@ -2,6 +2,24 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.2.0 - 2026-05-23
+
+Release candidate scope for the first serious safety-first release.
+
+### Added
+
+- Versioned audit packets for accepted optimizer changes.
+- Clear API stability documentation for the published crates.
+- Stronger release-readiness documentation and CI documentation gates.
+- A narrow parser-guarded fallback edit path that verifies Rust parses before
+  and after rewriting echo-style fallback strings.
+
+### Changed
+
+- The CLI remains the supported product surface. Published library crates are
+  explicitly unstable before 1.0 and expose a narrower documented facade.
+- The v0.2 safety contract hard-enforces single-file accepted edits.
+
 ## 0.1.1 - 2026-05-23
 
 ### Fixed

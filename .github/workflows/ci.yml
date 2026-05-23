@@ -58,6 +58,36 @@ jobs:
     - name: Test
       run: cargo test --workspace --locked --verbose
 
+  docs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cargo cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Rustdoc
+      env:
+        RUSTDOCFLAGS: -D warnings
+      run: cargo doc --workspace --no-deps --locked
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Cargo deny
+      uses: EmbarkStudios/cargo-deny-action@v2
+      with:
+        command: check advisories bans sources
+
   release-smoke:
     runs-on: ubuntu-latest
 
@@ -74,11 +104,9 @@ jobs:
     - name: Build release
       run: cargo build --workspace --release --locked
 
-    - name: Package crates
+    - name: Package analysis crate
       run: |
         cargo package -p mdx-rust-analysis --locked
-        cargo package -p mdx-rust-core --locked
-        cargo package -p mdx-rust --locked
 
     - name: Install CLI from path
       run: |

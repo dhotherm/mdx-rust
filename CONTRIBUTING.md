@@ -32,6 +32,16 @@ For changes touching candidate edits or acceptance:
 - Prove final validation failure rolls back real source.
 - Prove counters cannot report accepted changes that did not land.
 - Prove timeouts stop execution instead of hanging.
+- Preserve the `v0.2` single-file accepted edit contract unless the change also
+  adds transaction rollback support and updates `SAFETY_INVARIANTS.md`.
+- Preserve complete audit packets for every accepted change.
+
+## API Changes
+
+The CLI is the supported surface before `1.0`. Library APIs in
+`mdx-rust-core` and `mdx-rust-analysis` are unstable. If a PR adds a new public
+type, explain why it needs to be public and whether automation should consume it
+through the CLI instead.
 
 ## Release Flow
 

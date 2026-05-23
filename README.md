@@ -6,22 +6,59 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.80+](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 
-**A Rust-native optimizer for LLM agents.**
+**A Rust-native safety loop for improving LLM agents.**
 
-Point `mdx-rust` at an existing Rust agent (or crate), give it a behavioral **policy**, and let it safely improve prompts and simple single-file fallback behavior through structured experimentation - with compile-time safety gates at every step.
+`mdx-rust` points at an existing Rust agent, runs it on a small evaluation set,
+diagnoses weak behavior, proposes narrow edits, validates those edits in
+isolation, and only lands changes that pass Rust gates and improve the score.
 
-An early, safety-first optimizer for Rust LLM agents, with compile-time validation and Rust-aware analysis as its core differentiators.
+The CLI is the supported product surface. The library crates are published for
+installation and inspection, but their APIs remain unstable before `1.0`.
 
-## Why mdx-rust?
+## Current Scope
 
-- **Native Rust understanding** — Uses `syn` + `tree-sitter-rust` to actually read and reason about your agent’s code instead of treating it as text.
-- **Safety first** — Every accepted change is validated with `cargo check` and `clippy` inside isolated git worktrees or copies, then revalidated on the real tree with rollback on failure.
-- **Policy-driven** — Your domain rules, constraints, and quality expectations (`policies.md`) guide diagnosis, candidate generation, and scoring — not just “maximize the metric.”
-- **Agent-friendly CLI** — Excellent human output by default + first-class `--json` mode so other coding agents can drive it.
-- **Observable** — First-class trace records plus experiment ledgers, hook decisions, validation command records, score deltas, and provenance fields for accepted changes.
-- **Disciplined lifecycle** — Built-in hook stages for pre-edit, pre-command, post-validation, and pre-accept decisions.
-- **Audit aware** — Deterministic static audit checks surface risky agent surfaces like process execution, secret literals, unsafe code, and MCP/A2A-style integration boundaries.
-- **Single binary path** — install from crates.io with `cargo install mdx-rust`, or from this repo with `cargo install --git https://github.com/dhotherm/mdx-rust --package mdx-rust`.
+`mdx-rust` is an early public beta. It is useful for experimentation and
+dogfooding on Rust agent crates, but it is intentionally conservative.
+
+Today it supports:
+
+- Rust-aware source analysis with `syn` and `tree-sitter-rust`.
+- Process-based agent invocation with lifecycle traces.
+- Prompt and parser-guarded fallback-behavior improvement strategies.
+- Single-file accepted edits only.
+- Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
+- Net-positive scoring, final real-tree validation, and rollback on failure.
+- Versioned audit packets for accepted changes.
+- Human CLI output plus machine-parseable `--json` output.
+- Deterministic static audit checks for risky agent surfaces.
+
+Not yet supported:
+
+- Arbitrary multi-file accepted edits.
+- General autonomous refactoring.
+- Stable library APIs.
+- Complete standalone scored `mdx-rust eval`.
+- External hook runners.
+- Multi-language optimization.
+
+## Safety Model
+
+The acceptance contract is the center of the project:
+
+1. Build a targeted `ProposedEdit` for one file.
+2. Run pre-edit and pre-command hooks.
+3. Apply the edit in an isolated workspace.
+4. Run `cargo check` and `cargo clippy -- -D warnings` with timeouts.
+5. Score the patched isolated workspace.
+6. Require a strictly positive score delta.
+7. Run pre-accept hooks.
+8. Land the already validated edit on the real tree.
+9. Run final validation on the real tree.
+10. Roll back if final validation fails or times out.
+11. Count the change as accepted only after landing and final validation pass.
+
+The full non-bypass contract lives in
+[SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md).
 
 ## Quick Start
 
@@ -31,42 +68,29 @@ Install the CLI:
 cargo install mdx-rust
 ```
 
-Clone the repo and try the built-in example (the fastest way to see mdx-rust in action):
+Try the built-in example from a checkout:
 
 ```bash
 git clone https://github.com/dhotherm/mdx-rust
 cd mdx-rust
 
-# The example rig-minimal-agent starts in a deliberately weak state
 cargo run -p mdx-rust -- init
 cargo run -p mdx-rust -- register example examples/rig-minimal-agent
 cargo run -p mdx-rust -- optimize example --iterations 2
 cargo run -p mdx-rust -- audit example
-
-# See the improvement
 cargo run -p mdx-rust -- invoke example --input '{"query":"What is 9 + 10?"}'
 ```
 
-You should see the optimizer detect the weak echo behavior, plan a targeted fallback edit, validate it safely, and accept it only if the score improves.
-
-Full flow for your own agent:
+For your own Rust agent:
 
 ```bash
 cd your-rust-agent
-/path/to/mdx-rust init
-/path/to/mdx-rust register my-agent
-/path/to/mdx-rust optimize my-agent --iterations 5 --review
+mdx-rust init
+mdx-rust register my-agent .
+mdx-rust optimize my-agent --iterations 3 --budget medium --review
 ```
 
-Artifacts (traces, diagnoses, candidates, reports, diffs) live under `.mdx-rust/agents/<name>/`.
-
-## How It Works
-
-1. **Register** — Detects entrypoint (Rig agent, async fn, or generic JSON contract), creates a thin harness if needed, and smoke-tests invocation.
-2. **Spec** — Analyzes your agent and produces starter `policies.md`, `eval_spec.json`, and `dataset.json` artifacts.
-3. **Optimize** — Runs the agent on a deterministic dataset with lifecycle traces → scores outputs → diagnoses failures → generates targeted candidate patches → validates safely → keeps only net-positive changes with regression guards.
-4. **Gate** — Every candidate moves through explicit lifecycle stages: pre-edit, isolated validation, patched evaluation, pre-accept hook, final validation, and rollback on failure.
-5. **Repeat** — Multiple iterations, budgeted candidate pools, holdout splits, and experiment ledgers.
+Artifacts are written under `.mdx-rust/agents/<name>/`.
 
 ## Key Commands
 
@@ -80,80 +104,57 @@ mdx-rust eval my-agent --dataset .mdx-rust/agents/my-agent/dataset.json
 mdx-rust optimize my-agent --iterations 3 --budget medium --review
 ```
 
-Every command that matters supports `--json` for coding agents and automation.
+Every command intended for automation supports `--json`.
 
-## Safety Model
+## Audit Packets
 
-The optimizer is built around a conservative lifecycle:
+Accepted changes produce versioned JSON audit packets in the experiment
+directory. The `0.2` schema records:
 
-1. Analyze source scope with Rust-aware finders.
-2. Run the agent on a train split and record trace diagnoses.
-3. Generate typed candidate strategies.
-4. Build a targeted edit only when a safe planner exists.
-5. Run built-in lifecycle hooks.
-6. Apply and validate in an isolated workspace.
-7. Score the patched workspace.
-8. Land only net-positive changes.
-9. Run final validation on the real tree.
-10. Roll back if final validation fails.
+- Agent name and iteration.
+- Single-file edit scope contract.
+- Accepted diff and diff hash.
+- Dataset version and hash.
+- Policy path and hash when available.
+- Scorer id and version.
+- Diagnosis model metadata and whether a live model was used.
+- Hook decisions.
+- Isolated and final validation command outcomes.
+- Baseline, patched, delta, and holdout scores.
+- Rollback status if rollback was attempted.
 
-Experiment records include dataset version/hash, scorer version, git SHAs, validation commands, score deltas, hook decisions, holdout score, and prompt variant ledger entries.
+See [docs/provenance.md](./docs/provenance.md) for the schema contract.
 
-The full acceptance contract is documented in [SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md).
+## API Stability
 
-### Current Scope
+`mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis` are all published so the
+CLI can be installed from crates.io.
 
-v1 is deliberately conservative:
+For `0.2.x`:
 
-- Accepted edits are single-file only.
-- Current edit strategies cover prompts and common echo-style fallback behavior.
-- `eval` can load and hash datasets, but scored standalone evaluation is still being built.
-- Native Rust contracts currently execute through the process harness; richer in-process harnesses are future work.
-- Published crates are available for `mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis`. See [RELEASE.md](./RELEASE.md).
+- The `mdx-rust` CLI is supported.
+- The `mdx-rust-core` and `mdx-rust-analysis` APIs are unstable.
+- Public library types may change before `1.0`.
+- The intended facade is documented on docs.rs, but direct module usage is not
+  a stability promise.
+
+See [docs/api-stability.md](./docs/api-stability.md).
+
+## Project Docs
+
+- [SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md) - acceptance loop and non-bypass rules.
+- [docs/architecture.md](./docs/architecture.md) - module and lifecycle overview.
+- [docs/provenance.md](./docs/provenance.md) - audit packet schema.
+- [docs/release-readiness.md](./docs/release-readiness.md) - release gates and manual checks.
+- [ROADMAP.md](./ROADMAP.md) - current scope and next work.
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - development and safety expectations.
 
 ## Status
 
-**Early public beta (May 2026).**
-
-mdx-rust can already:
-- Register Rig and generic agents
-- Run them with tracing
-- Perform deep Rust analysis (prompts, tools, entrypoints)
-- Run deterministic diagnosis with structured candidates
-- Safely propose, validate (`cargo check` + `clippy` in isolation), and accept improvements
-- Execute typed strategies for prompts and common single-file fallback behavior
-- Split evaluation data into train/holdout sets under `light`, `medium`, or `heavy` budgets
-- Record prompt variant ledgers and lifecycle hook decisions
-- Run deterministic static security audits
-- Support dry-review mode (`--review`)
-- Produce experiment reports and artifacts
-
-The built-in example demonstrates a real before/after optimization win.
-
-See [ROADMAP.md](./ROADMAP.md) for current scope and upcoming work.
-
-## Project Health
-
-- Published on crates.io as `mdx-rust`.
-- CI runs format, clippy, test, release build, crate packaging, and install smoke checks.
-- Security and acceptance invariants are documented in [SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md).
-- Contributions are welcome through focused issues and pull requests.
-
-## Contributing
-
-We welcome contributions, especially around:
-
-- Better Rust code analysis (tree-sitter queries, syn visitors)
-- New candidate generation strategies
-- Support for additional agent frameworks
-- Evaluation harnesses and scoring functions
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow and review expectations.
+`v0.2.0` is being prepared as the first serious safety-first release. Before it
+is published, the candidate commit should pass local gates, GitHub CI, install
+smoke, docs.rs-style rustdoc, package checks, and external pressure testing.
 
 ## License
 
 MIT
-
----
-
-**The machine that improves the machines — in Rust.**

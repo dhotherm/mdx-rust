@@ -1,8 +1,10 @@
 //! Integration tests for the full optimization loop.
 //! These exercise tracing, scoring, diagnosis, candidate generation, and safe editing.
 
+use mdx_rust_core::mechanical_score;
 use mdx_rust_core::optimizer::{run_optimization, OptimizeConfig};
 use mdx_rust_core::registry::{AgentContract, RegisteredAgent};
+use mdx_rust_core::runner::run_agent;
 use mdx_rust_core::{HookPolicy, OptimizationBudget};
 use tempfile::tempdir;
 
@@ -134,4 +136,94 @@ fn main() {
     assert_eq!(run.accepted_changes, 0);
     assert!(run.hook_decisions.iter().any(|decision| decision.denied()));
     assert_eq!(std::fs::read_to_string(source_path).unwrap(), source);
+}
+
+#[tokio::test]
+async fn optimizer_loop_accepts_real_improvement_with_complete_audit_packet() {
+    let tmp = tempdir().unwrap();
+    let agent_dir = tmp.path().join("improvable-agent");
+    std::fs::create_dir_all(agent_dir.join("src")).unwrap();
+
+    std::fs::write(
+        agent_dir.join("Cargo.toml"),
+        r#"
+        [package]
+        name = "improvable-agent"
+        version = "0.1.0"
+        edition = "2021"
+    "#,
+    )
+    .unwrap();
+
+    let source_path = agent_dir.join("src/main.rs");
+    std::fs::write(
+        &source_path,
+        r#"
+use std::io::BufRead;
+
+fn main() {
+    let mut input = String::new();
+    std::io::stdin().lock().read_line(&mut input).unwrap();
+    let query = input.trim().replace('"', "'");
+    println!(
+        "{{\"answer\":\"Echo: {}\",\"confidence\":0.35,\"reasoning\":\"weak fallback\"}}",
+        query
+    );
+}
+"#,
+    )
+    .unwrap();
+
+    let agent = RegisteredAgent {
+        name: "improvable-agent".to_string(),
+        path: agent_dir.clone(),
+        contract: AgentContract::Process,
+        registered_at: "2026-05-23".to_string(),
+    };
+
+    let baseline = run_agent(&agent, serde_json::json!({"query":"What is 2+2?"}))
+        .await
+        .unwrap();
+    let baseline_score = mechanical_score(&baseline);
+
+    let cfg = OptimizeConfig {
+        max_iterations: 1,
+        candidates_per_iteration: 2,
+        use_llm_judge: false,
+        budget: OptimizationBudget::Medium,
+        hook_policy: HookPolicy::default(),
+        review_before_apply: false,
+        quiet: true,
+        candidate_timeout: std::time::Duration::from_secs(300),
+    };
+
+    let runs = run_optimization(&agent, &cfg).await.unwrap();
+    let run = &runs[0];
+
+    assert_eq!(run.validated_changes, 1);
+    assert_eq!(run.landed_changes, 1);
+    assert_eq!(run.accepted_changes, 1);
+    assert!(run.score_delta.unwrap() > 0.0);
+
+    let final_result = run_agent(&agent, serde_json::json!({"query":"What is 2+2?"}))
+        .await
+        .unwrap();
+    assert!(mechanical_score(&final_result) > baseline_score);
+    assert!(std::fs::read_to_string(source_path)
+        .unwrap()
+        .contains("Best-effort answer after reasoning"));
+
+    let packet = run
+        .audit_packet
+        .as_ref()
+        .expect("accepted run should include an audit packet");
+    assert_eq!(packet.schema_version, "0.2");
+    assert_eq!(packet.edit_scope_contract, "single-file-v0.2");
+    assert!(packet.accepted_edit.diff_hash.starts_with("fnv1a64:"));
+    assert_eq!(packet.provenance.dataset_version, "synthetic_v1");
+    assert_eq!(packet.provenance.scorer_id, "mechanical");
+    assert_eq!(packet.provenance.scorer_version, "v1");
+    assert!(!packet.validation_command_records.is_empty());
+    assert!(!packet.final_validation_command_records.is_empty());
+    assert!(packet.scores.score_delta > 0.0);
 }

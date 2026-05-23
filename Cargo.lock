@@ -838,7 +838,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-rust"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -854,7 +854,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-rust-analysis"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "ignore",
@@ -870,7 +870,7 @@ dependencies = [
 
 [[package]]
 name = "mdx-rust-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "mdx-rust-analysis",
