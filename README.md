@@ -11,7 +11,8 @@
 `mdx-rust` points at Rust code, finds scoped hardening opportunities, validates
 changes in isolation, checks project policy and behavior evals when supplied,
 and only lands edits that pass Rust gates. It still supports agent optimization,
-but `v0.5` is aimed at ordinary Rust crates and service backends too.
+but `v0.6` is aimed at autonomous improvement loops for ordinary Rust crates
+and service backends too.
 
 The CLI is the supported product surface. The library crates are published for
 installation and inspection, but their APIs remain unstable before `1.0`.
@@ -19,12 +20,12 @@ installation and inspection, but their APIs remain unstable before `1.0`.
 ## Current Scope
 
 `mdx-rust` is an early public beta. It is useful for experimentation and
-dogfooding on Rust agent crates, but it is intentionally conservative. In
-plain terms: `v0.5` is good at review-first, safety-gated hardening of scoped
-Rust modules, simple policy mapping, deterministic behavior evals, plan-first
-refactor impact analysis, approved plan execution for low-risk candidates, and
-the existing agent prompt/fallback optimizer. It is not a general autonomous
-refactoring engine yet.
+dogfooding on Rust agent crates, and it can now run guarded autonomous passes
+against ordinary Rust modules. In plain terms: `v0.6` can tell you where a Rust
+repo looks strong or weak, plan refactor work, execute the safe subset in
+multiple passes, replan after each applied pass, and preserve audit evidence.
+It is not a broad semantic rewrite engine yet, but it is now an autonomous
+Rust evolution loop for scoped, low-risk improvements.
 
 Today it supports:
 
@@ -43,6 +44,10 @@ Today it supports:
   transactions.
 - `apply-plan --all` execution queues for reviewing or applying every
   executable low-risk candidate in a saved plan, with per-step validation.
+- `map` repo intelligence reports with debt score, quality grade, available
+  gate detection, hardening findings, and next actions.
+- `autopilot` multi-pass orchestration that maps, plans, applies the safe
+  queue, replans after mutation, and persists an audit report.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -54,11 +59,13 @@ Today it supports:
 - Human CLI output plus machine-parseable `--json` output.
 - Deterministic static audit checks for risky agent surfaces.
 
-## What v0.5 Adds
+## What v0.6 Adds
 
-`v0.5` is the first release where mdx-rust becomes a guardrailed refactoring
-workflow instead of only a scoped hardening tool.
+`v0.6` is the release where mdx-rust starts acting like an autonomous Rust
+evolution engine instead of only a plan-first workflow.
 
+- Run `mdx-rust map <target>` to get a repo quality profile, debt score,
+  capability gates, findings, and next actions.
 - Run `mdx-rust plan <target>` to produce a non-mutating refactor plan.
 - Review impact before editing: public items, module edges, file size, long
   functions, policy references, behavior eval references, source snapshots, and
@@ -66,21 +73,26 @@ workflow instead of only a scoped hardening tool.
 - Execute approved low-risk candidates with `mdx-rust apply-plan --candidate
   <id>`.
 - Execute the whole safe queue with `mdx-rust apply-plan --all`.
-- Get JSON artifacts for every plan and apply run so humans and agents can
-  audit what happened.
+- Run `mdx-rust autopilot <target>` to review an autonomous pass without
+  mutating source files.
+- Run `mdx-rust autopilot <target> --apply` to execute low-risk queued
+  candidates, replan after each applied pass, and stop on any failed gate.
+- Get JSON artifacts for maps, plans, apply runs, and autopilot runs so humans
+  and agents can audit what happened.
 
-The aggressive part is that `apply-plan --all` can now apply multiple approved
-low-risk changes from one plan. The disciplined part is that every real edit
-still goes through freshness checks, isolated validation, final validation, and
-the hardening transaction path.
+The aggressive part is that `autopilot --apply` can run several safe passes on
+its own. The disciplined part is that each pass creates a fresh plan, executes
+only supported low-risk recipes, and routes every real edit through freshness
+checks, isolated validation, final validation, and the hardening transaction
+path.
 
 Not yet supported:
 
 - Arbitrary multi-file accepted edits outside the hardening transaction model.
-- General autonomous refactoring.
+- Autonomous public API changes or broad semantic rewrites.
 - Direct application of stale plans or plan-only/high-risk candidates.
 - Stable library APIs.
-- Coverage, mutation testing, or full semantic behavior proofs.
+- Built-in coverage, mutation testing, or full semantic behavior proofs.
 - External hook runners.
 - Multi-language optimization.
 
@@ -109,7 +121,7 @@ rejected candidates.
 
 The hardening path for ordinary Rust modules is review-first by default:
 `mdx-rust improve` validates candidate changes in an isolated workspace and
-requires `--apply` before touching the real tree. In `v0.5`, passing
+requires `--apply` before touching the real tree. In `v0.6`, passing
 `--eval-spec` also requires the behavior commands in that spec to pass in the
 isolated workspace and again after final application.
 
@@ -123,6 +135,12 @@ through the existing hardening transaction gates.
 For higher-leverage cleanup, `mdx-rust apply-plan --all` builds an execution
 queue from the saved plan, de-duplicates executable candidates by file, checks
 freshness before each step, and validates each applied step before continuing.
+
+The autonomous path is a coordinator over the same primitives. `mdx-rust
+autopilot` first writes a codebase map, then creates a plan, executes the safe
+queue in review or apply mode, and replans before any later apply pass. Review
+mode must not mutate the real tree. Apply mode stops on stale plans, rejected
+steps, unsupported candidates, or exhausted executable work.
 
 ## Quick Start
 
@@ -164,6 +182,9 @@ mdx-rust init
 mdx-rust doctor
 mdx-rust audit --policy policies/backend-safety.md
 mdx-rust eval --spec .mdx-rust/evals.json
+mdx-rust map src/api
+mdx-rust autopilot src/api
+mdx-rust autopilot src/api --apply --max-passes 3 --max-candidates 10
 mdx-rust improve src/api/config.rs
 mdx-rust plan src/api
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate <id>
@@ -174,7 +195,8 @@ mdx-rust improve src/api/config.rs --eval-spec .mdx-rust/evals.json --apply
 ```
 
 Hardening artifacts are written under `.mdx-rust/hardening/`. Refactor plan
-artifacts are written under `.mdx-rust/plans/`.
+artifacts are written under `.mdx-rust/plans/`. Codebase maps are written under
+`.mdx-rust/maps/`. Autopilot reports are written under `.mdx-rust/autopilot/`.
 
 Behavior eval specs execute local commands from your repository. Treat them as
 trusted project code, review changes to them like test scripts, and prefer
@@ -192,8 +214,11 @@ mdx-rust doctor my-agent
 mdx-rust audit --policy policies/backend-safety.md
 mdx-rust audit my-agent
 mdx-rust improve src/lib.rs
+mdx-rust map src/lib.rs
 mdx-rust plan src/lib.rs
 mdx-rust plan src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
+mdx-rust autopilot src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
+mdx-rust autopilot src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json --apply
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate plan-hardening-src-lib-rs-2
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate plan-hardening-src-lib-rs-2 --apply
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --all --max-candidates 10
@@ -209,6 +234,8 @@ mdx-rust schema project-policy --json
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
 mdx-rust schema refactor-batch-apply-run --json
+mdx-rust schema codebase-map --json
+mdx-rust schema autopilot-run --json
 ```
 
 Every command intended for automation supports `--json`.
@@ -236,13 +263,18 @@ See [docs/provenance.md](./docs/provenance.md) for the schema contract.
 transaction status, rollback status, policy matches, behavior eval outcomes,
 and workspace metadata.
 
-`v0.5` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
+`v0.6` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
 with impact summaries, source snapshot hashes, public API pressure, module
 edges, required gates, policy/eval references, and candidate actions. Plan
 artifacts are evidence for review and orchestration; they are not proof that a
 change has been applied. `apply-plan` reports are also written under
 `.mdx-rust/plans/` and record whether a candidate or execution queue was
 reviewed, applied, rejected, stale, partially applied, or unsupported.
+
+`v0.6` codebase maps are written under `.mdx-rust/maps/` with quality grades,
+debt scores, capability gates, findings, and recommended actions. Autopilot
+runs are written under `.mdx-rust/autopilot/` with the quality before/after,
+per-pass plan hashes, apply reports, skipped counts, and final status.
 
 Print the current JSON Schemas with:
 
@@ -253,6 +285,8 @@ mdx-rust schema behavior-eval-report --json
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
 mdx-rust schema refactor-batch-apply-run --json
+mdx-rust schema codebase-map --json
+mdx-rust schema autopilot-run --json
 ```
 
 ## API Stability
@@ -260,7 +294,7 @@ mdx-rust schema refactor-batch-apply-run --json
 `mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis` are all published so the
 CLI can be installed from crates.io.
 
-For `0.5.x`:
+For `0.6.x`:
 
 - The `mdx-rust` CLI is supported.
 - The `mdx-rust-core` and `mdx-rust-analysis` APIs are unstable.
@@ -295,9 +329,9 @@ guessing which checks matter.
 
 ## Status
 
-`v0.5.0` is in development as the first guardrailed refactoring release. It adds
-impact analysis, stale-plan-resistant plan execution for low-risk candidates,
-and keeps broader refactors behind explicit review and future transaction work.
+`v0.6.0` is in development as the first autonomous Rust evolution release. It
+adds codebase maps, multi-pass autopilot orchestration, and keeps broader
+semantic refactors behind explicit review and future transaction work.
 
 ## License
 

@@ -72,8 +72,8 @@ the user's source tree.
   accepted, landed, applied, or validated counters.
 - `mdx-rust apply-plan` must reject stale source snapshots before executing a
   candidate.
-- `mdx-rust apply-plan` may execute only candidates marked as executable for
-  v0.5. Today that means contextual error hardening routed through
+- `mdx-rust apply-plan` may execute only candidates marked as executable.
+  Today that means contextual error hardening routed through
   `mdx-rust improve`.
 - `mdx-rust apply-plan` must re-run the appropriate safety pipeline or
   hardening transaction. It must not trust stale plan evidence.
@@ -84,6 +84,31 @@ the user's source tree.
 - Broad multi-file refactors require explicit transaction design, plan hashes,
   rollback evidence, and dedicated invariant tests before they can apply.
 
+## Autonomous Evolution Scope
+
+`mdx-rust autopilot` is an orchestrator over existing safe primitives. It is
+allowed to move quickly, but it must not create a second mutation path.
+
+- `mdx-rust map` must never mutate the user's source tree.
+- `mdx-rust autopilot` without `--apply` must never mutate the user's source
+  tree. It may write `.mdx-rust/maps/`, `.mdx-rust/plans/`, and review-mode
+  reports only.
+- `mdx-rust autopilot --apply` must build a fresh plan before each apply pass.
+- Each apply pass may execute only candidates already marked executable in the
+  fresh plan.
+- Each executed candidate must route through `apply-plan --all` and the
+  hardening transaction path. Autopilot must not write Rust source files
+  directly.
+- Autopilot must stop on stale plans, rejected steps, unsupported candidates,
+  final validation failures, behavior eval failures, or exhausted executable
+  work.
+- Autopilot budgets (`--max-passes`, `--max-candidates`, and validation
+  timeout) can only reduce work. They must never reduce validation, rollback,
+  or provenance requirements.
+- Public API impacting candidates remain blocked unless the caller passes an
+  explicit public API allowance and the underlying executable recipe supports
+  that scope.
+
 ## Non-Bypass Rules
 
 - Hooks can only add gates. They must never skip isolated validation, net-positive scoring, landing validation, or rollback.
@@ -91,6 +116,11 @@ the user's source tree.
 - Ledgers are records only. A `PromptVariantRecord` means "considered", not "validated", "landed", or "accepted".
 - Refactor plans are records only. A `RefactorPlan` means "reviewed candidate
   areas", not "validated", "applied", "landed", or "accepted".
+- Codebase maps are records only. A `CodebaseMap` means "scanned and
+  summarized", not "validated", "applied", "landed", or "accepted".
+- Autopilot reports are orchestration evidence only. They must point back to
+  the concrete plans, apply-plan reports, hardening reports, validation
+  records, and rollback evidence that justified each step.
 - Refactor apply reports are records of an attempted plan execution. They must
   include stale-plan status when source snapshots do not match.
 - The safety pipeline must keep stage-specific internal records for scoped,
@@ -165,6 +195,13 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
   apply an executable queue while preserving review mode as non-mutating.
 - At least one CLI integration test proves `apply-plan` rejects stale source
   snapshots before mutation.
+- At least one CLI integration test proves `map --json` is machine parseable
+  and does not mutate source files.
+- At least one CLI integration test proves `autopilot --json` review mode is
+  machine parseable and does not mutate source files.
+- At least one CLI integration test proves `autopilot --apply --json` applies
+  only executable low-risk candidates through the hardening transaction path
+  and records quality before/after.
 
 The current invariant tests live primarily in:
 

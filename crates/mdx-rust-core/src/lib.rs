@@ -6,7 +6,7 @@
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.5.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `0.6.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io and so advanced
 //! users can inspect the internal data structures, but the library API is not
 //! yet stable. Public items may change before `1.0`.
@@ -72,14 +72,16 @@ pub use optimizer::{
 };
 /// Structured project policy records used by v0.4 hardening reports.
 pub use policy::{load_project_policy, PolicyCategory, PolicyRule, PolicySeverity, ProjectPolicy};
-/// Plan-first refactor records used by v0.5. Unstable before `1.0`.
+/// Plan-first refactor and autonomous orchestration records. Unstable before `1.0`.
 pub use refactor::{
-    apply_refactor_plan_batch, apply_refactor_plan_candidate, build_refactor_plan,
-    RefactorApplyConfig, RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus,
-    RefactorBatchApplyConfig, RefactorBatchApplyRun, RefactorBatchApplyStatus,
-    RefactorBatchCandidateRun, RefactorCandidate, RefactorCandidateStatus, RefactorImpactSummary,
-    RefactorPlan, RefactorPlanConfig, RefactorRecipe, RefactorRiskLevel, SourceSnapshot,
-    StaleSourceFile,
+    apply_refactor_plan_batch, apply_refactor_plan_candidate, build_codebase_map,
+    build_refactor_plan, run_autopilot, AutopilotConfig, AutopilotPass, AutopilotPassStatus,
+    AutopilotRun, AutopilotStatus, CapabilityGate, CodebaseMap, CodebaseMapConfig,
+    CodebaseQualityGrade, CodebaseQualitySummary, RefactorApplyConfig, RefactorApplyMode,
+    RefactorApplyRun, RefactorApplyStatus, RefactorBatchApplyConfig, RefactorBatchApplyRun,
+    RefactorBatchApplyStatus, RefactorBatchCandidateRun, RefactorCandidate,
+    RefactorCandidateStatus, RefactorImpactSummary, RefactorPlan, RefactorPlanConfig,
+    RefactorRecipe, RefactorRiskLevel, SourceSnapshot, StaleSourceFile, TestCoverageSignal,
 };
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};

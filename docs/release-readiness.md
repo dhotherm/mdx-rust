@@ -1,6 +1,6 @@
 # Release Readiness
 
-This document is the release checklist for `v0.5.0`.
+This document is the release checklist for `v0.6.0`.
 
 ## Required Automated Gates
 
@@ -22,7 +22,7 @@ dependency is indexed.
 
 `mdx-rust` intentionally uses a moderate dependency tree because it needs Rust
 parsing, CLI ergonomics, async process execution, and optional model-provider
-support. Before `v0.5.0` is published:
+support. Before `v0.6.0` is published:
 
 - No yanked crates should be present.
 - Known RustSec advisories must be fixed or documented with a dated
@@ -54,8 +54,12 @@ mdx-rust schema project-policy --json >/tmp/mdx-rust-policy-schema.json
 mdx-rust schema refactor-plan --json >/tmp/mdx-rust-refactor-schema.json
 mdx-rust schema refactor-apply-run --json >/tmp/mdx-rust-refactor-apply-schema.json
 mdx-rust schema refactor-batch-apply-run --json >/tmp/mdx-rust-refactor-batch-apply-schema.json
+mdx-rust schema codebase-map --json >/tmp/mdx-rust-codebase-map-schema.json
+mdx-rust schema autopilot-run --json >/tmp/mdx-rust-autopilot-schema.json
 mdx-rust eval --json >/tmp/mdx-rust-eval.json
 mdx-rust doctor --json >/tmp/mdx-rust-doctor.json
+mdx-rust map --json >/tmp/mdx-rust-map.json
+mdx-rust autopilot --json >/tmp/mdx-rust-autopilot.json
 ```
 
 ## Example Smoke
@@ -96,9 +100,13 @@ From a clean checkout:
 
 ```bash
 cargo run -p mdx-rust -- plan crates/mdx-rust-core/src/refactor.rs --json
+cargo run -p mdx-rust -- map crates/mdx-rust-core/src/refactor.rs --json
+cargo run -p mdx-rust -- autopilot crates/mdx-rust-core/src/refactor.rs --json
 cargo run -p mdx-rust -- schema refactor-plan --json
 cargo run -p mdx-rust -- schema refactor-apply-run --json
 cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
+cargo run -p mdx-rust -- schema codebase-map --json
+cargo run -p mdx-rust -- schema autopilot-run --json
 ```
 
 Confirm that the plan writes an artifact under `.mdx-rust/plans/`, reports
@@ -112,6 +120,9 @@ mdx-rust apply-plan .mdx-rust/plans/<plan>.json --candidate <candidate-id> --jso
 mdx-rust apply-plan .mdx-rust/plans/<plan>.json --candidate <candidate-id> --apply --json
 mdx-rust apply-plan .mdx-rust/plans/<plan>.json --all --json
 mdx-rust apply-plan .mdx-rust/plans/<plan>.json --all --apply --json
+mdx-rust map src --json
+mdx-rust autopilot src --json
+mdx-rust autopilot src --apply --json
 ```
 
 The review run must not mutate source files. The apply run must route through
@@ -119,6 +130,11 @@ the hardening transaction, reject stale source snapshots, and write an
 apply-plan report. The `--all` run must process only executable low-risk
 candidates, preserve review mode as non-mutating, and stop apply mode on the
 first failed step.
+
+The autopilot review run must not mutate source files. The autopilot apply run
+must write a codebase map, fresh plan artifact, batch apply report, and
+autopilot report. It must replan between apply passes and report quality
+before/after when it changes the tree.
 
 ## Performance Sanity
 
@@ -129,6 +145,8 @@ Record rough timings before release:
 - One `optimize --iterations 1 --budget light` run on the example agent.
 - One `improve <small-rust-file>` review run.
 - One `plan <small-rust-directory>` run.
+- One `map <small-rust-directory>` run.
+- One `autopilot <small-rust-directory>` review run.
 
 The exact numbers depend heavily on Cargo cache warmth. The release bar is not a
 micro-benchmark; it is that the CLI starts promptly and the example optimization
@@ -136,7 +154,7 @@ does not hang or produce confusing output.
 
 ## Publish Order
 
-Do not publish `v0.5.0` until the candidate commit has passed external pressure
+Do not publish `v0.6.0` until the candidate commit has passed external pressure
 testing.
 
 When approved, publish in dependency order:

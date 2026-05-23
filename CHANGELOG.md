@@ -2,6 +2,52 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.6.0 - 2026-05-23
+
+Autonomous Rust evolution for scoped low-risk improvements.
+
+This release turns the v0.5 plan-first workflow into a multi-pass autonomous
+loop. `mdx-rust` can now map a Rust repo, identify safe executable work, run
+review-mode autonomous passes, apply the low-risk queue, and replan before
+continuing.
+
+### Added
+
+- `mdx-rust map [target]` for non-mutating codebase intelligence reports with
+  quality grade, debt score, capability gates, findings, and next actions.
+- `mdx-rust autopilot [target]` for autonomous review passes that map, plan,
+  queue executable candidates, and preserve source files.
+- `mdx-rust autopilot [target] --apply` for multi-pass autonomous apply. Each
+  pass builds a fresh plan, executes only supported low-risk candidates through
+  `apply-plan --all`, and stops on any failed gate.
+- Versioned codebase map artifacts under `.mdx-rust/maps/`.
+- Versioned autopilot artifacts under `.mdx-rust/autopilot/`.
+- JSON Schema export for `codebase-map` and `autopilot-run`.
+- Capability gate detection for `cargo-nextest`, `cargo-llvm-cov`,
+  `cargo-mutants`, and `cargo-semver-checks`.
+- CLI integration tests proving map review is non-mutating and autopilot review
+  and apply modes remain machine-parseable and safety-gated.
+
+### Changed
+
+- Refactor plan, apply-plan, and batch apply artifacts now use schema version
+  `0.6`.
+- README, safety invariants, provenance docs, API stability docs, architecture
+  docs, and release readiness docs now describe autonomous orchestration.
+- Release smoke coverage includes map and autopilot schema checks.
+- Workspace package version is now `0.6.0`.
+
+### Known Limitations
+
+- Autopilot executes only supported low-risk recipes. It does not autonomously
+  change public APIs or apply broad semantic rewrites.
+- Larger candidates such as extracting functions and splitting modules remain
+  plan-only until stronger semantic analysis and transaction design land.
+- Optional coverage, mutation testing, and semver tools are detected as
+  capability gates but are not executed automatically.
+- The Rust library APIs remain unstable before `1.0`; automate through CLI JSON
+  and versioned artifacts.
+
 ## 0.5.0 - 2026-05-23
 
 Plan-first guardrailed refactoring for Rust crates and service modules.

@@ -1,8 +1,7 @@
 //! Plan-first guardrailed refactoring.
 //!
-//! v0.5 deliberately starts with auditable plans instead of autonomous broad
-//! rewrites. Plans summarize impact and point high-confidence changes back
-//! through the existing hardening transaction path.
+//! v0.6 keeps auditable plans as the mutation boundary and adds autonomous
+//! orchestration over the safe executable subset.
 
 use crate::eval::stable_hash_hex;
 use crate::hardening::{
@@ -55,6 +54,54 @@ pub struct RefactorBatchApplyConfig {
     pub max_candidates: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct CodebaseMapConfig {
+    pub target: Option<PathBuf>,
+    pub policy_path: Option<PathBuf>,
+    pub behavior_spec_path: Option<PathBuf>,
+    pub max_files: usize,
+}
+
+impl Default for CodebaseMapConfig {
+    fn default() -> Self {
+        Self {
+            target: None,
+            policy_path: None,
+            behavior_spec_path: None,
+            max_files: 250,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AutopilotConfig {
+    pub target: Option<PathBuf>,
+    pub policy_path: Option<PathBuf>,
+    pub behavior_spec_path: Option<PathBuf>,
+    pub apply: bool,
+    pub max_files: usize,
+    pub max_passes: usize,
+    pub max_candidates: usize,
+    pub validation_timeout: Duration,
+    pub allow_public_api_impact: bool,
+}
+
+impl Default for AutopilotConfig {
+    fn default() -> Self {
+        Self {
+            target: None,
+            policy_path: None,
+            behavior_spec_path: None,
+            apply: false,
+            max_files: 250,
+            max_passes: 3,
+            max_candidates: 25,
+            validation_timeout: Duration::from_secs(180),
+            allow_public_api_impact: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RefactorPlan {
     pub schema_version: String,
@@ -73,6 +120,114 @@ pub struct RefactorPlan {
     pub required_gates: Vec<String>,
     pub non_goals: Vec<String>,
     pub artifact_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CodebaseMap {
+    pub schema_version: String,
+    pub map_id: String,
+    pub map_hash: String,
+    pub root: String,
+    pub target: Option<String>,
+    pub workspace: WorkspaceSummary,
+    pub policy: Option<ProjectPolicy>,
+    pub behavior_spec: Option<String>,
+    pub quality: CodebaseQualitySummary,
+    pub capability_gates: Vec<CapabilityGate>,
+    pub impact: RefactorImpactSummary,
+    pub files: Vec<RefactorFileSummary>,
+    pub module_edges: Vec<ModuleEdge>,
+    pub findings: Vec<HardeningFinding>,
+    pub recommended_actions: Vec<String>,
+    pub artifact_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CodebaseQualitySummary {
+    pub grade: CodebaseQualityGrade,
+    pub debt_score: u8,
+    pub patchable_findings: usize,
+    pub review_only_findings: usize,
+    pub public_api_pressure: usize,
+    pub oversized_files: usize,
+    pub oversized_functions: usize,
+    pub test_coverage_signal: TestCoverageSignal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum CodebaseQualityGrade {
+    Excellent,
+    Good,
+    NeedsWork,
+    HighRisk,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum TestCoverageSignal {
+    Present,
+    Sparse,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CapabilityGate {
+    pub id: String,
+    pub label: String,
+    pub available: bool,
+    pub command: String,
+    pub purpose: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AutopilotRun {
+    pub schema_version: String,
+    pub run_id: String,
+    pub root: String,
+    pub target: Option<String>,
+    pub mode: RefactorApplyMode,
+    pub status: AutopilotStatus,
+    pub max_passes: usize,
+    pub max_candidates_per_pass: usize,
+    pub quality_before: CodebaseQualitySummary,
+    pub quality_after: Option<CodebaseQualitySummary>,
+    pub passes: Vec<AutopilotPass>,
+    pub total_planned_candidates: usize,
+    pub total_executed_candidates: usize,
+    pub total_skipped_candidates: usize,
+    pub note: String,
+    pub artifact_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AutopilotPass {
+    pub pass_index: usize,
+    pub plan_id: String,
+    pub plan_hash: String,
+    pub plan_artifact_path: Option<String>,
+    pub planned_candidates: usize,
+    pub executable_candidates: usize,
+    pub batch: Option<RefactorBatchApplyRun>,
+    pub status: AutopilotPassStatus,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum AutopilotStatus {
+    Reviewed,
+    Applied,
+    PartiallyApplied,
+    NoExecutableCandidates,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum AutopilotPassStatus {
+    Planned,
+    Reviewed,
+    Applied,
+    PartiallyApplied,
+    NoExecutableCandidates,
+    Rejected,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -256,14 +411,14 @@ pub fn build_refactor_plan(
 
     let required_gates = required_gates(config.behavior_spec_path.is_some());
     let non_goals = vec![
-        "No autonomous broad multi-file refactors in v0.5.".to_string(),
+        "No broad API-changing refactors without explicit human allowance.".to_string(),
         "No public API changes without explicit human review.".to_string(),
         "No plan candidate may bypass improve/apply validation gates.".to_string(),
     ];
 
     let plan_id = plan_id(&root, config, &impact, &candidates);
     let mut plan = RefactorPlan {
-        schema_version: "0.5".to_string(),
+        schema_version: "0.6".to_string(),
         plan_id,
         plan_hash: String::new(),
         root: root.display().to_string(),
@@ -294,6 +449,201 @@ pub fn build_refactor_plan(
     Ok(plan)
 }
 
+pub fn build_codebase_map(
+    root: &Path,
+    artifact_root: Option<&Path>,
+    config: &CodebaseMapConfig,
+) -> anyhow::Result<CodebaseMap> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let refactor = analyze_refactor(
+        &root,
+        RefactorAnalyzeConfig {
+            target: config.target.as_deref(),
+            max_files: config.max_files,
+        },
+    )?;
+    let hardening = analyze_hardening(
+        &root,
+        HardeningAnalyzeConfig {
+            target: config.target.as_deref(),
+            max_files: config.max_files,
+        },
+    )?;
+    let policy = load_project_policy(&root, config.policy_path.as_deref())?;
+    let workspace = workspace_summary(&root);
+    let behavior_spec = config
+        .behavior_spec_path
+        .as_ref()
+        .map(|path| path.display().to_string());
+    let impact = summarize_impact(
+        &refactor.files,
+        refactor.module_edges.len(),
+        &hardening.findings,
+        hardening.changes.len(),
+    );
+    let quality = summarize_quality(&refactor.files, &hardening.findings, &impact);
+    let capability_gates = capability_gates();
+    let recommended_actions = recommended_actions(&quality, &impact, &capability_gates);
+    let map_id = codebase_map_id(&root, config, &quality, &impact);
+    let mut map = CodebaseMap {
+        schema_version: "0.6".to_string(),
+        map_id,
+        map_hash: String::new(),
+        root: root.display().to_string(),
+        target: config
+            .target
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        workspace,
+        policy,
+        behavior_spec,
+        quality,
+        capability_gates,
+        impact,
+        files: refactor.files,
+        module_edges: refactor.module_edges,
+        findings: hardening.findings,
+        recommended_actions,
+        artifact_path: None,
+    };
+    map.map_hash = codebase_map_hash(&map);
+
+    if let Some(artifact_root) = artifact_root {
+        let path = persist_codebase_map(artifact_root, &map)?;
+        map.artifact_path = Some(path.display().to_string());
+        std::fs::write(&path, serde_json::to_string_pretty(&map)?)?;
+    }
+
+    Ok(map)
+}
+
+pub fn run_autopilot(
+    root: &Path,
+    artifact_root: Option<&Path>,
+    config: &AutopilotConfig,
+) -> anyhow::Result<AutopilotRun> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let map_config = CodebaseMapConfig {
+        target: config.target.clone(),
+        policy_path: config.policy_path.clone(),
+        behavior_spec_path: config.behavior_spec_path.clone(),
+        max_files: config.max_files,
+    };
+    let before_map = build_codebase_map(&root, artifact_root, &map_config)?;
+    let mode = if config.apply {
+        RefactorApplyMode::Apply
+    } else {
+        RefactorApplyMode::Review
+    };
+    let mut run = AutopilotRun {
+        schema_version: "0.6".to_string(),
+        run_id: autopilot_run_id(&root, config, &before_map),
+        root: root.display().to_string(),
+        target: config
+            .target
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        mode,
+        status: AutopilotStatus::NoExecutableCandidates,
+        max_passes: config.max_passes,
+        max_candidates_per_pass: config.max_candidates,
+        quality_before: before_map.quality,
+        quality_after: None,
+        passes: Vec::new(),
+        total_planned_candidates: 0,
+        total_executed_candidates: 0,
+        total_skipped_candidates: 0,
+        note: String::new(),
+        artifact_path: None,
+    };
+
+    let pass_count = config.max_passes.max(1);
+    for pass_index in 1..=pass_count {
+        let plan = build_refactor_plan(
+            &root,
+            artifact_root,
+            &RefactorPlanConfig {
+                target: config.target.clone(),
+                policy_path: config.policy_path.clone(),
+                behavior_spec_path: config.behavior_spec_path.clone(),
+                max_files: config.max_files,
+            },
+        )?;
+        let executable = count_executable_candidates(
+            &plan,
+            config.allow_public_api_impact,
+            config.max_candidates,
+        );
+        run.total_planned_candidates += plan.candidates.len();
+
+        let mut pass = AutopilotPass {
+            pass_index,
+            plan_id: plan.plan_id.clone(),
+            plan_hash: plan.plan_hash.clone(),
+            plan_artifact_path: plan.artifact_path.clone(),
+            planned_candidates: plan.candidates.len(),
+            executable_candidates: executable,
+            batch: None,
+            status: AutopilotPassStatus::Planned,
+            note: String::new(),
+        };
+
+        if executable == 0 {
+            pass.status = AutopilotPassStatus::NoExecutableCandidates;
+            pass.note = "no executable low-risk candidates remain for this pass".to_string();
+            run.passes.push(pass);
+            break;
+        }
+
+        let Some(plan_path) = plan.artifact_path.as_ref() else {
+            pass.status = AutopilotPassStatus::Rejected;
+            pass.note = "autopilot requires persisted plan artifacts before execution".to_string();
+            run.passes.push(pass);
+            break;
+        };
+
+        let batch = apply_refactor_plan_batch(
+            &root,
+            artifact_root,
+            &RefactorBatchApplyConfig {
+                plan_path: PathBuf::from(plan_path),
+                apply: config.apply,
+                allow_public_api_impact: config.allow_public_api_impact,
+                validation_timeout: config.validation_timeout,
+                max_candidates: config.max_candidates,
+            },
+        )?;
+        run.total_executed_candidates += batch.executed_candidates;
+        run.total_skipped_candidates += batch.skipped_candidates;
+        pass.status = autopilot_pass_status(&batch.status);
+        pass.note = batch.note.clone();
+        let should_stop = !config.apply
+            || matches!(
+                batch.status,
+                RefactorBatchApplyStatus::Rejected
+                    | RefactorBatchApplyStatus::StalePlan
+                    | RefactorBatchApplyStatus::NoExecutableCandidates
+                    | RefactorBatchApplyStatus::PartiallyApplied
+            )
+            || batch.executed_candidates == 0;
+        pass.batch = Some(batch);
+        run.passes.push(pass);
+        if should_stop {
+            break;
+        }
+    }
+
+    let after_map = if config.apply && run.total_executed_candidates > 0 {
+        Some(build_codebase_map(&root, artifact_root, &map_config)?)
+    } else {
+        None
+    };
+    run.quality_after = after_map.map(|map| map.quality);
+    run.status = autopilot_status(config.apply, &run.passes, run.total_executed_candidates);
+    run.note = autopilot_note(&run);
+    persist_autopilot_run(artifact_root, run)
+}
+
 pub fn apply_refactor_plan_candidate(
     root: &Path,
     artifact_root: Option<&Path>,
@@ -308,7 +658,7 @@ pub fn apply_refactor_plan_candidate(
         RefactorApplyMode::Review
     };
     let mut run = RefactorApplyRun {
-        schema_version: "0.5".to_string(),
+        schema_version: "0.6".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -374,8 +724,7 @@ pub fn apply_refactor_plan_candidate(
         || candidate.recipe != RefactorRecipe::ContextualErrorHardening
     {
         run.status = RefactorApplyStatus::Unsupported;
-        run.note =
-            "candidate is plan-only in v0.5; no executable recipe is available yet".to_string();
+        run.note = "candidate is plan-only; no executable recipe is available yet".to_string();
         return persist_apply_run(artifact_root, run);
     }
 
@@ -428,7 +777,7 @@ pub fn apply_refactor_plan_batch(
         RefactorApplyMode::Review
     };
     let mut run = RefactorBatchApplyRun {
-        schema_version: "0.5".to_string(),
+        schema_version: "0.6".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -620,6 +969,143 @@ fn summarize_impact(
     }
 }
 
+fn summarize_quality(
+    files: &[RefactorFileSummary],
+    findings: &[HardeningFinding],
+    impact: &RefactorImpactSummary,
+) -> CodebaseQualitySummary {
+    let patchable_findings = findings.iter().filter(|finding| finding.patchable).count();
+    let review_only_findings = findings.len().saturating_sub(patchable_findings);
+    let files_with_tests = files.iter().filter(|file| file.has_tests).count();
+    let test_coverage_signal = if files.is_empty() {
+        TestCoverageSignal::Unknown
+    } else if files_with_tests > 0 {
+        TestCoverageSignal::Present
+    } else {
+        TestCoverageSignal::Sparse
+    };
+
+    let mut score = 0usize;
+    score += patchable_findings.saturating_mul(8);
+    score += review_only_findings.saturating_mul(4);
+    score += impact.oversized_files.saturating_mul(10);
+    score += impact.oversized_functions.saturating_mul(7);
+    score += impact.public_files.saturating_mul(2);
+    if test_coverage_signal == TestCoverageSignal::Sparse {
+        score += 12;
+    }
+    let debt_score = score.min(100) as u8;
+    let grade = if debt_score >= 70 {
+        CodebaseQualityGrade::HighRisk
+    } else if debt_score >= 35 {
+        CodebaseQualityGrade::NeedsWork
+    } else if debt_score >= 10 {
+        CodebaseQualityGrade::Good
+    } else {
+        CodebaseQualityGrade::Excellent
+    };
+
+    CodebaseQualitySummary {
+        grade,
+        debt_score,
+        patchable_findings,
+        review_only_findings,
+        public_api_pressure: impact.public_item_count,
+        oversized_files: impact.oversized_files,
+        oversized_functions: impact.oversized_functions,
+        test_coverage_signal,
+    }
+}
+
+fn capability_gates() -> Vec<CapabilityGate> {
+    vec![
+        CapabilityGate {
+            id: "nextest".to_string(),
+            label: "cargo-nextest".to_string(),
+            available: cargo_subcommand_exists("nextest"),
+            command: "cargo nextest run".to_string(),
+            purpose: "fast, isolated Rust test execution for behavior gates".to_string(),
+        },
+        CapabilityGate {
+            id: "llvm-cov".to_string(),
+            label: "cargo-llvm-cov".to_string(),
+            available: cargo_subcommand_exists("llvm-cov"),
+            command: "cargo llvm-cov".to_string(),
+            purpose: "coverage evidence before broad autonomous refactoring".to_string(),
+        },
+        CapabilityGate {
+            id: "mutants".to_string(),
+            label: "cargo-mutants".to_string(),
+            available: cargo_subcommand_exists("mutants"),
+            command: "cargo mutants".to_string(),
+            purpose: "mutation testing signal for high-value refactor targets".to_string(),
+        },
+        CapabilityGate {
+            id: "semver-checks".to_string(),
+            label: "cargo-semver-checks".to_string(),
+            available: cargo_subcommand_exists("semver-checks"),
+            command: "cargo semver-checks".to_string(),
+            purpose: "public API compatibility gate for library refactors".to_string(),
+        },
+    ]
+}
+
+fn recommended_actions(
+    quality: &CodebaseQualitySummary,
+    impact: &RefactorImpactSummary,
+    gates: &[CapabilityGate],
+) -> Vec<String> {
+    let mut actions = Vec::new();
+    if quality.patchable_findings > 0 {
+        actions.push(
+            "Run mdx-rust autopilot --apply to execute low-risk contextual hardening passes."
+                .to_string(),
+        );
+    }
+    if quality.review_only_findings > 0 {
+        actions.push(
+            "Review security-sensitive findings before enabling broader recipes.".to_string(),
+        );
+    }
+    if impact.oversized_files > 0 || impact.oversized_functions > 0 {
+        actions.push(
+            "Use mdx-rust plan to stage larger module and function refactors behind behavior gates."
+                .to_string(),
+        );
+    }
+    if quality.public_api_pressure > 0
+        && gates
+            .iter()
+            .any(|gate| gate.id == "semver-checks" && !gate.available)
+    {
+        actions.push(
+            "Install cargo-semver-checks before allowing public API impacting refactors."
+                .to_string(),
+        );
+    }
+    if quality.test_coverage_signal == TestCoverageSignal::Sparse {
+        actions.push(
+            "Add a behavior eval spec or stronger Rust tests before broad autonomous apply."
+                .to_string(),
+        );
+    }
+    if actions.is_empty() {
+        actions.push(
+            "No immediate autonomous changes found. Keep policy and behavior gates current."
+                .to_string(),
+        );
+    }
+    actions
+}
+
+fn cargo_subcommand_exists(name: &str) -> bool {
+    let command = format!("cargo-{name}");
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path_var).any(|dir| dir.join(&command).is_file())
+}
+
 fn hardening_candidates(
     findings: &[HardeningFinding],
     config: &RefactorPlanConfig,
@@ -785,6 +1271,45 @@ fn plan_id(
     stable_hash_hex(&bytes)
 }
 
+fn codebase_map_id(
+    root: &Path,
+    config: &CodebaseMapConfig,
+    quality: &CodebaseQualitySummary,
+    impact: &RefactorImpactSummary,
+) -> String {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(root.display().to_string().as_bytes());
+    bytes.extend_from_slice(format!("{:?}", config.target).as_bytes());
+    bytes.extend_from_slice(format!("{quality:?}").as_bytes());
+    bytes.extend_from_slice(format!("{impact:?}").as_bytes());
+    stable_hash_hex(&bytes)
+}
+
+fn codebase_map_hash(map: &CodebaseMap) -> String {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(map.schema_version.as_bytes());
+    bytes.extend_from_slice(map.map_id.as_bytes());
+    bytes.extend_from_slice(map.root.as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.target).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.quality).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.impact).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.files).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.module_edges).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.findings).as_bytes());
+    stable_hash_hex(&bytes)
+}
+
+fn autopilot_run_id(root: &Path, config: &AutopilotConfig, map: &CodebaseMap) -> String {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(root.display().to_string().as_bytes());
+    bytes.extend_from_slice(format!("{:?}", config.target).as_bytes());
+    bytes.extend_from_slice(config.apply.to_string().as_bytes());
+    bytes.extend_from_slice(config.max_passes.to_string().as_bytes());
+    bytes.extend_from_slice(config.max_candidates.to_string().as_bytes());
+    bytes.extend_from_slice(map.map_hash.as_bytes());
+    stable_hash_hex(&bytes)
+}
+
 fn refactor_plan_hash(plan: &RefactorPlan) -> String {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(plan.schema_version.as_bytes());
@@ -905,6 +1430,89 @@ fn executable_candidate_queue<'a>(
     queue
 }
 
+fn count_executable_candidates(
+    plan: &RefactorPlan,
+    allow_public_api_impact: bool,
+    max_candidates: usize,
+) -> usize {
+    executable_candidate_queue(
+        plan,
+        &RefactorBatchApplyConfig {
+            plan_path: PathBuf::new(),
+            apply: false,
+            allow_public_api_impact,
+            validation_timeout: Duration::from_secs(1),
+            max_candidates,
+        },
+    )
+    .len()
+}
+
+fn autopilot_pass_status(status: &RefactorBatchApplyStatus) -> AutopilotPassStatus {
+    match status {
+        RefactorBatchApplyStatus::Reviewed => AutopilotPassStatus::Reviewed,
+        RefactorBatchApplyStatus::Applied => AutopilotPassStatus::Applied,
+        RefactorBatchApplyStatus::PartiallyApplied => AutopilotPassStatus::PartiallyApplied,
+        RefactorBatchApplyStatus::NoExecutableCandidates => {
+            AutopilotPassStatus::NoExecutableCandidates
+        }
+        RefactorBatchApplyStatus::Rejected | RefactorBatchApplyStatus::StalePlan => {
+            AutopilotPassStatus::Rejected
+        }
+    }
+}
+
+fn autopilot_status(
+    apply: bool,
+    passes: &[AutopilotPass],
+    executed_candidates: usize,
+) -> AutopilotStatus {
+    if executed_candidates == 0 {
+        if passes
+            .iter()
+            .any(|pass| pass.status == AutopilotPassStatus::Rejected)
+        {
+            AutopilotStatus::Rejected
+        } else {
+            AutopilotStatus::NoExecutableCandidates
+        }
+    } else if !apply {
+        AutopilotStatus::Reviewed
+    } else if passes
+        .iter()
+        .any(|pass| pass.status == AutopilotPassStatus::Rejected)
+    {
+        AutopilotStatus::PartiallyApplied
+    } else {
+        AutopilotStatus::Applied
+    }
+}
+
+fn autopilot_note(run: &AutopilotRun) -> String {
+    match run.status {
+        AutopilotStatus::Reviewed => format!(
+            "reviewed {} candidate(s) across {} pass(es); rerun with --apply to land validated transactions",
+            run.total_executed_candidates,
+            run.passes.len()
+        ),
+        AutopilotStatus::Applied => format!(
+            "applied {} candidate(s) across {} pass(es) with fresh plans before each pass",
+            run.total_executed_candidates,
+            run.passes.len()
+        ),
+        AutopilotStatus::PartiallyApplied => format!(
+            "applied {} candidate(s) before an execution gate stopped the run",
+            run.total_executed_candidates
+        ),
+        AutopilotStatus::NoExecutableCandidates => {
+            "no executable low-risk candidates were available".to_string()
+        }
+        AutopilotStatus::Rejected => {
+            "autopilot stopped because a planning or execution gate rejected the run".to_string()
+        }
+    }
+}
+
 fn batch_status(apply: bool, executed: usize, requested: usize) -> RefactorBatchApplyStatus {
     if requested == 0 {
         RefactorBatchApplyStatus::NoExecutableCandidates
@@ -996,6 +1604,40 @@ fn persist_batch_apply_run(
     Ok(run)
 }
 
+fn persist_codebase_map(artifact_root: &Path, map: &CodebaseMap) -> anyhow::Result<PathBuf> {
+    let dir = artifact_root.join("maps");
+    std::fs::create_dir_all(&dir)?;
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    Ok(dir.join(format!(
+        "codebase-map-{millis}-{}.json",
+        sanitize_id(&map.map_id)
+    )))
+}
+
+fn persist_autopilot_run(
+    artifact_root: Option<&Path>,
+    mut run: AutopilotRun,
+) -> anyhow::Result<AutopilotRun> {
+    if let Some(artifact_root) = artifact_root {
+        let dir = artifact_root.join("autopilot");
+        std::fs::create_dir_all(&dir)?;
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0);
+        let path = dir.join(format!(
+            "autopilot-{millis}-{}.json",
+            sanitize_id(&run.run_id)
+        ));
+        run.artifact_path = Some(path.display().to_string());
+        std::fs::write(&path, serde_json::to_string_pretty(&run)?)?;
+    }
+    Ok(run)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1038,7 +1680,7 @@ anyhow = "1"
         )
         .unwrap();
 
-        assert_eq!(plan.schema_version, "0.5");
+        assert_eq!(plan.schema_version, "0.6");
         assert!(plan.candidates.iter().any(|candidate| candidate.status
             == RefactorCandidateStatus::ApplyViaImprove
             && candidate

@@ -16,7 +16,8 @@ mdx-rust schema audit-packet --json
 
 Other exported schemas include `candidate`, `optimization-run`,
 `hook-decision`, `trace-event`, `hardening-run`, `hardening-finding`,
-`refactor-plan`, and `refactor-apply-run`.
+`refactor-plan`, `refactor-apply-run`, `refactor-batch-apply-run`,
+`codebase-map`, and `autopilot-run`.
 
 ## Required Fields
 
@@ -126,13 +127,13 @@ mdx-rust schema project-policy --json
 
 ## Refactor Plans
 
-`v0.5` refactor plans produce separate reports:
+`v0.6` refactor plans produce separate reports:
 
 ```text
 .mdx-rust/plans/refactor-plan-<timestamp>-<plan-id>.json
 ```
 
-The refactor plan schema version is `"0.5"`.
+The refactor plan schema version is `"0.6"`.
 
 Refactor plans record:
 
@@ -150,7 +151,7 @@ Refactor plans record:
 
 A refactor plan is not acceptance evidence. It is a review artifact.
 `mdx-rust apply-plan` must verify source snapshot hashes before it can execute
-an approved candidate. Executable v0.5 candidates still go through
+an approved candidate. Executable candidates still go through
 `mdx-rust improve`, and future broader plan application commands must re-run
 safety gates rather than trusting stale plan output.
 
@@ -177,4 +178,55 @@ Print the refactor plan schema with:
 ```bash
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
+mdx-rust schema refactor-batch-apply-run --json
+```
+
+## Codebase Maps And Autopilot Runs
+
+`v0.6` codebase maps produce separate reports:
+
+```text
+.mdx-rust/maps/codebase-map-<timestamp>-<map-id>.json
+```
+
+The codebase map schema version is `"0.6"`.
+
+Codebase maps record:
+
+- workspace root and target
+- optional policy path and content hash
+- optional behavior eval spec path
+- quality grade and debt score
+- patchable and review-only finding counts
+- public API pressure
+- oversized file and function counts
+- test coverage signal
+- optional capability gate availability for nextest, llvm-cov, mutants, and
+  semver checks
+- findings, module edges, file summaries, and recommended next actions
+
+Autopilot runs produce separate reports:
+
+```text
+.mdx-rust/autopilot/autopilot-<timestamp>-<run-id>.json
+```
+
+The autopilot run schema version is `"0.6"`.
+
+Autopilot runs record:
+
+- review or apply mode
+- quality before and after when apply mode changes the tree
+- max pass and candidate budgets
+- one pass record per fresh plan
+- plan id, plan hash, and plan artifact path per pass
+- embedded batch apply reports with hardening evidence for executed steps
+- total planned, executed, and skipped candidate counts
+- final status and note
+
+Print the schemas with:
+
+```bash
+mdx-rust schema codebase-map --json
+mdx-rust schema autopilot-run --json
 ```

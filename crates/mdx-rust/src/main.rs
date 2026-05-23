@@ -114,6 +114,62 @@ enum Commands {
         max_files: usize,
     },
 
+    /// Build a repo intelligence map without mutating the workspace
+    Map {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Optional policy file to hash and attach to the map
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Optional behavior eval spec that future apply commands should pass
+        #[arg(long)]
+        eval_spec: Option<String>,
+
+        /// Maximum Rust files to scan
+        #[arg(long, default_value = "250")]
+        max_files: usize,
+    },
+
+    /// Plan, queue, and execute safe autonomous refactor passes
+    Autopilot {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Optional policy file to hash and enforce through hardening reports
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Optional behavior eval spec that every applied pass must satisfy
+        #[arg(long)]
+        eval_spec: Option<String>,
+
+        /// Apply validated changes to the real tree. Without this, review mode is used.
+        #[arg(long)]
+        apply: bool,
+
+        /// Allow execution when a candidate is marked as public API impacting
+        #[arg(long)]
+        allow_public_api_impact: bool,
+
+        /// Maximum Rust files to scan per pass
+        #[arg(long, default_value = "250")]
+        max_files: usize,
+
+        /// Maximum autonomous passes. Each apply pass replans before continuing.
+        #[arg(long, default_value = "3")]
+        max_passes: usize,
+
+        /// Maximum executable candidates per pass
+        #[arg(long, default_value = "25")]
+        max_candidates: usize,
+
+        /// Validation timeout in seconds
+        #[arg(long, default_value = "180")]
+        timeout_seconds: u64,
+    },
+
     /// Execute an approved candidate from a saved refactor plan
     ApplyPlan {
         /// Path to a refactor plan JSON artifact
@@ -170,8 +226,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, refactor-plan, refactor-apply-run, refactor-batch-apply-run
-        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run"])]
+        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -264,6 +320,50 @@ fn main() {
                 cli.json,
             ) {
                 emit_error(cli.json, "plan", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Map {
+            target,
+            policy,
+            eval_spec,
+            max_files,
+        } => {
+            if let Err(e) = cmd_map(
+                target.as_deref(),
+                policy.as_deref(),
+                eval_spec.as_deref(),
+                max_files,
+                cli.json,
+            ) {
+                emit_error(cli.json, "map", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Autopilot {
+            target,
+            policy,
+            eval_spec,
+            apply,
+            allow_public_api_impact,
+            max_files,
+            max_passes,
+            max_candidates,
+            timeout_seconds,
+        } => {
+            if let Err(e) = cmd_autopilot(AutopilotCommand {
+                target: target.as_deref(),
+                policy: policy.as_deref(),
+                eval_spec: eval_spec.as_deref(),
+                apply,
+                allow_public_api_impact,
+                max_files,
+                max_passes,
+                max_candidates,
+                timeout_seconds,
+                json: cli.json,
+            }) {
+                emit_error(cli.json, "autopilot", &e);
                 std::process::exit(1);
             }
         }
@@ -1130,6 +1230,146 @@ fn cmd_plan(
     Ok(())
 }
 
+fn cmd_map(
+    target: Option<&str>,
+    policy: Option<&str>,
+    eval_spec: Option<&str>,
+    max_files: usize,
+    json: bool,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let map = mdx_rust_core::build_codebase_map(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::CodebaseMapConfig {
+            target: target.map(std::path::PathBuf::from),
+            policy_path: policy.map(std::path::PathBuf::from),
+            behavior_spec_path: eval_spec.map(std::path::PathBuf::from),
+            max_files,
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&map)?);
+        return Ok(());
+    }
+
+    println!("🗺️  mdx-rust map");
+    println!("   Map: {}", map.map_id);
+    println!("   Root: {}", map.root);
+    if let Some(target) = &map.target {
+        println!("   Target: {}", target);
+    }
+    println!(
+        "   Quality: {:?} (debt score {})",
+        map.quality.grade, map.quality.debt_score
+    );
+    println!(
+        "   Files: {}, patchable: {}, review-only: {}, public items: {}",
+        map.impact.files_scanned,
+        map.quality.patchable_findings,
+        map.quality.review_only_findings,
+        map.quality.public_api_pressure
+    );
+    println!("   Capability gates:");
+    for gate in &map.capability_gates {
+        println!(
+            "   - {}: {}",
+            gate.label,
+            if gate.available {
+                "available"
+            } else {
+                "missing"
+            }
+        );
+    }
+    println!("   Recommended actions:");
+    for action in &map.recommended_actions {
+        println!("   - {}", action);
+    }
+    if let Some(path) = &map.artifact_path {
+        println!("   Artifact: {}", path);
+    }
+
+    Ok(())
+}
+
+struct AutopilotCommand<'a> {
+    target: Option<&'a str>,
+    policy: Option<&'a str>,
+    eval_spec: Option<&'a str>,
+    apply: bool,
+    allow_public_api_impact: bool,
+    max_files: usize,
+    max_passes: usize,
+    max_candidates: usize,
+    timeout_seconds: u64,
+    json: bool,
+}
+
+fn cmd_autopilot(args: AutopilotCommand<'_>) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let run = mdx_rust_core::run_autopilot(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::AutopilotConfig {
+            target: args.target.map(std::path::PathBuf::from),
+            policy_path: args.policy.map(std::path::PathBuf::from),
+            behavior_spec_path: args.eval_spec.map(std::path::PathBuf::from),
+            apply: args.apply,
+            max_files: args.max_files,
+            max_passes: args.max_passes,
+            max_candidates: args.max_candidates,
+            validation_timeout: std::time::Duration::from_secs(args.timeout_seconds),
+            allow_public_api_impact: args.allow_public_api_impact,
+        },
+    )?;
+
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&run)?);
+        return Ok(());
+    }
+
+    println!(
+        "🚀 mdx-rust autopilot - {}",
+        if args.apply { "apply" } else { "review" }
+    );
+    if let Some(target) = args.target {
+        println!("   Target: {}", target);
+    }
+    println!("   Status: {:?}", run.status);
+    println!(
+        "   Quality before: {:?} (debt score {})",
+        run.quality_before.grade, run.quality_before.debt_score
+    );
+    if let Some(after) = &run.quality_after {
+        println!(
+            "   Quality after: {:?} (debt score {})",
+            after.grade, after.debt_score
+        );
+    }
+    println!("   Passes: {}", run.passes.len());
+    println!("   Planned candidates: {}", run.total_planned_candidates);
+    println!("   Executed candidates: {}", run.total_executed_candidates);
+    println!("   Skipped candidates: {}", run.total_skipped_candidates);
+    println!("   Note: {}", run.note);
+    for pass in &run.passes {
+        println!(
+            "   - pass {}: {:?}, executable {}",
+            pass.pass_index, pass.status, pass.executable_candidates
+        );
+    }
+    if let Some(path) = &run.artifact_path {
+        println!("   Report: {}", path);
+    }
+
+    Ok(())
+}
+
 struct ApplyPlanCommand<'a> {
     plan_path: &'a str,
     candidate_id: Option<&'a str>,
@@ -1351,6 +1591,10 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         }
         "refactor-batch-apply-run" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorBatchApplyRun))?
+        }
+        "codebase-map" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::CodebaseMap))?,
+        "autopilot-run" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::AutopilotRun))?
         }
         other => anyhow::bail!("unknown schema kind: {other}"),
     };

@@ -6,8 +6,8 @@
 
 - `mdx-rust`: CLI entrypoint and human or JSON command output.
 - `mdx-rust-core`: registry, runner, optimizer, hooks, ledgers, scoring, audit
-  packets, hardening reports, refactor plans, and the candidate safety
-  pipeline.
+  packets, hardening reports, codebase maps, refactor plans, autopilot runs,
+  and the candidate safety pipeline.
 - `mdx-rust-analysis`: Rust source discovery, prompt/tool finders, isolated
   workspace creation, patch application, hardening analysis, refactor impact
   analysis, validation, and rollback snapshots.
@@ -138,3 +138,30 @@ execution without creating a second mutation engine.
 Plan-only candidates such as extracting a function, splitting a module, or
 reviewing public API pressure are still human-reviewed design work in `v0.5`.
 Public API-impacting candidates require explicit allowance before execution.
+
+## v0.6 Autonomous Evolution
+
+`v0.6` adds two higher-level surfaces without creating a second mutation
+engine.
+
+`mdx-rust map` scans the requested workspace, file, or directory and writes a
+codebase map under `.mdx-rust/maps/`. The map includes workspace metadata,
+quality grade, debt score, hardening findings, public API pressure, module
+edges, available optional gates such as `cargo-nextest`, `cargo-llvm-cov`,
+`cargo-mutants`, and `cargo-semver-checks`, and recommended next actions.
+
+`mdx-rust autopilot` coordinates the existing map, plan, apply-plan, and
+hardening paths:
+
+1. Build and persist a codebase map.
+2. Build and persist a fresh refactor plan.
+3. Select only executable low-risk candidates from that plan.
+4. Run the same `apply-plan --all` machinery in review or apply mode.
+5. In apply mode, replan before any later pass.
+6. Stop on stale snapshots, rejected steps, unsupported recipes, behavior eval
+   failures, validation failures, or exhausted executable candidates.
+7. Persist an autopilot report under `.mdx-rust/autopilot/`.
+
+The autonomous loop is allowed to run multiple passes, but every source edit
+still routes through hardening transactions with isolated validation, optional
+behavior evals, final validation, and rollback.

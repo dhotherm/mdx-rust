@@ -41,6 +41,9 @@ When modifying the core loop, analysis, or editing logic:
 - Always add or update a test that exercises the safety path (i.e., a bad patch must be rejected).
 - Preserve the invariant tests in `crates/mdx-rust-core/src/safety_pipeline.rs`: deny hooks cannot accept, net-negative candidates cannot land, and final validation failures roll back.
 - Add or update property/invariant coverage when the change touches patch scope parsing, hook decisions, rollback, timeouts, path handling, or acceptance counters.
+- For autonomous changes, preserve `map` and `autopilot` review mode as
+  non-mutating and route autopilot apply mode through plan/apply-plan/hardening
+  transactions only.
 - Use the `examples/` directory or `tests/fixtures/` for small Rig agents you can optimize against.
 
 ### Running the CLI during development
@@ -48,6 +51,8 @@ When modifying the core loop, analysis, or editing logic:
 cargo run -- init
 cargo run -- register my-test-agent ../path/to/small-agent
 cargo run -- doctor my-test-agent
+cargo run -- map src --json
+cargo run -- autopilot src --json
 ```
 
 ### Commit Style

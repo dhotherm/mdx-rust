@@ -35,7 +35,7 @@ release-candidate:
     just ci
     cargo build --workspace --release --locked
     cargo package -p mdx-rust-analysis --locked --allow-dirty
-    # Downstream crates depend on unpublished sibling 0.5 packages until the publish
+    # Downstream crates depend on unpublished sibling 0.6 packages until the publish
     # order starts, so pre-publish checks can only inspect their package files.
     cargo package -p mdx-rust-core --list --allow-dirty >/dev/null
     cargo package -p mdx-rust --list --allow-dirty >/dev/null
@@ -50,6 +50,8 @@ first-run-smoke:
     cargo run -p mdx-rust -- schema refactor-plan --json
     cargo run -p mdx-rust -- schema refactor-apply-run --json
     cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
+    cargo run -p mdx-rust -- schema codebase-map --json
+    cargo run -p mdx-rust -- schema autopilot-run --json
     cargo run -p mdx-rust -- register example examples/rig-minimal-agent
     cargo run -p mdx-rust -- doctor example --json
 
@@ -68,3 +70,8 @@ plan-smoke:
     cargo run -p mdx-rust -- schema refactor-plan --json
     cargo run -p mdx-rust -- schema refactor-apply-run --json
     cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
+
+autopilot-smoke:
+    tmpdir="$(mktemp -d)"; mkdir -p "$tmpdir/src"; printf '[package]\nname = "mdx-autopilot-smoke"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nanyhow = "1"\n' > "$tmpdir/Cargo.toml"; printf 'mod config;\n\npub fn load() -> anyhow::Result<String> {\n    let value = std::fs::read_to_string("missing.toml").unwrap();\n    Ok(format!("{}{}", value, config::load_config()?))\n}\n' > "$tmpdir/src/lib.rs"; printf 'pub fn load_config() -> anyhow::Result<String> {\n    let value = std::fs::read_to_string("config.toml").unwrap();\n    Ok(value)\n}\n' > "$tmpdir/src/config.rs"; cd "$tmpdir" && cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- map src --json && cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- autopilot src --max-passes 2 --json && cargo run --manifest-path "{{justfile_directory()}}/Cargo.toml" -p mdx-rust -- autopilot src --apply --max-passes 2 --timeout-seconds 90 --json
+    cargo run -p mdx-rust -- schema codebase-map --json
+    cargo run -p mdx-rust -- schema autopilot-run --json

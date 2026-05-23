@@ -57,7 +57,7 @@ Behavior and policy-driven improvement for Rust services.
 - Hardening reports include policy matches, behavior eval evidence, risk
   summaries, and generated schemas.
 
-## v0.5.0 Focus
+## v0.5.0 - Released
 
 Guardrailed Rust refactoring assistant with impact analysis.
 
@@ -75,15 +75,23 @@ Guardrailed Rust refactoring assistant with impact analysis.
 - Versioned refactor plan artifacts with plan hashes, required gates, risk
   summaries, and explicit non-goals.
 
-## Pulled Into v0.5
+## v0.6.0 Focus
 
-Apply reviewed refactor plans through dedicated transactions.
+Autonomous Rust evolution for safe executable work.
 
-- Plan hash verification before applying a reviewed plan.
-- Batch plan execution for supported low-risk candidates.
-- Per-candidate freshness checks and validation records during queued apply.
+- `mdx-rust map` codebase intelligence with quality grade, debt score,
+  capability gates, hardening findings, and recommended actions.
+- `mdx-rust autopilot` review mode for non-mutating autonomous planning and
+  execution simulation.
+- `mdx-rust autopilot --apply` for multi-pass execution of low-risk candidates
+  through the existing plan, apply-plan, hardening, validation, and rollback
+  gates.
+- Fresh planning before every autonomous apply pass.
+- Versioned codebase map and autopilot artifacts for agents, CI, and future MCP
+  or API surfaces.
+- Optional gate detection for nextest, llvm-cov, mutants, and semver checks.
 
-## v0.6.0 Direction
+## v0.7.0 Direction
 
 Broader recipe execution with stronger semantic analysis.
 
@@ -91,10 +99,14 @@ Broader recipe execution with stronger semantic analysis.
   evidence.
 - Public API compatibility checks for crates that opt in.
 - Deeper Rust-aware impact analysis before any broader refactor is allowed.
+- First autonomous extraction or module-splitting recipe behind behavior eval,
+  semver, and transaction gates.
+- Agent distribution surfaces: documented skill packs, MCP schema boundaries,
+  and an API-friendly runner over the CLI JSON contract.
 
 ## Current Non-Goals
 
-- Arbitrary autonomous refactoring.
+- Autonomous public API rewrites without explicit gates.
 - External hook execution.
 - MCP/A2A runtime integration.
 - Multi-agent orchestration.

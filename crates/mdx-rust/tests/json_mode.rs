@@ -147,6 +147,14 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
         assert_machine_pure_json(&["schema", "refactor-batch-apply-run", "--json"]);
     assert_eq!(batch_apply_plan["title"], "RefactorBatchApplyRun");
     assert!(batch_apply_plan["properties"]["executed_candidates"].is_object());
+
+    let codebase_map = assert_machine_pure_json(&["schema", "codebase-map", "--json"]);
+    assert_eq!(codebase_map["title"], "CodebaseMap");
+    assert!(codebase_map["properties"]["quality"].is_object());
+
+    let autopilot = assert_machine_pure_json(&["schema", "autopilot-run", "--json"]);
+    assert_eq!(autopilot["title"], "AutopilotRun");
+    assert!(autopilot["properties"]["passes"].is_object());
 }
 
 #[test]
@@ -296,7 +304,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.5");
+    assert_eq!(value["schema_version"], "0.6");
     assert!(value["plan_id"].as_str().is_some());
     assert_eq!(value["impact"]["patchable_hardening_changes"], 1);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
@@ -304,6 +312,136 @@ anyhow = "1"
         .as_str()
         .expect("plan should persist artifact");
     assert!(std::path::Path::new(artifact_path).exists());
+}
+
+#[test]
+fn map_json_mode_profiles_repo_without_applying() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-map-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let value = assert_machine_pure_json_in(&["map", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(value["schema_version"], "0.6");
+    assert_eq!(value["quality"]["patchable_findings"], 1);
+    assert!(value["capability_gates"].as_array().unwrap().len() >= 4);
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+    let artifact_path = value["artifact_path"]
+        .as_str()
+        .expect("map should persist artifact");
+    assert!(std::path::Path::new(artifact_path).exists());
+}
+
+#[test]
+fn autopilot_json_mode_reviews_then_applies_safe_queue() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-autopilot-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    let config = src.join("config.rs");
+    std::fs::write(
+        &lib,
+        r#"mod config;
+
+pub fn load_root() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("root.toml").unwrap();
+    Ok(format!("{}{}", content, config::load_config()?))
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        &config,
+        r#"pub fn load_config() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("config.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before_lib = std::fs::read_to_string(&lib).unwrap();
+    let before_config = std::fs::read_to_string(&config).unwrap();
+
+    let reviewed = assert_machine_pure_json_in(
+        &[
+            "autopilot",
+            "src",
+            "--max-passes",
+            "2",
+            "--max-candidates",
+            "10",
+            "--json",
+        ],
+        dir.path(),
+    );
+    assert_eq!(reviewed["schema_version"], "0.6");
+    assert_eq!(reviewed["status"], "Reviewed");
+    assert_eq!(reviewed["total_executed_candidates"], 2);
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before_lib);
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), before_config);
+
+    let applied = assert_machine_pure_json_in(
+        &[
+            "autopilot",
+            "src",
+            "--apply",
+            "--max-passes",
+            "2",
+            "--max-candidates",
+            "10",
+            "--timeout-seconds",
+            "90",
+            "--json",
+        ],
+        dir.path(),
+    );
+    assert_eq!(applied["status"], "Applied");
+    assert_eq!(applied["total_executed_candidates"], 2);
+    assert_eq!(
+        applied["quality_after"]["patchable_findings"],
+        serde_json::Value::from(0)
+    );
+    let after_lib = std::fs::read_to_string(&lib).unwrap();
+    let after_config = std::fs::read_to_string(&config).unwrap();
+    assert!(after_lib.contains("use anyhow::Context;"));
+    assert!(after_config.contains("use anyhow::Context;"));
+    assert!(!after_lib.contains(".unwrap()"));
+    assert!(!after_config.contains(".unwrap()"));
 }
 
 #[test]
@@ -357,7 +495,7 @@ anyhow = "1"
         ],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.5");
+    assert_eq!(reviewed["schema_version"], "0.6");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["hardening_run"]["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
@@ -578,7 +716,7 @@ pub fn load_root() -> anyhow::Result<String> {
         &["apply-plan", artifact_path, "--all", "--json"],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.5");
+    assert_eq!(reviewed["schema_version"], "0.6");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["executed_candidates"], 2);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before_lib);
