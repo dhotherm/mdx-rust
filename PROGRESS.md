@@ -1,0 +1,72 @@
+# mdx-rust Progress Log
+
+**Project**: MDx Rust — Rust-native optimizer for LLM agents  
+**Status**: Long-running autonomous build (started May 2026)  
+**Owner**: Mandeep Dhother  
+**Current Phase**: Phase 0 — Rock-Solid Foundation
+
+---
+
+## Guiding Rules (Long Autonomous Run)
+
+- Follow the approved plan strictly.
+- Work feature by feature, function by function.
+- Prioritize quality, safety, and clean architecture over speed.
+- Commit frequently with clear messages.
+- Update this file and the plan after every major milestone.
+- Make reasonable defaults when hitting open questions; document them.
+
+---
+
+## Current Overall Status
+
+- **History**: Clean single root commit (no external inspiration references visible in any commit or diff).
+- **Architecture**: 3-crate workspace (`mdx-rust` + `mdx-rust-core` + `mdx-rust-analysis`).
+- **CLI**: `init` (production quality), basic `doctor`.
+- **Foundation**: Config loading started in core, example Rig agent exists.
+- **Real work remaining**: `register`, analysis, safe editing, optimization loop, etc.
+
+**Last major update**: Autonomous build initiated.
+
+---
+
+## Phase 0 — Rock-Solid Foundation (In Progress)
+
+### Completed
+
+- [x] Final git history rewrite (single clean root commit)
+- [x] Converted to 3-crate workspace
+- [x] Production-quality `mdx-rust init` (with --json support)
+- [x] Basic `doctor` command
+- [x] Real example Rig agent (`examples/rig-minimal-agent`)
+- [x] Config loading foundation in `mdx-rust-core`
+
+### In Progress / Next
+
+- [ ] Wire real `Config` usage into CLI (`init` + `doctor`)
+- [ ] `.mdx-rustignore` parser + basic bundle scope logic
+- [ ] Full `register` command (detection, registry entry, smoke test)
+- [ ] Artifact directory management + registry persistence
+- [ ] Tests for Phase 0 components
+- [ ] Polish + documentation updates
+
+---
+
+## Open Questions (from approved plan) — Current Defaults
+
+1. Artifact directory → **`.mdx-rust/`** (locked)
+2. Default analyzer model → Will default to strong general models later (Claude 4 / Grok 4 class)
+3. Non-Rig agent support in first usable version → Yes (generic process contract)
+4. Error handling → `anyhow` in binary, `thiserror` in libraries
+
+---
+
+## Notes for When You Return
+
+- All work is committed and pushed.
+- Progress is tracked here + in git history.
+- The build is following the approved plan from the session.
+
+---
+
+*This file is updated autonomously during the long build.*
