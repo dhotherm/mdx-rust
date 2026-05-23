@@ -172,9 +172,9 @@ pub async fn run_optimization(
             notes.push_str(&format!(" → LLM: {}", d.summary));
             for c in d.candidates {
                 candidates.push(Candidate {
-                    focus: "llm".to_string(),
-                    description: c.clone(),
-                    expected_improvement: "Model-generated".to_string(),
+                    focus: c.focus,
+                    description: c.description,
+                    expected_improvement: c.expected_improvement,
                 });
             }
         } else {
