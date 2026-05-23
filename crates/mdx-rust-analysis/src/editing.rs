@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
+use syn::visit_mut::{self, VisitMut};
 
 /// A proposed change to the agent's source code.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -248,7 +249,8 @@ fn apply_patch_with_target(dir: &Path, target: Option<&Path>, patch: &str) -> an
 
         let content = std::fs::read_to_string(&target_path)?;
         if patch.contains("Best-effort answer after reasoning")
-            && apply_syn_guarded_echo_rewrite(&target_path, &content)?
+            && (apply_structural_echo_rewrite(&target_path, &content)?
+                || apply_syn_guarded_macro_echo_rewrite(&target_path, &content)?)
         {
             return Ok(());
         }
@@ -289,9 +291,27 @@ fn apply_patch_with_target(dir: &Path, target: Option<&Path>, patch: &str) -> an
     ))
 }
 
-fn apply_syn_guarded_echo_rewrite(target_path: &Path, content: &str) -> anyhow::Result<bool> {
-    syn::parse_file(content)
-        .map_err(|err| anyhow::anyhow!("source did not parse before fallback rewrite: {err}"))?;
+fn apply_structural_echo_rewrite(target_path: &Path, content: &str) -> anyhow::Result<bool> {
+    let mut syntax = syn::parse_file(content)
+        .map_err(|err| anyhow::anyhow!("source did not parse before structural rewrite: {err}"))?;
+    let mut rewriter = EchoFallbackRewriter { changed: false };
+    rewriter.visit_file_mut(&mut syntax);
+
+    if !rewriter.changed {
+        return Ok(false);
+    }
+
+    let new_content = prettyplease::unparse(&syntax);
+    syn::parse_file(&new_content)
+        .map_err(|err| anyhow::anyhow!("source did not parse after structural rewrite: {err}"))?;
+    std::fs::write(target_path, new_content)?;
+    Ok(true)
+}
+
+fn apply_syn_guarded_macro_echo_rewrite(target_path: &Path, content: &str) -> anyhow::Result<bool> {
+    syn::parse_file(content).map_err(|err| {
+        anyhow::anyhow!("source did not parse before macro fallback rewrite: {err}")
+    })?;
 
     let new_content = content
         .replace("Echo: {}", "Best-effort answer after reasoning: {}")
@@ -301,10 +321,31 @@ fn apply_syn_guarded_echo_rewrite(target_path: &Path, content: &str) -> anyhow::
         return Ok(false);
     }
 
-    syn::parse_file(&new_content)
-        .map_err(|err| anyhow::anyhow!("source did not parse after fallback rewrite: {err}"))?;
+    syn::parse_file(&new_content).map_err(|err| {
+        anyhow::anyhow!("source did not parse after macro fallback rewrite: {err}")
+    })?;
     std::fs::write(target_path, new_content)?;
     Ok(true)
+}
+
+struct EchoFallbackRewriter {
+    changed: bool,
+}
+
+impl VisitMut for EchoFallbackRewriter {
+    fn visit_lit_str_mut(&mut self, literal: &mut syn::LitStr) {
+        let value = literal.value();
+        let replacement = value
+            .replace("Echo: {}", "Best-effort answer after reasoning: {}")
+            .replace("Echo: ", "Best-effort answer after reasoning: ");
+
+        if replacement != value {
+            *literal = syn::LitStr::new(&replacement, literal.span());
+            self.changed = true;
+        }
+
+        visit_mut::visit_lit_str_mut(self, literal);
+    }
 }
 
 fn relative_edit_path(agent_root: &Path, file: &Path) -> anyhow::Result<PathBuf> {
@@ -759,6 +800,29 @@ mod tests {
         let main_after = fs::read_to_string(main).unwrap();
         assert!(main_after.contains("Best-effort answer after reasoning"));
         assert!(!main_after.contains("Echo:"));
+    }
+
+    #[test]
+    fn structural_echo_rewrite_changes_rust_string_literals() {
+        let root = tempdir().unwrap();
+        let src = root.path().join("src");
+        fs::create_dir_all(&src).unwrap();
+
+        let main = src.join("main.rs");
+        fs::write(
+            &main,
+            r#"fn main() { let answer = "Echo: hello"; println!("{}", answer); }"#,
+        )
+        .unwrap();
+
+        let changed =
+            apply_structural_echo_rewrite(&main, &fs::read_to_string(&main).unwrap()).unwrap();
+
+        let main_after = fs::read_to_string(main).unwrap();
+        assert!(changed);
+        assert!(main_after.contains("Best-effort answer after reasoning"));
+        assert!(!main_after.contains("Echo: hello"));
+        syn::parse_file(&main_after).unwrap();
     }
 
     #[test]

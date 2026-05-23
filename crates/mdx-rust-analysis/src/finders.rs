@@ -29,7 +29,9 @@ pub struct AgentEntrypoint {
 /// Parse Rust source into a tree-sitter tree.
 pub fn parse_rust_source(source: &str) -> Option<Tree> {
     let mut parser = Parser::new();
-    parser.set_language(tree_sitter_rust::language()).ok()?;
+    parser
+        .set_language(&tree_sitter_rust::LANGUAGE.into())
+        .ok()?;
     parser.parse(source, None)
 }
 

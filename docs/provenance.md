@@ -8,6 +8,15 @@ Accepted changes produce a versioned audit packet:
 
 The schema version for `v0.2` is `"0.2"`.
 
+Print the current machine-readable schema with:
+
+```bash
+mdx-rust schema audit-packet --json
+```
+
+Other exported schemas include `candidate`, `optimization-run`,
+`hook-decision`, and `trace-event`.
+
 ## Required Fields
 
 Each packet records:

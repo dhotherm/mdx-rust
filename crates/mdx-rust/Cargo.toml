@@ -22,6 +22,7 @@ mdx-rust-analysis = { path = "../mdx-rust-analysis", version = "0.2.0" }
 
 anyhow.workspace = true
 clap.workspace = true
+schemars.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true

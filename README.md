@@ -18,13 +18,16 @@ installation and inspection, but their APIs remain unstable before `1.0`.
 ## Current Scope
 
 `mdx-rust` is an early public beta. It is useful for experimentation and
-dogfooding on Rust agent crates, but it is intentionally conservative.
+dogfooding on Rust agent crates, but it is intentionally conservative. In
+plain terms: `v0.2` is good at single-file, safety-gated prompt and fallback
+behavior improvements for Rust agents. It is not a general Rust refactoring
+engine yet.
 
 Today it supports:
 
 - Rust-aware source analysis with `syn` and `tree-sitter-rust`.
 - Process-based agent invocation with lifecycle traces.
-- Prompt and parser-guarded fallback-behavior improvement strategies.
+- Prompt and AST-guarded fallback-behavior improvement strategies.
 - Single-file accepted edits only.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
 - Net-positive scoring, final real-tree validation, and rollback on failure.
@@ -108,6 +111,7 @@ mdx-rust doctor my-agent
 mdx-rust audit my-agent
 mdx-rust eval my-agent --dataset .mdx-rust/agents/my-agent/dataset.json
 mdx-rust optimize my-agent --iterations 3 --budget medium --review
+mdx-rust schema audit-packet --json
 ```
 
 Every command intended for automation supports `--json`.
@@ -130,6 +134,11 @@ directory. The `0.2` schema records:
 - Rollback status if rollback was attempted.
 
 See [docs/provenance.md](./docs/provenance.md) for the schema contract.
+Print the current audit-packet JSON Schema with:
+
+```bash
+mdx-rust schema audit-packet --json
+```
 
 ## API Stability
 

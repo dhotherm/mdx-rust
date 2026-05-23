@@ -102,6 +102,15 @@ fn other_json_commands_are_machine_pure_on_errors() {
 }
 
 #[test]
+fn schema_json_mode_outputs_machine_parseable_schema() {
+    let value = assert_machine_pure_json(&["schema", "audit-packet", "--json"]);
+
+    assert_eq!(value["title"], "AuditPacket");
+    assert_eq!(value["type"], "object");
+    assert!(value["properties"]["schema_version"].is_object());
+}
+
+#[test]
 fn init_json_writes_artifact_dir_at_config_root() {
     let dir = tempdir().expect("temp dir");
     let output = mdx_command_in(&["init", "--json"], dir.path())

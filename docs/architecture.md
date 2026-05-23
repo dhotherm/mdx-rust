@@ -41,6 +41,12 @@ isolated-validated, and net-positive edits. This keeps the code honest: a
 candidate cannot be handled as accept-ready until it has passed the earlier
 stages.
 
+The first native structural edit path is intentionally small: fallback response
+rewrites can operate over parsed Rust syntax, mutate matching string literals
+in the AST, unparse the file, and parse the result again before the safety
+pipeline validates it in isolation. Macro-format fallback rewrites remain
+parser-guarded. Larger structural edits remain future work.
+
 Rejected candidates carry typed rejection reasons. The human `notes` field is
 for readability only and should not be used as the source of truth by
 automation.

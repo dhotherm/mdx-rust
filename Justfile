@@ -35,9 +35,14 @@ release-candidate:
     just ci
     cargo build --workspace --release --locked
     cargo package -p mdx-rust-analysis --locked --allow-dirty
+    # Downstream crates depend on unpublished sibling 0.2 packages until the publish
+    # order starts, so pre-publish checks can only inspect their package files.
+    cargo package -p mdx-rust-core --list --allow-dirty >/dev/null
+    cargo package -p mdx-rust --list --allow-dirty >/dev/null
 
 first-run-smoke:
     cargo run -p mdx-rust -- init
+    cargo run -p mdx-rust -- schema audit-packet --json
     cargo run -p mdx-rust -- register example examples/rig-minimal-agent
     cargo run -p mdx-rust -- doctor example --json
 

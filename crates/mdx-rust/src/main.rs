@@ -83,6 +83,13 @@ enum Commands {
         name: String,
     },
 
+    /// Print JSON Schema for machine-readable mdx-rust artifacts
+    Schema {
+        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event
+        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event"])]
+        kind: String,
+    },
+
     /// (Dev) Invoke a registered agent with a JSON input (useful for testing)
     #[clap(hide = true)]
     Invoke {
@@ -144,6 +151,12 @@ fn main() {
         Commands::Audit { name } => {
             if let Err(e) = cmd_audit(&name, cli.json) {
                 emit_error(cli.json, "audit", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Schema { kind } => {
+            if let Err(e) = cmd_schema(&kind, cli.json) {
+                emit_error(cli.json, "schema", &e);
                 std::process::exit(1);
             }
         }
@@ -748,6 +761,30 @@ fn cmd_audit(name: &str, json: bool) -> anyhow::Result<()> {
                 finding.severity, finding.id, finding.title, location
             );
         }
+    }
+
+    Ok(())
+}
+
+fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
+    let schema = match kind {
+        "audit-packet" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::AuditPacket))?,
+        "candidate" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::Candidate))?,
+        "optimization-run" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::OptimizationRun))?
+        }
+        "hook-decision" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::HookDecision))?
+        }
+        "trace-event" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::TraceEvent))?,
+        other => anyhow::bail!("unknown schema kind: {other}"),
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&schema)?);
+    } else {
+        println!("JSON Schema for mdx-rust {kind}:");
+        println!("{}", serde_json::to_string_pretty(&schema)?);
     }
 
     Ok(())
