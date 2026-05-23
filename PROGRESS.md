@@ -24,7 +24,7 @@
 - **Architecture**: 3-crate workspace (`mdx-rust` + `mdx-rust-core` + `mdx-rust-analysis`).
 - **CLI**: `init`, `register`, `doctor`, `spec`, `optimize`, `eval`, and `audit`.
 - **Foundation**: Safety-first optimizer loop with isolated validation, lifecycle hooks, ledgers, static audit, and rollback.
-- **Current scope**: Private beta. v1 accepted edits are single-file prompt/fallback changes; scored standalone `eval`, crates.io packaging, and richer native harnesses are still pending.
+- **Current scope**: Private beta. v1 accepted edits are single-file prompt/fallback changes; scored standalone `eval`, crates.io publication, and richer native harnesses are still pending.
 
 **Last major update**: Public-readiness hardening pass.
 
@@ -96,8 +96,9 @@
 - [x] Provenance upgraded: accepted runs now include policy path/hash, scorer, diagnosis model provenance, hook decisions, validation command records with status/timeout/duration/stdout/stderr, score deltas, holdout score, git metadata when available, and rollback status.
 - [x] End-to-end adversarial optimizer test added proving a denied candidate cannot validate, land, accept, or mutate source through the full optimizer loop.
 - [x] Safety audit follow-up: generated config now places `artifact_dir` at the TOML root, register smoke tests have a timeout, patch scope checks cover diff/rename/copy/binary headers, model provenance only reports live use after a successful diagnosis call, validation respects the candidate wall-clock budget, and release docs now state the supported GitHub install path.
+- [x] crates.io readiness metadata prepared for all three workspace crates with explicit dependency-order release instructions.
 
-**Core product is credible private beta, not GA.** The safety loop is real and tested, but public-release work remains: scored standalone eval, broader strategy support, crates.io packaging, and richer native harnessing.
+**Core product is credible private beta, not GA.** The safety loop is real and tested, but public-release work remains: scored standalone eval, broader strategy support, crates.io publication, and richer native harnessing.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI
@@ -106,7 +107,8 @@
 
 - [ ] Implement scored standalone `mdx-rust eval`
 - [x] Document GitHub-install beta release flow
-- [ ] Decide crates.io packaging path for GA
+- [x] Prepare crates.io workspace metadata and publish order
+- [ ] Publish crates to crates.io when ready
 - [ ] Add richer native Rust harness support beyond process execution
 - [ ] Broaden edit strategies beyond prompt and common echo fallback patches
 - [ ] Add CI smoke coverage for the README quickstart

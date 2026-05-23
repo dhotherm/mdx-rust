@@ -3,10 +3,14 @@ name = "mdx-rust"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Rust-native optimizer for LLM agents — CLI"
+description = "Rust-native optimizer for LLM agents CLI"
 license.workspace = true
 repository.workspace = true
-publish = false
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["llm", "agents", "rust", "cli"]
+categories = ["development-tools", "command-line-utilities"]
+publish = true
 
 [[bin]]
 name = "mdx-rust"

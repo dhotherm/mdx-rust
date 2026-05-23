@@ -13,6 +13,7 @@ edition = "2021"
 rust-version = "1.80"
 license = "MIT"
 repository = "https://github.com/dhotherm/mdx-rust"
+homepage = "https://github.com/dhotherm/mdx-rust"
 
 [workspace.dependencies]
 anyhow = "1"

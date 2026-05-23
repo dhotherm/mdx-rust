@@ -3,10 +3,14 @@ name = "mdx-rust-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Core library for mdx-rust — optimizer loop, safety, registry, and experiment management"
+description = "Core library for mdx-rust optimizer, safety, registry, and experiments"
 license.workspace = true
 repository.workspace = true
-publish = false
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["llm", "agents", "rust", "optimizer"]
+categories = ["development-tools", "command-line-utilities"]
+publish = true
 
 [dependencies]
 anyhow.workspace = true

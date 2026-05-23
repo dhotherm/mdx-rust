@@ -6,7 +6,11 @@ rust-version.workspace = true
 description = "Rust source analysis, bundling, and safe editing for mdx-rust"
 license.workspace = true
 repository.workspace = true
-publish = false
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["llm", "agents", "rust", "analysis"]
+categories = ["development-tools", "command-line-utilities"]
+publish = true
 
 [dependencies]
 anyhow.workspace = true
