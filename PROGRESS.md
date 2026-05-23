@@ -77,6 +77,7 @@
 - [x] Richer human-readable experiment reports with candidate details + actual code diffs for accepted changes.
 - [x] README updated with working quick-start and current capabilities (ready for early sharing).
 - [x] `doctor` command now lists recent experiment reports.
+- [x] **Best version persistence**: After any accepted improvement, the optimized source is saved to `.mdx-rust/agents/<name>/best/` (with doctor visibility). Matches original plan artifact layout.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI

@@ -112,8 +112,10 @@ fn main() {
             }
         }
         Commands::Spec { name } => {
-            println!("Generating policy + eval spec for '{}'", name);
-            // TODO: LLM analysis → policies.md + eval_spec.json + dataset preview
+            if let Err(e) = cmd_spec(&name, cli.json) {
+                eprintln!("Spec error: {}", e);
+                std::process::exit(1);
+            }
         }
         Commands::Optimize {
             name,
@@ -509,6 +511,43 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
         println!("Use `mdx-rust doctor {}` to inspect scope and state.", name);
     }
 
+    Ok(())
+}
+
+fn cmd_spec(name: &str, json: bool) -> anyhow::Result<()> {
+    use mdx_rust_core::registry::Registry;
+
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd)?;
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let registry = Registry::load_from(&artifact_root)?;
+
+    let agent = registry
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered. Run `mdx-rust register {}` first.", name, name))?;
+
+    let agent_dir = artifact_root.join("agents").join(name);
+    std::fs::create_dir_all(&agent_dir)?;
+
+    let bundle = mdx_rust_analysis::analyze_agent(&agent.path, None).ok();
+    let analysis_summary = if let Some(b) = &bundle {
+        format!("{} files, Rig={}, preambles={:?}", b.scope.optimizable_paths.len(), b.is_rig_agent, b.preambles.iter().map(|p| &p.text).collect::<Vec<_>>())
+    } else { "limited analysis".into() };
+
+    let policies = format!("# Policies for {}\n\n- Use explicit step-by-step reasoning in prompts.\n- Be concise but complete.\n- Structured output (answer + reasoning).\n\n(Generated from: {})", name, analysis_summary);
+    std::fs::write(agent_dir.join("policies.md"), policies)?;
+
+    let spec = serde_json::json!({"description": format!("Eval spec for {}", name), "dataset": "dataset.json"});
+    std::fs::write(agent_dir.join("eval_spec.json"), serde_json::to_string_pretty(&spec)?)?;
+
+    let ds = serde_json::json!([{"query":"What is 2+2?"},{"query":"Explain the sky being blue."}]);
+    std::fs::write(agent_dir.join("dataset.json"), serde_json::to_string_pretty(&ds)?)?;
+
+    if json {
+        println!("{}", serde_json::json!({"agent":name,"policies":"policies.md","eval_spec":"eval_spec.json","dataset":"dataset.json"}));
+    } else {
+        println!("✅ Spec generated for '{}'\n   • policies.md\n   • eval_spec.json\n   • dataset.json\n   Analysis: {}", name, analysis_summary);
+    }
     Ok(())
 }
 
