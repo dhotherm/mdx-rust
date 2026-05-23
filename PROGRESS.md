@@ -42,6 +42,9 @@
 - [x] Config loading in `mdx-rust-core`
 - [x] Initial `.mdx-rustignore` + `BundleScope` logic in analysis crate
 - [x] First version of `register` command (detection + registry entry + smoke test)
+- [x] Central Registry with persistence + tests in core
+- [x] Runner module stub
+- [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 
 ### In Progress / Next
 
