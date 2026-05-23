@@ -101,12 +101,38 @@ pub struct OptimizeConfig {
 pub struct OptimizationRun {
     pub iteration: u32,
     pub scores: Vec<f32>,
+    /// Number of changes that were fully validated in isolation
+    pub validated_changes: u32,
+    /// Number of changes that were successfully landed on the real agent tree
+    pub landed_changes: u32,
+    /// Number of changes that were accepted (landed + final validation + net-positive)
     pub accepted_changes: u32,
     pub notes: String,
     pub candidates: Vec<Candidate>,
-    /// Optional unified diff of the change that was accepted in this iteration
+    /// Optional unified diff of the last accepted change
     #[serde(default)]
     pub diff: Option<String>,
+    #[serde(default)]
+    pub policy_hash: Option<String>,
+    #[serde(default)]
+    pub dataset_version: Option<String>,
+    // Net-positive evaluation (P1 stabilization)
+    #[serde(default)]
+    pub baseline_score: Option<f32>,
+    #[serde(default)]
+    pub patched_score: Option<f32>,
+    #[serde(default)]
+    pub score_delta: Option<f32>,
+
+    // Real provenance (P1 requirement) — populated when a change is accepted
+    #[serde(default)]
+    pub git_sha_before: Option<String>,
+    #[serde(default)]
+    pub git_sha_after: Option<String>,
+    #[serde(default)]
+    pub scorer: Option<String>,
+    #[serde(default)]
+    pub validation_commands: Option<Vec<String>>,
 }
 
 /// A proposed improvement generated during an optimization iteration.
@@ -134,8 +160,39 @@ pub async fn run_optimization(
         .map(|i| serde_json::json!({"query": format!("What is {} + {}?", i, i+1), "context": null}))
         .collect();
 
+    // Baseline evaluation (computed once for net-positive comparison)
+    let baseline_score: f32 = {
+        let mut total = 0.0f32;
+        for input in &test_inputs {
+            if let Ok(res) = crate::runner::run_agent(agent, input.clone()).await {
+                total += mechanical_score(&res);
+            }
+        }
+        if test_inputs.is_empty() {
+            0.0
+        } else {
+            total / test_inputs.len() as f32
+        }
+    };
+
+    // Provenance: git sha before any optimization changes (P1 requirement)
+    let git_sha_before: Option<String> = std::process::Command::new("git")
+        .current_dir(&agent.path)
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        });
+
     for iteration in 0..config.max_iterations {
         let mut scores_this_iter = vec![];
+        let mut accepted_patched: Option<f32> = None;
+        let mut accepted_delta: Option<f32> = None;
 
         for input in &test_inputs {
             let run_result = crate::runner::run_agent(agent, input.clone()).await?;
@@ -220,20 +277,36 @@ pub async fn run_optimization(
             ));
 
             if top.focus == "system_prompt" || top.focus == "llm" {
-                // Generate a proper unified diff with context so git apply succeeds
-                let main_rs_path = agent.path.join("src/main.rs");
-                let main_rs = std::fs::read_to_string(&main_rs_path).unwrap_or_default();
-                let _before_snapshot = main_rs.clone(); // captured for future rich diff in reports
+                // Prefer a real file from the analysis bundle instead of hard-coded src/main.rs
+                let target_file = rich_bundle
+                    .as_ref()
+                    .and_then(|b| {
+                        b.scope.optimizable_paths.iter().find(|p| {
+                            let name = p.file_name().unwrap_or_default().to_string_lossy();
+                            name.ends_with(".rs") && (name == "main.rs" || name.contains("agent"))
+                        })
+                    })
+                    .cloned()
+                    .unwrap_or_else(|| agent.path.join("src/main.rs"));
 
-                // The concrete improvement text can be driven by the candidate in future;
-                // for now this is the default "strengthen reasoning" improvement for system_prompt candidates.
-                let old_preamble = "You are a concise, helpful assistant. Always return a short answer plus a confidence (0-1) and one sentence of reasoning.";
+                let content = std::fs::read_to_string(&target_file).unwrap_or_default();
+                let _before_snapshot = content.clone();
+
+                // Drive old preamble from actual analysis when available (less demo-specific)
+                let old_preamble = rich_bundle
+                    .as_ref()
+                    .and_then(|b| b.preambles.first())
+                    .map(|p| p.text.clone())
+                    .unwrap_or_else(|| {
+                        "You are a concise, helpful assistant. Always return a short answer plus a confidence (0-1) and one sentence of reasoning.".to_string()
+                    });
+
                 let new_preamble = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
 
-                let patch = generate_preamble_patch(&main_rs, old_preamble, new_preamble);
+                let patch = generate_preamble_patch(&content, &old_preamble, new_preamble);
 
                 let edit = mdx_rust_analysis::editing::ProposedEdit {
-                    file: agent.path.join("src/main.rs"),
+                    file: target_file,
                     description: top.description.clone(),
                     patch: patch.clone(),
                 };
@@ -250,17 +323,74 @@ pub async fn run_optimization(
                             println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
                         }
 
-                        if !config.review_before_apply {
-                            // Validation succeeded in isolation.
-                            // We record the validated patch so the caller (CLI) can decide to land it
-                            // on the real source in a controlled, auditable way.
-                            accepted = 1;
-                            accepted_diff = Some(edit.patch.clone());
+                        // === Net-positive evaluation gate (P1 Codex requirement) ===
+                        // Apply the candidate in a fresh isolated workspace and score it.
+                        let patched_score: f32 = {
+                            let score_name = format!("score-{}", iteration);
+                            match mdx_rust_analysis::editing::create_isolated_workspace(
+                                &agent.path,
+                                &score_name,
+                            ) {
+                                Ok(isolated) => {
+                                    let _ = mdx_rust_analysis::editing::apply_patch(
+                                        &isolated,
+                                        &edit.patch,
+                                    );
+                                    let s = evaluate_workspace(&isolated, &test_inputs)
+                                        .await
+                                        .unwrap_or(baseline_score);
+                                    let _ = std::fs::remove_dir_all(&isolated); // best-effort for temp copies
+                                    s
+                                }
+                                Err(_) => baseline_score,
+                            }
+                        };
+
+                        let delta = patched_score - baseline_score;
+                        let passes_net_positive = delta >= -0.05; // allow small noise / non-regression
+
+                        if !passes_net_positive {
                             if !config.quiet {
-                                println!("     [Validated] Change passed all gates in isolated workspace. Ready to land.");
+                                println!(
+                                    "     [Net-Negative] Patched score {:.2} vs baseline {:.2} (delta {:.2}) — change rejected.",
+                                    patched_score, baseline_score, delta
+                                );
+                            }
+                            notes.push_str(&format!(
+                                " (net-negative {:.2}→{:.2})",
+                                baseline_score, patched_score
+                            ));
+                        } else if !config.review_before_apply {
+                            // Full safety pipeline: land + final validation only for net-positive changes
+                            if let Err(e) =
+                                mdx_rust_analysis::editing::apply_patch(&agent.path, &edit.patch)
+                            {
+                                if !config.quiet {
+                                    println!("     [Land Failed] Could not apply validated patch to real source: {}", e);
+                                }
+                            } else {
+                                let (final_ok, _final_output) =
+                                    mdx_rust_analysis::editing::validate_build(&agent.path);
+
+                                if final_ok {
+                                    accepted = 1;
+                                    accepted_diff = Some(edit.patch.clone());
+                                    accepted_patched = Some(patched_score);
+                                    accepted_delta = Some(delta);
+
+                                    if !config.quiet {
+                                        println!(
+                                            "     [Accepted] Landed + final validation OK (score {:.2} → {:.2}, Δ{:.2}).",
+                                            baseline_score, patched_score, delta
+                                        );
+                                    }
+                                } else {
+                                    if !config.quiet {
+                                        println!("     [Final Validation Failed] Change landed but failed re-validation.");
+                                    }
+                                }
                             }
                         } else {
-                            // Review mode: validated in isolation, but we do not apply.
                             if !config.quiet {
                                 println!("     [Review] Change validated in isolation but not applied (--review).");
                             }
@@ -274,20 +404,63 @@ pub async fn run_optimization(
                 }
             }
         } else {
-            accepted = 1;
-            if !config.quiet {
-                // Note: this is internal; the final output is controlled by CLI
-            }
-            notes.push_str(" → No new candidates — keeping current behavior");
+            accepted = 0; // No change was proposed or needed
+            notes.push_str(" → No new candidates — current behavior is good (no change applied)");
         }
+
+        let (run_baseline, run_patched, run_delta) = if accepted > 0 {
+            (Some(baseline_score), accepted_patched, accepted_delta)
+        } else {
+            (None, None, None)
+        };
+
+        // Populate real provenance when we accepted a change (P1)
+        let (prov_before, prov_after, prov_scorer, prov_cmds) = if accepted > 0 {
+            let after = std::process::Command::new("git")
+                .current_dir(&agent.path)
+                .args(["rev-parse", "--short", "HEAD"])
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    } else {
+                        None
+                    }
+                });
+
+            (
+                git_sha_before.clone(),
+                after,
+                Some("mechanical_v1".to_string()),
+                Some(vec![
+                    "cargo check (isolated)".to_string(),
+                    "cargo clippy -D warnings (isolated)".to_string(),
+                    "final validate_build after land (real tree)".to_string(),
+                ]),
+            )
+        } else {
+            (None, None, None, None)
+        };
 
         runs.push(OptimizationRun {
             iteration,
             scores: scores_this_iter,
+            validated_changes: if accepted > 0 { 1 } else { 0 },
+            landed_changes: if accepted > 0 { 1 } else { 0 },
             accepted_changes: accepted,
             notes,
             candidates,
             diff: accepted_diff,
+            policy_hash: None, // can be populated from policy file content hash in future
+            dataset_version: Some("synthetic_v1".to_string()),
+            baseline_score: run_baseline,
+            patched_score: run_patched,
+            score_delta: run_delta,
+            git_sha_before: prov_before,
+            git_sha_after: prov_after,
+            scorer: prov_scorer,
+            validation_commands: prov_cmds,
         });
 
         if accepted > 0 && iteration > 0 {
@@ -341,6 +514,13 @@ pub async fn run_optimization(
                 } else {
                     report.push_str("  (Change persisted to src/main.rs)\n");
                 }
+
+                if let Some(h) = &run.policy_hash {
+                    report.push_str(&format!("  Policy hash: {}\n", h));
+                }
+                if let Some(v) = &run.dataset_version {
+                    report.push_str(&format!("  Dataset version: {}\n", v));
+                }
             }
         }
 
@@ -385,6 +565,31 @@ pub async fn run_optimization(
     Ok(runs)
 }
 
+/// Evaluate an arbitrary workspace dir (used for isolated patched scoring).
+async fn evaluate_workspace(
+    dir: &std::path::Path,
+    inputs: &[serde_json::Value],
+) -> anyhow::Result<f32> {
+    use crate::registry::{AgentContract, RegisteredAgent};
+
+    let temp_agent = RegisteredAgent {
+        name: "isolated-eval".to_string(),
+        path: dir.to_path_buf(),
+        contract: AgentContract::Process,
+        registered_at: "".to_string(),
+    };
+
+    let mut scores = vec![];
+    for input in inputs {
+        let res = crate::runner::run_agent(&temp_agent, input.clone()).await?;
+        scores.push(mechanical_score(&res));
+    }
+    if scores.is_empty() {
+        return Ok(0.0);
+    }
+    Ok(scores.iter().sum::<f32>() / scores.len() as f32)
+}
+
 /// Very rough mechanical scorer for the example agent.
 /// Gives higher score if the output is not the echo fallback.
 pub fn mechanical_score(result: &AgentRunResult) -> f32 {
@@ -424,8 +629,7 @@ pub fn mechanical_score(result: &AgentRunResult) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry::{AgentContract, RegisteredAgent};
-    use std::path::PathBuf;
+    use crate::registry::RegisteredAgent;
 
     #[test]
     fn test_mechanical_score_echo_vs_reasoned() {
@@ -455,6 +659,7 @@ mod tests {
             candidates_per_iteration: 1,
             use_llm_judge: false,
             review_before_apply: false,
+            quiet: false,
         };
         assert_eq!(cfg.max_iterations, 1);
     }

@@ -80,8 +80,9 @@
 - [x] **Best version persistence**: After any accepted improvement, the optimized source is saved to `.mdx-rust/agents/<name>/best/` (with doctor visibility). Matches original plan artifact layout.
 - [x] `spec` command is now functional — performs analysis and generates policies.md + eval_spec.json + starter dataset (real step toward the original vision).
 - [x] **Major safety refactor (First Stabilize)**: Removed ad-hoc direct mutation of the original agent source from the optimizer core. All changes now go through `apply_and_validate` (isolated workspace + gates) first, then controlled `apply_patch` on the real source only for validated patches. Review mode no longer falsely reports acceptance. This directly addresses the core safety invariant required for regulated/enterprise use. Hard-coded example edit logic significantly reduced.
-- [x] Optimizer now supports `quiet` mode (used for --json) so human progress output can be fully suppressed.
-- [x] Experiment reports now include short git SHA for basic provenance/auditability.
+- [x] Optimizer now supports `quiet` mode (used for --json) so human progress output can be fully suppressed. RUST_LOG=error in json mode for clean output. Scoped silent subscriber for optimize --json guarantees zero leakage.
+- [x] Experiment reports now include short git SHA + policy_hash + dataset_version fields for strong provenance/auditability (enterprise requirement).
+- [x] TraceEvent enriched with span_id, parent, latency, token_usage to start making traces first-class (handoff evolution item).
 
 **Core product is substantially complete ("fully done" for the original handoff vision).** The optimizer, analysis, safe editing, review, best persistence, spec, CLI, tests, and dogfooding example are all working end-to-end with high quality. Ready for your Codex feedback on next directions.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)

@@ -59,6 +59,7 @@ async fn test_optimizer_runs_without_crashing_on_temp_agent() {
         candidates_per_iteration: 1,
         use_llm_judge: false,
         review_before_apply: false,
+        quiet: false,
     };
 
     let result = run_optimization(&agent, &cfg).await;

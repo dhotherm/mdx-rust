@@ -122,7 +122,11 @@ fn main() {
             ..
         } => {
             if let Err(e) = cmd_optimize(&name, iterations, review, cli.json) {
-                eprintln!("Optimize error: {}", e);
+                if cli.json {
+                    println!(r#"{{"status":"error","error":"{}"}}"#, e);
+                } else {
+                    eprintln!("Optimize error: {}", e);
+                }
                 std::process::exit(1);
             }
         }
@@ -499,39 +503,41 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
         .get(name)
         .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered", name))?;
 
-    // For pure --json output, suppress tracing INFO logs (only errors)
-    if json {
-        std::env::set_var("RUST_LOG", "error");
-    }
-
     let rt = tokio::runtime::Runtime::new()?;
-    let runs = rt.block_on(run_optimization(
-        agent,
-        &OptimizeConfig {
-            max_iterations: iterations,
-            candidates_per_iteration: 2,
-            use_llm_judge: false,
-            review_before_apply: review,
-            quiet: json, // pure JSON output when requested
-        },
-    ))?;
 
-    // Land validated changes on the real agent source (only after successful isolated validation).
-    // This is the controlled, auditable path. The optimizer itself never mutates the original tree.
-    if !review {
-        for run in &runs {
-            if run.accepted_changes > 0 {
-                if let Some(patch) = &run.diff {
-                    if let Err(e) = mdx_rust_analysis::editing::apply_patch(&agent.path, patch) {
-                        eprintln!(
-                            "Warning: could not land validated patch for iteration {}: {}",
-                            run.iteration, e
-                        );
-                    }
-                }
-            }
-        }
-    }
+    let runs = if json {
+        // For pure machine-readable output, use a completely silent subscriber during the optimization run.
+        // This guarantees zero human or INFO logs leak into the JSON stream — critical for automation / enterprise use.
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::ERROR)
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            rt.block_on(run_optimization(
+                agent,
+                &OptimizeConfig {
+                    max_iterations: iterations,
+                    candidates_per_iteration: 2,
+                    use_llm_judge: false,
+                    review_before_apply: review,
+                    quiet: true,
+                },
+            ))
+        })?
+    } else {
+        rt.block_on(run_optimization(
+            agent,
+            &OptimizeConfig {
+                max_iterations: iterations,
+                candidates_per_iteration: 2,
+                use_llm_judge: false,
+                review_before_apply: review,
+                quiet: false,
+            },
+        ))?
+    };
+
+    // Landing now happens inside the optimizer's safety pipeline (per Codex stabilization handoff).
+    // We keep best/ persistence here for now, but only for runs that truly accepted.
 
     // Persist "best" version if any improvement was accepted (per original plan)
     if runs.iter().any(|r| r.accepted_changes > 0) {
@@ -564,8 +570,8 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
         for run in &runs {
             let avg = run.scores.iter().sum::<f32>() / run.scores.len() as f32;
             println!(
-                "   • Iteration {} | Avg: {:.2} | Accepted: {}",
-                run.iteration, avg, run.accepted_changes
+                "   • Iteration {} | Avg: {:.2} | Validated: {} | Landed: {} | Accepted: {}",
+                run.iteration, avg, run.validated_changes, run.landed_changes, run.accepted_changes
             );
             if !run.notes.is_empty() {
                 println!("     → {}", run.notes);

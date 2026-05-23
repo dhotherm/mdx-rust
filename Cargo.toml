@@ -25,5 +25,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 thiserror = "1"
 tempfile = "3"
 toml = "0.8"
+wait-timeout = "0.2"
 ignore = "0.4"
 rig-core = "0.10"

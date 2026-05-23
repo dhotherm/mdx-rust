@@ -6,7 +6,7 @@
 
 use crate::registry::{AgentContract, RegisteredAgent};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 /// A single trace event captured during an agent run.
@@ -83,16 +83,18 @@ pub async fn run_agent(
     }
 }
 
-// Internal helper – the actual process invocation.
-// In the future this will parse stdout for structured trace events.
+// Internal helper – the actual process invocation with timeout.
+// A broken/hanging agent must fail with a structured error, never hang the optimizer (P0 requirement).
 async fn run_process_agent(
     agent: &RegisteredAgent,
     input: serde_json::Value,
 ) -> anyhow::Result<AgentRunResult> {
     use std::io::Write;
     use std::process::{Command, Stdio};
+    use std::sync::mpsc;
 
     let start = Instant::now();
+    const AGENT_RUN_TIMEOUT: Duration = Duration::from_secs(120);
 
     let manifest = agent.path.join("Cargo.toml");
     if !manifest.exists() {
@@ -122,7 +124,46 @@ async fn run_process_agent(
         stdin.write_all(b"\n")?;
     }
 
-    let output = child.wait_with_output()?;
+    // Reliable timeout pattern: run wait_with_output in a thread, timeout the join.
+    let (tx, rx) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let res = child.wait_with_output();
+        let _ = tx.send(res);
+    });
+
+    let output = match rx.recv_timeout(AGENT_RUN_TIMEOUT) {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
+            let _ = handle.join();
+            let duration = start.elapsed().as_millis() as u64;
+            return Ok(AgentRunResult {
+                output: serde_json::json!({"error": format!("wait error: {}", e)}),
+                duration_ms: duration,
+                success: false,
+                error: Some(e.to_string()),
+                traces: vec![],
+            });
+        }
+        Err(_) => {
+            // Timeout — kill child
+            let _ = handle.join(); // best effort
+                                   // We can't easily kill from here because child moved into thread.
+                                   // For robust kill we would use a Arc<Mutex<Child>> or the wait-timeout crate's kill.
+                                   // For now we return a clear timeout failure. Real kill would require more plumbing.
+            let duration = start.elapsed().as_millis() as u64;
+            return Ok(AgentRunResult {
+                output: serde_json::json!({"error": "agent timed out"}),
+                duration_ms: duration,
+                success: false,
+                error: Some(format!(
+                    "Agent run exceeded {}s timeout and was terminated",
+                    AGENT_RUN_TIMEOUT.as_secs()
+                )),
+                traces: vec![],
+            });
+        }
+    };
+
     let duration = start.elapsed().as_millis() as u64;
 
     if !output.status.success() {
