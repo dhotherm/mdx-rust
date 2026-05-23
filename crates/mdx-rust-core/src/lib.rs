@@ -4,6 +4,7 @@
 
 pub mod config;
 pub mod registry;
+pub mod runner;
 
 pub use config::Config;
 pub use registry::{AgentContract, RegisteredAgent, Registry};
