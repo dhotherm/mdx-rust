@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Root configuration for an mdx-rust project
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Default models to use for different roles
     pub models: ModelConfig,
@@ -11,6 +11,15 @@ pub struct Config {
     /// Artifact directory name (default: .mdx-rust)
     #[serde(default = "default_artifact_dir")]
     pub artifact_dir: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            models: ModelConfig::default(),
+            artifact_dir: default_artifact_dir(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -23,6 +32,25 @@ pub struct ModelConfig {
 
     /// Default model for lighter tasks
     pub default: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn default_config_uses_standard_artifact_dir() {
+        assert_eq!(Config::default().artifact_dir, ".mdx-rust");
+    }
+
+    #[test]
+    fn missing_project_config_loads_usable_defaults() {
+        let dir = tempdir().unwrap();
+        let config = Config::load_from_project(dir.path()).unwrap();
+
+        assert_eq!(config.artifact_dir, ".mdx-rust");
+    }
 }
 
 fn default_artifact_dir() -> String {

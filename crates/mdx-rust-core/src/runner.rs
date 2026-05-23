@@ -164,9 +164,9 @@ async fn run_process_agent(
     let mut child = command.spawn()?;
 
     {
-        let stdin = child
+        let mut stdin = child
             .stdin
-            .as_mut()
+            .take()
             .ok_or_else(|| anyhow::anyhow!("no stdin"))?;
         stdin.write_all(serde_json::to_string(&input)?.as_bytes())?;
         stdin.write_all(b"\n")?;
@@ -259,3 +259,49 @@ fn terminate_process_group(pid: u32) {
 
 #[cfg(not(unix))]
 fn terminate_process_group(_pid: u32) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::{AgentContract, RegisteredAgent};
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn process_agent_receives_eof_after_json_input() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname=\"stdin-eof-agent\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/main.rs"),
+            r#"
+use std::io::Read;
+
+fn main() {
+    let mut input = String::new();
+    std::io::stdin().read_to_string(&mut input).unwrap();
+    assert!(!input.trim().is_empty());
+    println!("{{\"answer\":\"read eof\",\"reasoning\":\"stdin closed\",\"confidence\":0.9}}");
+}
+"#,
+        )
+        .unwrap();
+
+        let agent = RegisteredAgent {
+            name: "stdin-eof-agent".to_string(),
+            path: dir.path().to_path_buf(),
+            contract: AgentContract::Process,
+            registered_at: "test".to_string(),
+        };
+
+        let result = run_agent(&agent, serde_json::json!({"query":"hello"}))
+            .await
+            .unwrap();
+
+        assert!(result.success, "{:?}", result.error);
+        assert_eq!(result.output["answer"], "read eof");
+    }
+}

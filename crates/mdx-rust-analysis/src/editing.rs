@@ -224,6 +224,16 @@ fn apply_patch_with_target(dir: &Path, target: Option<&Path>, patch: &str) -> an
         }
 
         let content = std::fs::read_to_string(&target_path)?;
+        if patch.contains("Best-effort answer after reasoning") {
+            let new_content = content
+                .replace("Echo: {}", "Best-effort answer after reasoning: {}")
+                .replace("Echo: ", "Best-effort answer after reasoning: ");
+            if new_content != content {
+                std::fs::write(&target_path, new_content)?;
+                return Ok(());
+            }
+        }
+
         let improved = if patch.contains("Think step-by-step before answering") {
             "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer."
         } else if patch.contains("reasoning") {
@@ -614,6 +624,32 @@ mod tests {
             agent_after.contains("Think step-by-step"),
             "requested edit target should be changed"
         );
+    }
+
+    #[test]
+    fn apply_edit_fallback_can_replace_echo_response_prefix() {
+        let root = tempdir().unwrap();
+        let src = root.path().join("src");
+        fs::create_dir_all(&src).unwrap();
+
+        let main = src.join("main.rs");
+        fs::write(
+            &main,
+            r#"fn main() { println!("{}", format!("Echo: {}", "hello")); }"#,
+        )
+        .unwrap();
+
+        let edit = ProposedEdit {
+            file: main.clone(),
+            description: "replace echo fallback".to_string(),
+            patch: "not a real diff, but Best-effort answer after reasoning".to_string(),
+        };
+
+        apply_edit(root.path(), root.path(), &edit).unwrap();
+
+        let main_after = fs::read_to_string(main).unwrap();
+        assert!(main_after.contains("Best-effort answer after reasoning"));
+        assert!(!main_after.contains("Echo:"));
     }
 
     #[test]

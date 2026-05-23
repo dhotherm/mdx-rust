@@ -181,6 +181,13 @@ fn finding(
 }
 
 fn contains_secret_literal(line: &str) -> bool {
+    if line.contains("env::var(")
+        || line.contains("std::env::var(")
+        || line.contains("option_env!(")
+    {
+        return false;
+    }
+
     let lower = line.to_lowercase();
     let has_secret_name = ["api_key", "apikey", "secret", "token", "password"]
         .iter()
@@ -216,6 +223,29 @@ mod tests {
             .iter()
             .any(|finding| finding.id == "unexpected-code-execution"));
         assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.id == "secret-literal"));
+    }
+
+    #[test]
+    fn audit_does_not_flag_environment_variable_names_as_secret_literals() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("main.rs"),
+            r#"
+            fn main() {
+                let api_key = std::env::var("OPENAI_API_KEY").ok();
+            }
+            "#,
+        )
+        .unwrap();
+
+        let report = audit_agent(dir.path()).unwrap();
+
+        assert!(!report
             .findings
             .iter()
             .any(|finding| finding.id == "secret-literal"));

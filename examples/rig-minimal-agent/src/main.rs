@@ -37,7 +37,7 @@ pub async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
         let client = openai::Client::from_env();
         let agent = client
             .agent("gpt-4o-mini")
-            .preamble("You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.")
+            .preamble("You are a concise, helpful assistant.")
             .build();
         // Note: .tool(echo_tool) would be here in a fuller agent — the finder will still detect tool usage patterns in richer code.
 
@@ -54,9 +54,9 @@ pub async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
             reasoning: "LLM response".to_string(),
         })
     } else {
-        // Intentionally poor fallback — the optimizer's job is to notice this and fix it.
-        // After mdx-rust improves the preamble, we can at least give a slightly better answer here too.
-        let is_improved = true; // will be true after optimizer runs
+        // Intentionally poor fallback. The optimizer should notice the echo pattern
+        // and replace it with a more useful best-effort answer.
+        let is_improved = false;
 
         Ok(AgentOutput {
             answer: if is_improved {

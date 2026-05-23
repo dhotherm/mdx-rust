@@ -702,8 +702,17 @@ fn build_edit_for_candidate(
         .unwrap_or_else(|| strategy_for_focus(&candidate.focus));
 
     let Some((target_file, old_preamble)) = select_preamble_target(agent_root, bundle) else {
+        if strategy == EditStrategy::FallbackLogic {
+            return build_echo_fallback_edit(agent_root, bundle, &candidate.description);
+        }
         return Ok(None);
     };
+
+    if strategy == EditStrategy::FallbackLogic {
+        if let Some(edit) = build_echo_fallback_edit(agent_root, bundle, &candidate.description)? {
+            return Ok(Some(edit));
+        }
+    }
 
     let Some(new_preamble) = evolved_preamble_for_strategy(&old_preamble, &strategy, bundle) else {
         return Ok(None);
@@ -725,6 +734,67 @@ fn build_edit_for_candidate(
         description: format!("{:?}: {}", strategy, candidate.description),
         patch,
     }))
+}
+
+fn build_echo_fallback_edit(
+    agent_root: &Path,
+    bundle: Option<&AgentBundle>,
+    description: &str,
+) -> anyhow::Result<Option<ProposedEdit>> {
+    let mut candidates: Vec<PathBuf> = bundle
+        .map(|bundle| {
+            bundle
+                .scope
+                .optimizable_paths
+                .iter()
+                .filter(|path| path.extension().is_some_and(|extension| extension == "rs"))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if candidates.is_empty() {
+        candidates.push(agent_root.join("src/main.rs"));
+    }
+
+    for target_file in candidates {
+        let Ok(content) = std::fs::read_to_string(&target_file) else {
+            continue;
+        };
+
+        let replacements = [
+            (
+                "Echo: {}",
+                "Best-effort answer after reasoning: {}",
+                "replace echo fallback format string",
+            ),
+            (
+                "Echo: ",
+                "Best-effort answer after reasoning: ",
+                "replace echo fallback prefix",
+            ),
+        ];
+
+        for (old, new, label) in replacements {
+            if !content.contains(old) {
+                continue;
+            }
+
+            let relative_target = target_file
+                .strip_prefix(agent_root)
+                .unwrap_or(&target_file)
+                .to_path_buf();
+            let patch = generate_preamble_patch(&relative_target, &content, old, new);
+
+            return Ok(Some(ProposedEdit {
+                file: target_file,
+                description: format!("FallbackLogic: {description} ({label})"),
+                patch,
+            }));
+        }
+    }
+
+    Ok(None)
 }
 
 fn select_preamble_target(
@@ -994,5 +1064,32 @@ mod tests {
         assert!(with_tools
             .patch
             .contains("available tools improve factuality"));
+    }
+
+    #[test]
+    fn fallback_logic_strategy_can_patch_echo_fallback() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let main = src.join("main.rs");
+        std::fs::write(
+            &main,
+            r#"fn main() { println!("{}", format!("Echo: {}", "hello")); }"#,
+        )
+        .unwrap();
+
+        let candidate = Candidate {
+            focus: "fallback_logic".to_string(),
+            description: "avoid echo fallback".to_string(),
+            expected_improvement: "more useful fallback".to_string(),
+            strategy: Some(EditStrategy::FallbackLogic),
+        };
+
+        let edit = build_edit_for_candidate(dir.path(), None, &candidate)
+            .unwrap()
+            .expect("fallback logic should patch simple echo fallback");
+
+        assert_eq!(edit.file, main);
+        assert!(edit.patch.contains("Best-effort answer after reasoning"));
     }
 }
