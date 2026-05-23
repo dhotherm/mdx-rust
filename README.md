@@ -44,10 +44,11 @@ Today it supports:
   transactions.
 - `apply-plan --all` execution queues for reviewing or applying every
   executable low-risk candidate in a saved plan, with per-step validation.
-- `map` repo intelligence reports with debt score, quality grade, available
-  gate detection, hardening findings, and next actions.
+- `map` repo intelligence reports with debt score, quality grade, evidence
+  grade, available gate detection, hardening findings, and next actions.
 - `autopilot` multi-pass orchestration that maps, plans, applies the safe
   queue, replans after mutation, and persists an audit report.
+- `evolve` budget-bounded autonomous improvement for agent callers.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -65,7 +66,7 @@ Today it supports:
 evolution engine instead of only a plan-first workflow.
 
 - Run `mdx-rust map <target>` to get a repo quality profile, debt score,
-  capability gates, findings, and next actions.
+  evidence grade, capability gates, findings, and next actions.
 - Run `mdx-rust plan <target>` to produce a non-mutating refactor plan.
 - Review impact before editing: public items, module edges, file size, long
   functions, policy references, behavior eval references, source snapshots, and
@@ -77,12 +78,15 @@ evolution engine instead of only a plan-first workflow.
   mutating source files.
 - Run `mdx-rust autopilot <target> --apply` to execute low-risk queued
   candidates, replan after each applied pass, and stop on any failed gate.
+- Run `mdx-rust evolve <target> --budget 10m --tier 1 --apply` when a coding
+  agent wants a direct "do safe work within this budget" command.
 - Get JSON artifacts for maps, plans, apply runs, and autopilot runs so humans
   and agents can audit what happened.
 
-The aggressive part is that `autopilot --apply` can run several safe passes on
-its own. The disciplined part is that each pass creates a fresh plan, executes
-only supported low-risk recipes, and routes every real edit through freshness
+The aggressive part is that `autopilot --apply` and `evolve --apply` can run
+several safe passes on their own. The disciplined part is that each pass creates
+a fresh plan, executes only supported low-risk recipes allowed by the current
+evidence grade and requested tier, and routes every real edit through freshness
 checks, isolated validation, final validation, and the hardening transaction
 path.
 
@@ -142,6 +146,14 @@ queue in review or apply mode, and replans before any later apply pass. Review
 mode must not mutate the real tree. Apply mode stops on stale plans, rejected
 steps, unsupported candidates, or exhausted executable work.
 
+Evidence controls proportional aggression. A target with no Cargo metadata gets
+`None` evidence and cannot run autonomous changes. A normal Cargo target starts
+at `Compiled`, which unlocks Tier 1 mechanical recipes that still must pass
+`cargo check` and clippy before landing. Tests or a behavior eval spec raise the
+visible grade to `Tested`. Coverage, mutation, and proof-grade gates are
+reported as unlock paths for later Tier 2 and Tier 3 recipes; v0.6 detects the
+tooling but does not run those heavier gates automatically.
+
 ## Quick Start
 
 Install the CLI:
@@ -185,6 +197,7 @@ mdx-rust eval --spec .mdx-rust/evals.json
 mdx-rust map src/api
 mdx-rust autopilot src/api
 mdx-rust autopilot src/api --apply --max-passes 3 --max-candidates 10
+mdx-rust evolve src/api --budget 10m --tier 1 --apply
 mdx-rust improve src/api/config.rs
 mdx-rust plan src/api
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate <id>
@@ -219,6 +232,7 @@ mdx-rust plan src/lib.rs
 mdx-rust plan src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
 mdx-rust autopilot src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
 mdx-rust autopilot src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json --apply
+mdx-rust evolve src/api --budget 10m --tier 1 --min-evidence compiled --apply
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate plan-hardening-src-lib-rs-2
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate plan-hardening-src-lib-rs-2 --apply
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --all --max-candidates 10

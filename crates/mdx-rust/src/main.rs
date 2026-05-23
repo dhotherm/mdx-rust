@@ -165,9 +165,63 @@ enum Commands {
         #[arg(long, default_value = "25")]
         max_candidates: usize,
 
+        /// Maximum recipe tier to execute: 1, 2, or 3
+        #[arg(long, default_value = "1", value_parser = ["1", "2", "3", "tier1", "tier2", "tier3"])]
+        tier: String,
+
+        /// Minimum evidence grade required before executing autonomous work
+        #[arg(long, default_value = "compiled", value_parser = ["none", "compiled", "tested", "covered", "hardened", "proven"])]
+        min_evidence: String,
+
+        /// Optional total run budget such as 10m or 300s
+        #[arg(long)]
+        budget: Option<String>,
+
         /// Validation timeout in seconds
         #[arg(long, default_value = "180")]
         timeout_seconds: u64,
+    },
+
+    /// Budget-bounded autonomous repo improvement for agent callers
+    Evolve {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Optional policy file to hash and enforce through hardening reports
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Optional behavior eval spec that every applied pass must satisfy
+        #[arg(long)]
+        eval_spec: Option<String>,
+
+        /// Apply validated changes to the real tree. Without this, review mode is used.
+        #[arg(long)]
+        apply: bool,
+
+        /// Run budget such as 10m or 300s
+        #[arg(long, default_value = "10m")]
+        budget: String,
+
+        /// Maximum recipe tier to execute: 1, 2, or 3
+        #[arg(long, default_value = "1", value_parser = ["1", "2", "3", "tier1", "tier2", "tier3"])]
+        tier: String,
+
+        /// Minimum evidence grade required before executing autonomous work
+        #[arg(long, default_value = "compiled", value_parser = ["none", "compiled", "tested", "covered", "hardened", "proven"])]
+        min_evidence: String,
+
+        /// Maximum Rust files to scan per pass
+        #[arg(long, default_value = "250")]
+        max_files: usize,
+
+        /// Maximum executable candidates per pass
+        #[arg(long, default_value = "25")]
+        max_candidates: usize,
+
+        /// Allow execution when a candidate is marked as public API impacting
+        #[arg(long)]
+        allow_public_api_impact: bool,
     },
 
     /// Execute an approved candidate from a saved refactor plan
@@ -349,6 +403,9 @@ fn main() {
             max_files,
             max_passes,
             max_candidates,
+            tier,
+            min_evidence,
+            budget,
             timeout_seconds,
         } => {
             if let Err(e) = cmd_autopilot(AutopilotCommand {
@@ -360,10 +417,52 @@ fn main() {
                 max_files,
                 max_passes,
                 max_candidates,
+                tier: &tier,
+                min_evidence: &min_evidence,
+                budget: budget.as_deref(),
                 timeout_seconds,
                 json: cli.json,
             }) {
                 emit_error(cli.json, "autopilot", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Evolve {
+            target,
+            policy,
+            eval_spec,
+            apply,
+            budget,
+            tier,
+            min_evidence,
+            max_files,
+            max_candidates,
+            allow_public_api_impact,
+        } => {
+            let budget_duration = match parse_budget(&budget) {
+                Ok(duration) => duration,
+                Err(e) => {
+                    emit_error(cli.json, "evolve", &e);
+                    std::process::exit(1);
+                }
+            };
+            let max_passes = max_passes_for_budget(budget_duration);
+            if let Err(e) = cmd_autopilot(AutopilotCommand {
+                target: target.as_deref(),
+                policy: policy.as_deref(),
+                eval_spec: eval_spec.as_deref(),
+                apply,
+                allow_public_api_impact,
+                max_files,
+                max_passes,
+                max_candidates,
+                tier: &tier,
+                min_evidence: &min_evidence,
+                budget: Some(&budget),
+                timeout_seconds: budget_duration.as_secs().clamp(30, 180),
+                json: cli.json,
+            }) {
+                emit_error(cli.json, "evolve", &e);
                 std::process::exit(1);
             }
         }
@@ -1267,6 +1366,10 @@ fn cmd_map(
         map.quality.grade, map.quality.debt_score
     );
     println!(
+        "   Evidence: {:?} (max autonomous tier {})",
+        map.evidence.grade, map.evidence.max_autonomous_tier
+    );
+    println!(
         "   Files: {}, patchable: {}, review-only: {}, public items: {}",
         map.impact.files_scanned,
         map.quality.patchable_findings,
@@ -1305,6 +1408,9 @@ struct AutopilotCommand<'a> {
     max_files: usize,
     max_passes: usize,
     max_candidates: usize,
+    tier: &'a str,
+    min_evidence: &'a str,
+    budget: Option<&'a str>,
     timeout_seconds: u64,
     json: bool,
 }
@@ -1313,6 +1419,9 @@ fn cmd_autopilot(args: AutopilotCommand<'_>) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let config = Config::load_from_project(&cwd).unwrap_or_default();
     let artifact_root = cwd.join(&config.artifact_dir);
+    let max_tier = parse_recipe_tier(args.tier)?;
+    let min_evidence = parse_evidence_grade(args.min_evidence)?;
+    let budget = args.budget.map(parse_budget).transpose()?;
     let run = mdx_rust_core::run_autopilot(
         &cwd,
         Some(&artifact_root),
@@ -1326,6 +1435,9 @@ fn cmd_autopilot(args: AutopilotCommand<'_>) -> anyhow::Result<()> {
             max_candidates: args.max_candidates,
             validation_timeout: std::time::Duration::from_secs(args.timeout_seconds),
             allow_public_api_impact: args.allow_public_api_impact,
+            max_tier,
+            min_evidence,
+            budget,
         },
     )?;
 
@@ -1353,6 +1465,7 @@ fn cmd_autopilot(args: AutopilotCommand<'_>) -> anyhow::Result<()> {
         );
     }
     println!("   Passes: {}", run.passes.len());
+    println!("   Budget seconds: {:?}", run.budget_seconds);
     println!("   Planned candidates: {}", run.total_planned_candidates);
     println!("   Executed candidates: {}", run.total_executed_candidates);
     println!("   Skipped candidates: {}", run.total_skipped_candidates);
@@ -1368,6 +1481,57 @@ fn cmd_autopilot(args: AutopilotCommand<'_>) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn parse_recipe_tier(value: &str) -> anyhow::Result<mdx_rust_core::RecipeTier> {
+    match value.to_ascii_lowercase().as_str() {
+        "1" | "tier1" => Ok(mdx_rust_core::RecipeTier::Tier1),
+        "2" | "tier2" => Ok(mdx_rust_core::RecipeTier::Tier2),
+        "3" | "tier3" => Ok(mdx_rust_core::RecipeTier::Tier3),
+        other => anyhow::bail!("unknown recipe tier: {other}"),
+    }
+}
+
+fn parse_evidence_grade(value: &str) -> anyhow::Result<mdx_rust_core::EvidenceGrade> {
+    match value.to_ascii_lowercase().as_str() {
+        "none" => Ok(mdx_rust_core::EvidenceGrade::None),
+        "compiled" => Ok(mdx_rust_core::EvidenceGrade::Compiled),
+        "tested" => Ok(mdx_rust_core::EvidenceGrade::Tested),
+        "covered" => Ok(mdx_rust_core::EvidenceGrade::Covered),
+        "hardened" => Ok(mdx_rust_core::EvidenceGrade::Hardened),
+        "proven" => Ok(mdx_rust_core::EvidenceGrade::Proven),
+        other => anyhow::bail!("unknown evidence grade: {other}"),
+    }
+}
+
+fn parse_budget(value: &str) -> anyhow::Result<std::time::Duration> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("budget cannot be empty");
+    }
+    let (number, multiplier) = if let Some(number) = trimmed.strip_suffix('m') {
+        (number, 60)
+    } else if let Some(number) = trimmed.strip_suffix("min") {
+        (number, 60)
+    } else if let Some(number) = trimmed.strip_suffix('s') {
+        (number, 1)
+    } else {
+        (trimmed, 60)
+    };
+    let amount: u64 = number
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid budget value: {value}"))?;
+    if amount == 0 {
+        anyhow::bail!("budget must be greater than zero");
+    }
+    Ok(std::time::Duration::from_secs(
+        amount.saturating_mul(multiplier),
+    ))
+}
+
+fn max_passes_for_budget(budget: std::time::Duration) -> usize {
+    let minutes = budget.as_secs().div_ceil(60);
+    minutes.clamp(1, 6) as usize
 }
 
 struct ApplyPlanCommand<'a> {
@@ -1395,6 +1559,8 @@ fn cmd_apply_plan(args: ApplyPlanCommand<'_>) -> anyhow::Result<()> {
                 allow_public_api_impact: args.allow_public_api_impact,
                 validation_timeout: std::time::Duration::from_secs(args.timeout_seconds),
                 max_candidates: args.max_candidates,
+                max_tier: mdx_rust_core::RecipeTier::Tier1,
+                min_evidence: mdx_rust_core::EvidenceGrade::Compiled,
             },
         )?;
 

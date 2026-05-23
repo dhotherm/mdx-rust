@@ -196,6 +196,8 @@ Codebase maps record:
 - workspace root and target
 - optional policy path and content hash
 - optional behavior eval spec path
+- evidence grade, evidence signals, max autonomous tier, and unlock
+  suggestions
 - quality grade and debt score
 - patchable and review-only finding counts
 - public API pressure
@@ -216,6 +218,7 @@ The autopilot run schema version is `"0.6"`.
 Autopilot runs record:
 
 - review or apply mode
+- optional budget seconds and whether the budget was exhausted
 - quality before and after when apply mode changes the tree
 - max pass and candidate budgets
 - one pass record per fresh plan
@@ -223,6 +226,10 @@ Autopilot runs record:
 - embedded batch apply reports with hardening evidence for executed steps
 - total planned, executed, and skipped candidate counts
 - final status and note
+
+Refactor plan candidates also record recipe tier, required evidence, and
+whether the plan evidence satisfied that requirement. Queue execution filters
+on those fields before any candidate reaches the hardening transaction.
 
 Print the schemas with:
 

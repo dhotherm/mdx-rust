@@ -346,6 +346,8 @@ anyhow = "1"
     let value = assert_machine_pure_json_in(&["map", "src/lib.rs", "--json"], dir.path());
 
     assert_eq!(value["schema_version"], "0.6");
+    assert_eq!(value["evidence"]["grade"], "Compiled");
+    assert_eq!(value["evidence"]["max_autonomous_tier"], 1);
     assert_eq!(value["quality"]["patchable_findings"], 1);
     assert!(value["capability_gates"].as_array().unwrap().len() >= 4);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
@@ -411,6 +413,7 @@ pub fn load_root() -> anyhow::Result<String> {
     );
     assert_eq!(reviewed["schema_version"], "0.6");
     assert_eq!(reviewed["status"], "Reviewed");
+    assert_eq!(reviewed["budget_exhausted"], false);
     assert_eq!(reviewed["total_executed_candidates"], 2);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before_lib);
     assert_eq!(std::fs::read_to_string(&config).unwrap(), before_config);
@@ -432,6 +435,7 @@ pub fn load_root() -> anyhow::Result<String> {
     );
     assert_eq!(applied["status"], "Applied");
     assert_eq!(applied["total_executed_candidates"], 2);
+    assert_eq!(applied["quality_before"]["patchable_findings"], 2);
     assert_eq!(
         applied["quality_after"]["patchable_findings"],
         serde_json::Value::from(0)
@@ -442,6 +446,73 @@ pub fn load_root() -> anyhow::Result<String> {
     assert!(after_config.contains("use anyhow::Context;"));
     assert!(!after_lib.contains(".unwrap()"));
     assert!(!after_config.contains(".unwrap()"));
+}
+
+#[test]
+fn evolve_json_mode_respects_evidence_and_budget_surface() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-evolve-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let blocked = assert_machine_pure_json_in(
+        &[
+            "evolve",
+            "src/lib.rs",
+            "--budget",
+            "60s",
+            "--min-evidence",
+            "tested",
+            "--json",
+        ],
+        dir.path(),
+    );
+    assert_eq!(blocked["status"], "NoExecutableCandidates");
+    assert_eq!(blocked["budget_seconds"], 60);
+    assert_eq!(blocked["total_executed_candidates"], 0);
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+
+    let applied = assert_machine_pure_json_in(
+        &[
+            "evolve",
+            "src/lib.rs",
+            "--apply",
+            "--budget",
+            "60s",
+            "--tier",
+            "1",
+            "--json",
+        ],
+        dir.path(),
+    );
+    assert_eq!(applied["status"], "Applied");
+    assert_eq!(applied["budget_seconds"], 60);
+    assert_eq!(applied["total_executed_candidates"], 1);
+    let after = std::fs::read_to_string(&lib).unwrap();
+    assert!(after.contains("use anyhow::Context;"));
+    assert!(!after.contains(".unwrap()"));
 }
 
 #[test]

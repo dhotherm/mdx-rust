@@ -14,14 +14,20 @@ continuing.
 ### Added
 
 - `mdx-rust map [target]` for non-mutating codebase intelligence reports with
-  quality grade, debt score, capability gates, findings, and next actions.
+  quality grade, debt score, evidence grade, capability gates, findings, and
+  next actions.
 - `mdx-rust autopilot [target]` for autonomous review passes that map, plan,
   queue executable candidates, and preserve source files.
 - `mdx-rust autopilot [target] --apply` for multi-pass autonomous apply. Each
   pass builds a fresh plan, executes only supported low-risk candidates through
   `apply-plan --all`, and stops on any failed gate.
+- `mdx-rust evolve [target] --budget <time> --tier <n>` as the agent-friendly
+  autonomous improvement entrypoint.
 - Versioned codebase map artifacts under `.mdx-rust/maps/`.
 - Versioned autopilot artifacts under `.mdx-rust/autopilot/`.
+- Evidence summaries on codebase maps and refactor plans, including grade,
+  signals, unlock suggestions, and max autonomous tier.
+- Candidate tier and required-evidence fields, enforced before queue execution.
 - JSON Schema export for `codebase-map` and `autopilot-run`.
 - Capability gate detection for `cargo-nextest`, `cargo-llvm-cov`,
   `cargo-mutants`, and `cargo-semver-checks`.
@@ -34,6 +40,8 @@ continuing.
   `0.6`.
 - README, safety invariants, provenance docs, API stability docs, architecture
   docs, and release readiness docs now describe autonomous orchestration.
+- Execution queues now filter by evidence grade, requested tier, public API
+  allowance, and candidate support status.
 - Release smoke coverage includes map and autopilot schema checks.
 - Workspace package version is now `0.6.0`.
 

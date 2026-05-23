@@ -52,6 +52,8 @@ pub struct RefactorBatchApplyConfig {
     pub allow_public_api_impact: bool,
     pub validation_timeout: Duration,
     pub max_candidates: usize,
+    pub max_tier: RecipeTier,
+    pub min_evidence: EvidenceGrade,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +86,9 @@ pub struct AutopilotConfig {
     pub max_candidates: usize,
     pub validation_timeout: Duration,
     pub allow_public_api_impact: bool,
+    pub max_tier: RecipeTier,
+    pub min_evidence: EvidenceGrade,
+    pub budget: Option<Duration>,
 }
 
 impl Default for AutopilotConfig {
@@ -98,6 +103,9 @@ impl Default for AutopilotConfig {
             max_candidates: 25,
             validation_timeout: Duration::from_secs(180),
             allow_public_api_impact: false,
+            max_tier: RecipeTier::Tier1,
+            min_evidence: EvidenceGrade::Compiled,
+            budget: None,
         }
     }
 }
@@ -112,6 +120,7 @@ pub struct RefactorPlan {
     pub workspace: WorkspaceSummary,
     pub policy: Option<ProjectPolicy>,
     pub behavior_spec: Option<String>,
+    pub evidence: EvidenceSummary,
     pub impact: RefactorImpactSummary,
     pub source_snapshots: Vec<SourceSnapshot>,
     pub files: Vec<RefactorFileSummary>,
@@ -132,6 +141,7 @@ pub struct CodebaseMap {
     pub workspace: WorkspaceSummary,
     pub policy: Option<ProjectPolicy>,
     pub behavior_spec: Option<String>,
+    pub evidence: EvidenceSummary,
     pub quality: CodebaseQualitySummary,
     pub capability_gates: Vec<CapabilityGate>,
     pub impact: RefactorImpactSummary,
@@ -152,6 +162,34 @@ pub struct CodebaseQualitySummary {
     pub oversized_files: usize,
     pub oversized_functions: usize,
     pub test_coverage_signal: TestCoverageSignal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvidenceSummary {
+    pub grade: EvidenceGrade,
+    pub max_autonomous_tier: u8,
+    pub signals: Vec<EvidenceSignal>,
+    pub unlock_suggestions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvidenceSignal {
+    pub id: String,
+    pub label: String,
+    pub present: bool,
+    pub detail: String,
+}
+
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord,
+)]
+pub enum EvidenceGrade {
+    None,
+    Compiled,
+    Tested,
+    Covered,
+    Hardened,
+    Proven,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -186,6 +224,7 @@ pub struct AutopilotRun {
     pub target: Option<String>,
     pub mode: RefactorApplyMode,
     pub status: AutopilotStatus,
+    pub budget_seconds: Option<u64>,
     pub max_passes: usize,
     pub max_candidates_per_pass: usize,
     pub quality_before: CodebaseQualitySummary,
@@ -194,6 +233,7 @@ pub struct AutopilotRun {
     pub total_planned_candidates: usize,
     pub total_executed_candidates: usize,
     pub total_skipped_candidates: usize,
+    pub budget_exhausted: bool,
     pub note: String,
     pub artifact_path: Option<String>,
 }
@@ -267,6 +307,9 @@ pub struct RefactorCandidate {
     pub line: usize,
     pub risk: RefactorRiskLevel,
     pub status: RefactorCandidateStatus,
+    pub tier: RecipeTier,
+    pub required_evidence: EvidenceGrade,
+    pub evidence_satisfied: bool,
     pub public_api_impact: bool,
     pub apply_command: Option<String>,
     pub required_gates: Vec<String>,
@@ -277,6 +320,15 @@ pub enum RefactorCandidateStatus {
     ApplyViaImprove,
     PlanOnly,
     NeedsHumanDesign,
+}
+
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord,
+)]
+pub enum RecipeTier {
+    Tier1,
+    Tier2,
+    Tier3,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -394,6 +446,13 @@ pub fn build_refactor_plan(
         .behavior_spec_path
         .as_ref()
         .map(|path| path.display().to_string());
+    let capability_gates = capability_gates();
+    let evidence = summarize_evidence(
+        &workspace,
+        &refactor.files,
+        &capability_gates,
+        config.behavior_spec_path.is_some(),
+    );
     let impact = summarize_impact(
         &refactor.files,
         refactor.module_edges.len(),
@@ -401,8 +460,8 @@ pub fn build_refactor_plan(
         hardening.changes.len(),
     );
     let mut candidates = Vec::new();
-    candidates.extend(hardening_candidates(&hardening.findings, config));
-    candidates.extend(structural_candidates(&refactor.files));
+    candidates.extend(hardening_candidates(&hardening.findings, config, &evidence));
+    candidates.extend(structural_candidates(&refactor.files, &evidence));
     for candidate in &mut candidates {
         candidate.candidate_hash = candidate_hash(candidate);
     }
@@ -429,6 +488,7 @@ pub fn build_refactor_plan(
         workspace,
         policy,
         behavior_spec,
+        evidence,
         impact,
         source_snapshots,
         files: refactor.files,
@@ -475,6 +535,13 @@ pub fn build_codebase_map(
         .behavior_spec_path
         .as_ref()
         .map(|path| path.display().to_string());
+    let capability_gates = capability_gates();
+    let evidence = summarize_evidence(
+        &workspace,
+        &refactor.files,
+        &capability_gates,
+        config.behavior_spec_path.is_some(),
+    );
     let impact = summarize_impact(
         &refactor.files,
         refactor.module_edges.len(),
@@ -482,8 +549,7 @@ pub fn build_codebase_map(
         hardening.changes.len(),
     );
     let quality = summarize_quality(&refactor.files, &hardening.findings, &impact);
-    let capability_gates = capability_gates();
-    let recommended_actions = recommended_actions(&quality, &impact, &capability_gates);
+    let recommended_actions = recommended_actions(&quality, &impact, &capability_gates, &evidence);
     let map_id = codebase_map_id(&root, config, &quality, &impact);
     let mut map = CodebaseMap {
         schema_version: "0.6".to_string(),
@@ -497,6 +563,7 @@ pub fn build_codebase_map(
         workspace,
         policy,
         behavior_spec,
+        evidence,
         quality,
         capability_gates,
         impact,
@@ -545,6 +612,7 @@ pub fn run_autopilot(
             .map(|path| path.display().to_string()),
         mode,
         status: AutopilotStatus::NoExecutableCandidates,
+        budget_seconds: config.budget.map(|duration| duration.as_secs()),
         max_passes: config.max_passes,
         max_candidates_per_pass: config.max_candidates,
         quality_before: before_map.quality,
@@ -553,12 +621,21 @@ pub fn run_autopilot(
         total_planned_candidates: 0,
         total_executed_candidates: 0,
         total_skipped_candidates: 0,
+        budget_exhausted: false,
         note: String::new(),
         artifact_path: None,
     };
 
+    let started_at = std::time::Instant::now();
     let pass_count = config.max_passes.max(1);
     for pass_index in 1..=pass_count {
+        if config
+            .budget
+            .is_some_and(|budget| started_at.elapsed() >= budget)
+        {
+            run.budget_exhausted = true;
+            break;
+        }
         let plan = build_refactor_plan(
             &root,
             artifact_root,
@@ -573,6 +650,8 @@ pub fn run_autopilot(
             &plan,
             config.allow_public_api_impact,
             config.max_candidates,
+            config.max_tier,
+            config.min_evidence,
         );
         run.total_planned_candidates += plan.candidates.len();
 
@@ -611,6 +690,8 @@ pub fn run_autopilot(
                 allow_public_api_impact: config.allow_public_api_impact,
                 validation_timeout: config.validation_timeout,
                 max_candidates: config.max_candidates,
+                max_tier: config.max_tier,
+                min_evidence: config.min_evidence,
             },
         )?;
         run.total_executed_candidates += batch.executed_candidates;
@@ -717,6 +798,15 @@ pub fn apply_refactor_plan_candidate(
     if candidate.public_api_impact && !config.allow_public_api_impact {
         run.status = RefactorApplyStatus::Rejected;
         run.note = "candidate touches public API impact area; pass --allow-public-api-impact after human review".to_string();
+        return persist_apply_run(artifact_root, run);
+    }
+
+    if !candidate.evidence_satisfied {
+        run.status = RefactorApplyStatus::Unsupported;
+        run.note = format!(
+            "candidate requires {:?} evidence but plan evidence is {:?}",
+            candidate.required_evidence, plan.evidence.grade
+        );
         return persist_apply_run(artifact_root, run);
     }
 
@@ -1017,6 +1107,109 @@ fn summarize_quality(
     }
 }
 
+fn summarize_evidence(
+    workspace: &WorkspaceSummary,
+    files: &[RefactorFileSummary],
+    gates: &[CapabilityGate],
+    has_behavior_spec: bool,
+) -> EvidenceSummary {
+    let has_tests = files.iter().any(|file| file.has_tests);
+    let has_nextest = gates
+        .iter()
+        .any(|gate| gate.id == "nextest" && gate.available);
+    let has_coverage_tool = gates
+        .iter()
+        .any(|gate| gate.id == "llvm-cov" && gate.available);
+    let has_mutation_tool = gates
+        .iter()
+        .any(|gate| gate.id == "mutants" && gate.available);
+
+    let grade = if !workspace.cargo_metadata_available {
+        EvidenceGrade::None
+    } else if has_tests || has_behavior_spec || has_nextest {
+        EvidenceGrade::Tested
+    } else {
+        EvidenceGrade::Compiled
+    };
+    let max_autonomous_tier = max_tier_for_evidence(grade);
+
+    let signals = vec![
+        EvidenceSignal {
+            id: "cargo-metadata".to_string(),
+            label: "Cargo metadata".to_string(),
+            present: workspace.cargo_metadata_available,
+            detail: if workspace.cargo_metadata_available {
+                "workspace can be inspected and compile gates can run".to_string()
+            } else {
+                "no Cargo metadata was available for this target".to_string()
+            },
+        },
+        EvidenceSignal {
+            id: "tests-or-behavior-evals".to_string(),
+            label: "Tests or behavior evals".to_string(),
+            present: has_tests || has_behavior_spec,
+            detail: if has_behavior_spec {
+                "behavior eval spec was supplied".to_string()
+            } else if has_tests {
+                "at least one scanned file contains Rust test markers".to_string()
+            } else {
+                "no tests or behavior eval spec were detected for the scanned target".to_string()
+            },
+        },
+        EvidenceSignal {
+            id: "coverage-tool".to_string(),
+            label: "Coverage tooling".to_string(),
+            present: has_coverage_tool,
+            detail: "cargo-llvm-cov availability is detected, but v0.6 does not run coverage automatically".to_string(),
+        },
+        EvidenceSignal {
+            id: "mutation-tool".to_string(),
+            label: "Mutation tooling".to_string(),
+            present: has_mutation_tool,
+            detail: "cargo-mutants availability is detected, but v0.6 does not run mutation tests automatically".to_string(),
+        },
+    ];
+
+    let mut unlock_suggestions = Vec::new();
+    if grade == EvidenceGrade::None {
+        unlock_suggestions.push(
+            "Run mdx-rust from a Cargo workspace before allowing autonomous changes.".to_string(),
+        );
+    }
+    if grade < EvidenceGrade::Tested {
+        unlock_suggestions.push(
+            "Add Rust tests or pass --eval-spec to unlock tested evidence for future recipes."
+                .to_string(),
+        );
+    }
+    if !has_coverage_tool {
+        unlock_suggestions
+            .push("Install cargo-llvm-cov to prepare for covered Tier 2 recipe gates.".to_string());
+    }
+    if !has_mutation_tool {
+        unlock_suggestions.push(
+            "Install cargo-mutants to prepare for hardened Tier 2 and Tier 3 recipe gates."
+                .to_string(),
+        );
+    }
+
+    EvidenceSummary {
+        grade,
+        max_autonomous_tier,
+        signals,
+        unlock_suggestions,
+    }
+}
+
+fn max_tier_for_evidence(grade: EvidenceGrade) -> u8 {
+    match grade {
+        EvidenceGrade::None => 0,
+        EvidenceGrade::Compiled | EvidenceGrade::Tested => 1,
+        EvidenceGrade::Covered => 2,
+        EvidenceGrade::Hardened | EvidenceGrade::Proven => 3,
+    }
+}
+
 fn capability_gates() -> Vec<CapabilityGate> {
     vec![
         CapabilityGate {
@@ -1054,11 +1247,17 @@ fn recommended_actions(
     quality: &CodebaseQualitySummary,
     impact: &RefactorImpactSummary,
     gates: &[CapabilityGate],
+    evidence: &EvidenceSummary,
 ) -> Vec<String> {
     let mut actions = Vec::new();
-    if quality.patchable_findings > 0 {
+    if quality.patchable_findings > 0 && evidence.grade >= EvidenceGrade::Compiled {
         actions.push(
             "Run mdx-rust autopilot --apply to execute low-risk contextual hardening passes."
+                .to_string(),
+        );
+    } else if quality.patchable_findings > 0 {
+        actions.push(
+            "Autonomous execution is blocked until this target has at least compiled evidence."
                 .to_string(),
         );
     }
@@ -1089,6 +1288,7 @@ fn recommended_actions(
                 .to_string(),
         );
     }
+    actions.extend(evidence.unlock_suggestions.iter().cloned());
     if actions.is_empty() {
         actions.push(
             "No immediate autonomous changes found. Keep policy and behavior gates current."
@@ -1109,12 +1309,15 @@ fn cargo_subcommand_exists(name: &str) -> bool {
 fn hardening_candidates(
     findings: &[HardeningFinding],
     config: &RefactorPlanConfig,
+    evidence: &EvidenceSummary,
 ) -> Vec<RefactorCandidate> {
     findings
         .iter()
         .filter(|finding| finding.patchable)
         .map(|finding| {
             let file = finding.file.display().to_string();
+            let required_evidence = EvidenceGrade::Compiled;
+            let evidence_satisfied = evidence.grade >= required_evidence;
             RefactorCandidate {
                 id: format!("plan-hardening-{}-{}", sanitize_id(&file), finding.line),
                 candidate_hash: String::new(),
@@ -1124,20 +1327,31 @@ fn hardening_candidates(
                 file: file.clone(),
                 line: finding.line,
                 risk: RefactorRiskLevel::Low,
-                status: RefactorCandidateStatus::ApplyViaImprove,
+                status: if evidence_satisfied {
+                    RefactorCandidateStatus::ApplyViaImprove
+                } else {
+                    RefactorCandidateStatus::PlanOnly
+                },
+                tier: RecipeTier::Tier1,
+                required_evidence,
+                evidence_satisfied,
                 public_api_impact: false,
-                apply_command: Some(apply_command(&file, config)),
+                apply_command: evidence_satisfied.then(|| apply_command(&file, config)),
                 required_gates: required_gates(config.behavior_spec_path.is_some()),
             }
         })
         .collect()
 }
 
-fn structural_candidates(files: &[RefactorFileSummary]) -> Vec<RefactorCandidate> {
+fn structural_candidates(
+    files: &[RefactorFileSummary],
+    evidence: &EvidenceSummary,
+) -> Vec<RefactorCandidate> {
     let mut candidates = Vec::new();
     for file in files {
         let file_path = file.file.display().to_string();
         if file.line_count >= 300 {
+            let required_evidence = EvidenceGrade::Covered;
             candidates.push(RefactorCandidate {
                 id: format!("plan-split-module-{}", sanitize_id(&file_path)),
                 candidate_hash: String::new(),
@@ -1155,6 +1369,9 @@ fn structural_candidates(files: &[RefactorFileSummary]) -> Vec<RefactorCandidate
                     RefactorRiskLevel::Medium
                 },
                 status: RefactorCandidateStatus::NeedsHumanDesign,
+                tier: RecipeTier::Tier2,
+                required_evidence,
+                evidence_satisfied: evidence.grade >= required_evidence,
                 public_api_impact: file.public_item_count > 0,
                 apply_command: None,
                 required_gates: vec![
@@ -1167,6 +1384,7 @@ fn structural_candidates(files: &[RefactorFileSummary]) -> Vec<RefactorCandidate
         }
 
         if file.largest_function_lines >= 80 {
+            let required_evidence = EvidenceGrade::Covered;
             candidates.push(RefactorCandidate {
                 id: format!("plan-extract-function-{}", sanitize_id(&file_path)),
                 candidate_hash: String::new(),
@@ -1180,6 +1398,9 @@ fn structural_candidates(files: &[RefactorFileSummary]) -> Vec<RefactorCandidate
                 line: 1,
                 risk: RefactorRiskLevel::Medium,
                 status: RefactorCandidateStatus::PlanOnly,
+                tier: RecipeTier::Tier2,
+                required_evidence,
+                evidence_satisfied: evidence.grade >= required_evidence,
                 public_api_impact: file.public_item_count > 0,
                 apply_command: None,
                 required_gates: vec![
@@ -1191,6 +1412,7 @@ fn structural_candidates(files: &[RefactorFileSummary]) -> Vec<RefactorCandidate
         }
 
         if file.public_item_count > 0 {
+            let required_evidence = EvidenceGrade::Tested;
             candidates.push(RefactorCandidate {
                 id: format!("plan-public-api-{}", sanitize_id(&file_path)),
                 candidate_hash: String::new(),
@@ -1204,6 +1426,9 @@ fn structural_candidates(files: &[RefactorFileSummary]) -> Vec<RefactorCandidate
                 line: 1,
                 risk: RefactorRiskLevel::Medium,
                 status: RefactorCandidateStatus::PlanOnly,
+                tier: RecipeTier::Tier1,
+                required_evidence,
+                evidence_satisfied: evidence.grade >= required_evidence,
                 public_api_impact: true,
                 apply_command: None,
                 required_gates: vec![
@@ -1292,6 +1517,7 @@ fn codebase_map_hash(map: &CodebaseMap) -> String {
     bytes.extend_from_slice(map.root.as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.target).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.quality).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.impact).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.files).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.module_edges).as_bytes());
@@ -1306,6 +1532,8 @@ fn autopilot_run_id(root: &Path, config: &AutopilotConfig, map: &CodebaseMap) ->
     bytes.extend_from_slice(config.apply.to_string().as_bytes());
     bytes.extend_from_slice(config.max_passes.to_string().as_bytes());
     bytes.extend_from_slice(config.max_candidates.to_string().as_bytes());
+    bytes.extend_from_slice(format!("{:?}", config.max_tier).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", config.min_evidence).as_bytes());
     bytes.extend_from_slice(map.map_hash.as_bytes());
     stable_hash_hex(&bytes)
 }
@@ -1316,6 +1544,7 @@ fn refactor_plan_hash(plan: &RefactorPlan) -> String {
     bytes.extend_from_slice(plan.plan_id.as_bytes());
     bytes.extend_from_slice(plan.root.as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.target).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", plan.evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.impact).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.source_snapshots).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.module_edges).as_bytes());
@@ -1333,6 +1562,9 @@ fn candidate_hash(candidate: &RefactorCandidate) -> String {
     bytes.extend_from_slice(candidate.line.to_string().as_bytes());
     bytes.extend_from_slice(format!("{:?}", candidate.risk).as_bytes());
     bytes.extend_from_slice(format!("{:?}", candidate.status).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", candidate.tier).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", candidate.required_evidence).as_bytes());
+    bytes.extend_from_slice(candidate.evidence_satisfied.to_string().as_bytes());
     bytes.extend_from_slice(candidate.public_api_impact.to_string().as_bytes());
     bytes.extend_from_slice(format!("{:?}", candidate.apply_command).as_bytes());
     stable_hash_hex(&bytes)
@@ -1420,6 +1652,13 @@ fn executable_candidate_queue<'a>(
         {
             continue;
         }
+        if !candidate.evidence_satisfied
+            || candidate.required_evidence > plan.evidence.grade
+            || plan.evidence.grade < config.min_evidence
+            || candidate.tier > config.max_tier
+        {
+            continue;
+        }
         if candidate.public_api_impact && !config.allow_public_api_impact {
             continue;
         }
@@ -1434,6 +1673,8 @@ fn count_executable_candidates(
     plan: &RefactorPlan,
     allow_public_api_impact: bool,
     max_candidates: usize,
+    max_tier: RecipeTier,
+    min_evidence: EvidenceGrade,
 ) -> usize {
     executable_candidate_queue(
         plan,
@@ -1443,6 +1684,8 @@ fn count_executable_candidates(
             allow_public_api_impact,
             validation_timeout: Duration::from_secs(1),
             max_candidates,
+            max_tier,
+            min_evidence,
         },
     )
     .len()
@@ -1505,7 +1748,11 @@ fn autopilot_note(run: &AutopilotRun) -> String {
             run.total_executed_candidates
         ),
         AutopilotStatus::NoExecutableCandidates => {
-            "no executable low-risk candidates were available".to_string()
+            if run.budget_exhausted {
+                "budget exhausted before more executable work could run".to_string()
+            } else {
+                "no executable low-risk candidates were available".to_string()
+            }
         }
         AutopilotStatus::Rejected => {
             "autopilot stopped because a planning or execution gate rejected the run".to_string()

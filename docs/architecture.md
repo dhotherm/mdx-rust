@@ -146,9 +146,10 @@ engine.
 
 `mdx-rust map` scans the requested workspace, file, or directory and writes a
 codebase map under `.mdx-rust/maps/`. The map includes workspace metadata,
-quality grade, debt score, hardening findings, public API pressure, module
-edges, available optional gates such as `cargo-nextest`, `cargo-llvm-cov`,
-`cargo-mutants`, and `cargo-semver-checks`, and recommended next actions.
+quality grade, debt score, evidence grade, hardening findings, public API
+pressure, module edges, available optional gates such as `cargo-nextest`,
+`cargo-llvm-cov`, `cargo-mutants`, and `cargo-semver-checks`, and recommended
+next actions.
 
 `mdx-rust autopilot` coordinates the existing map, plan, apply-plan, and
 hardening paths:
@@ -165,3 +166,16 @@ hardening paths:
 The autonomous loop is allowed to run multiple passes, but every source edit
 still routes through hardening transactions with isolated validation, optional
 behavior evals, final validation, and rollback.
+
+`mdx-rust evolve` is the agent-friendly wrapper over the same machinery. It
+adds a time budget, recipe tier, and minimum evidence grade. Those options only
+reduce the execution queue; they never weaken validation or rollback.
+
+Evidence grades control proportional aggression:
+
+- `None`: no autonomous source changes.
+- `Compiled`: Tier 1 mechanical recipes may attempt compile/clippy-gated
+  transactions.
+- `Tested`: Tier 1 remains executable and reports stronger evidence.
+- `Covered`, `Hardened`, and `Proven`: reserved for future Tier 2 and Tier 3
+  recipes once coverage, mutation, and property evidence are actually run.

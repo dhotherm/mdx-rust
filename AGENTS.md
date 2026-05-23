@@ -44,6 +44,9 @@ When modifying the core loop, analysis, or editing logic:
 - For autonomous changes, preserve `map` and `autopilot` review mode as
   non-mutating and route autopilot apply mode through plan/apply-plan/hardening
   transactions only.
+- Preserve evidence-gated execution. `evolve`, `autopilot`, and `apply-plan
+  --all` may only reduce the queue by tier, budget, or evidence; they must not
+  weaken validation or rollback.
 - Use the `examples/` directory or `tests/fixtures/` for small Rig agents you can optimize against.
 
 ### Running the CLI during development
@@ -53,6 +56,7 @@ cargo run -- register my-test-agent ../path/to/small-agent
 cargo run -- doctor my-test-agent
 cargo run -- map src --json
 cargo run -- autopilot src --json
+cargo run -- evolve src --budget 60s --json
 ```
 
 ### Commit Style

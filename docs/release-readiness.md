@@ -60,6 +60,7 @@ mdx-rust eval --json >/tmp/mdx-rust-eval.json
 mdx-rust doctor --json >/tmp/mdx-rust-doctor.json
 mdx-rust map --json >/tmp/mdx-rust-map.json
 mdx-rust autopilot --json >/tmp/mdx-rust-autopilot.json
+mdx-rust evolve --budget 60s --json >/tmp/mdx-rust-evolve.json
 ```
 
 ## Example Smoke
@@ -102,6 +103,7 @@ From a clean checkout:
 cargo run -p mdx-rust -- plan crates/mdx-rust-core/src/refactor.rs --json
 cargo run -p mdx-rust -- map crates/mdx-rust-core/src/refactor.rs --json
 cargo run -p mdx-rust -- autopilot crates/mdx-rust-core/src/refactor.rs --json
+cargo run -p mdx-rust -- evolve crates/mdx-rust-core/src/refactor.rs --budget 60s --json
 cargo run -p mdx-rust -- schema refactor-plan --json
 cargo run -p mdx-rust -- schema refactor-apply-run --json
 cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
@@ -123,6 +125,8 @@ mdx-rust apply-plan .mdx-rust/plans/<plan>.json --all --apply --json
 mdx-rust map src --json
 mdx-rust autopilot src --json
 mdx-rust autopilot src --apply --json
+mdx-rust evolve src --budget 60s --min-evidence tested --json
+mdx-rust evolve src --budget 60s --tier 1 --apply --json
 ```
 
 The review run must not mutate source files. The apply run must route through
@@ -136,6 +140,11 @@ must write a codebase map, fresh plan artifact, batch apply report, and
 autopilot report. It must replan between apply passes and report quality
 before/after when it changes the tree.
 
+The evolve run with `--min-evidence tested` should refuse Tier 1 execution when
+the fixture has only compiled evidence, and it must leave source files
+unchanged. The evolve apply run should then execute Tier 1 candidates with the
+compiled evidence default.
+
 ## Performance Sanity
 
 Record rough timings before release:
@@ -147,6 +156,7 @@ Record rough timings before release:
 - One `plan <small-rust-directory>` run.
 - One `map <small-rust-directory>` run.
 - One `autopilot <small-rust-directory>` review run.
+- One `evolve <small-rust-directory> --budget 60s` review run.
 
 The exact numbers depend heavily on Cargo cache warmth. The release bar is not a
 micro-benchmark; it is that the CLI starts promptly and the example optimization

@@ -77,11 +77,12 @@ pub use refactor::{
     apply_refactor_plan_batch, apply_refactor_plan_candidate, build_codebase_map,
     build_refactor_plan, run_autopilot, AutopilotConfig, AutopilotPass, AutopilotPassStatus,
     AutopilotRun, AutopilotStatus, CapabilityGate, CodebaseMap, CodebaseMapConfig,
-    CodebaseQualityGrade, CodebaseQualitySummary, RefactorApplyConfig, RefactorApplyMode,
-    RefactorApplyRun, RefactorApplyStatus, RefactorBatchApplyConfig, RefactorBatchApplyRun,
-    RefactorBatchApplyStatus, RefactorBatchCandidateRun, RefactorCandidate,
-    RefactorCandidateStatus, RefactorImpactSummary, RefactorPlan, RefactorPlanConfig,
-    RefactorRecipe, RefactorRiskLevel, SourceSnapshot, StaleSourceFile, TestCoverageSignal,
+    CodebaseQualityGrade, CodebaseQualitySummary, EvidenceGrade, EvidenceSignal, EvidenceSummary,
+    RecipeTier, RefactorApplyConfig, RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus,
+    RefactorBatchApplyConfig, RefactorBatchApplyRun, RefactorBatchApplyStatus,
+    RefactorBatchCandidateRun, RefactorCandidate, RefactorCandidateStatus, RefactorImpactSummary,
+    RefactorPlan, RefactorPlanConfig, RefactorRecipe, RefactorRiskLevel, SourceSnapshot,
+    StaleSourceFile, TestCoverageSignal,
 };
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};

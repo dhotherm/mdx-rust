@@ -60,7 +60,7 @@ optional behavior evals, and final validation before reporting applied success.
 
 Refactor planning and autonomous orchestration records are stable enough for CLI automation through
 `mdx-rust plan --json`, `mdx-rust apply-plan --json`,
-`mdx-rust map --json`, `mdx-rust autopilot --json`,
+`mdx-rust map --json`, `mdx-rust autopilot --json`, `mdx-rust evolve --json`,
 `mdx-rust schema refactor-plan --json`, and
 `mdx-rust schema refactor-apply-run --json`, and
 `mdx-rust schema refactor-batch-apply-run --json`,

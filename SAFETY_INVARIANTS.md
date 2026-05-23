@@ -96,6 +96,9 @@ allowed to move quickly, but it must not create a second mutation path.
 - `mdx-rust autopilot --apply` must build a fresh plan before each apply pass.
 - Each apply pass may execute only candidates already marked executable in the
   fresh plan.
+- Each executed candidate must satisfy the plan evidence grade, candidate
+  required evidence, requested recipe tier, public API allowance, and support
+  status before entering the execution queue.
 - Each executed candidate must route through `apply-plan --all` and the
   hardening transaction path. Autopilot must not write Rust source files
   directly.
@@ -105,6 +108,9 @@ allowed to move quickly, but it must not create a second mutation path.
 - Autopilot budgets (`--max-passes`, `--max-candidates`, and validation
   timeout) can only reduce work. They must never reduce validation, rollback,
   or provenance requirements.
+- `mdx-rust evolve` is an agent-facing wrapper around the same autonomous
+  execution contract. Its `--budget`, `--tier`, and `--min-evidence` options can
+  only reduce work.
 - Public API impacting candidates remain blocked unless the caller passes an
   explicit public API allowance and the underlying executable recipe supports
   that scope.
@@ -118,6 +124,9 @@ allowed to move quickly, but it must not create a second mutation path.
   areas", not "validated", "applied", "landed", or "accepted".
 - Codebase maps are records only. A `CodebaseMap` means "scanned and
   summarized", not "validated", "applied", "landed", or "accepted".
+- Evidence grades are execution gates, not proof by themselves. A `Compiled`
+  grade means Tier 1 candidates may attempt the compile/clippy-gated hardening
+  path; it does not mean a candidate has already passed validation.
 - Autopilot reports are orchestration evidence only. They must point back to
   the concrete plans, apply-plan reports, hardening reports, validation
   records, and rollback evidence that justified each step.
@@ -202,6 +211,9 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
 - At least one CLI integration test proves `autopilot --apply --json` applies
   only executable low-risk candidates through the hardening transaction path
   and records quality before/after.
+- At least one CLI integration test proves `evolve --json` respects budget and
+  evidence gating, including a higher-than-available evidence request that
+  blocks execution without mutating source files.
 
 The current invariant tests live primarily in:
 

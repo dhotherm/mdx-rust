@@ -80,12 +80,16 @@ Guardrailed Rust refactoring assistant with impact analysis.
 Autonomous Rust evolution for safe executable work.
 
 - `mdx-rust map` codebase intelligence with quality grade, debt score,
-  capability gates, hardening findings, and recommended actions.
+  evidence grade, capability gates, hardening findings, and recommended
+  actions.
 - `mdx-rust autopilot` review mode for non-mutating autonomous planning and
   execution simulation.
 - `mdx-rust autopilot --apply` for multi-pass execution of low-risk candidates
   through the existing plan, apply-plan, hardening, validation, and rollback
   gates.
+- `mdx-rust evolve --budget <time> --tier <n>` as the direct command coding
+  agents can call for bounded autonomous Rust improvement.
+- Candidate tiers and required evidence gates that control what can execute.
 - Fresh planning before every autonomous apply pass.
 - Versioned codebase map and autopilot artifacts for agents, CI, and future MCP
   or API surfaces.
