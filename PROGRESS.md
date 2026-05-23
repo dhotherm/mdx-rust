@@ -37,18 +37,19 @@
 - [x] Final git history rewrite (single clean root commit)
 - [x] Converted to 3-crate workspace
 - [x] Production-quality `mdx-rust init` (with --json support)
-- [x] Basic `doctor` command
+- [x] `doctor` command (uses real Config)
 - [x] Real example Rig agent (`examples/rig-minimal-agent`)
-- [x] Config loading foundation in `mdx-rust-core`
+- [x] Config loading in `mdx-rust-core`
+- [x] Initial `.mdx-rustignore` + `BundleScope` logic in analysis crate
+- [x] First version of `register` command (detection + registry entry + smoke test)
 
 ### In Progress / Next
 
-- [ ] Wire real `Config` usage into CLI (`init` + `doctor`)
-- [ ] `.mdx-rustignore` parser + basic bundle scope logic
-- [ ] Full `register` command (detection, registry entry, smoke test)
-- [ ] Artifact directory management + registry persistence
-- [ ] Tests for Phase 0 components
-- [ ] Polish + documentation updates
+- [ ] Improve registry to use proper types from core
+- [ ] Full agent contract detection (Rig vs generic process)
+- [ ] Better artifact + registry persistence
+- [ ] Tests for Phase 0
+- [ ] Move into Phase 1 (deeper registration + basic runner)
 
 ---
 
