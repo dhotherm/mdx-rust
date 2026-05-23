@@ -262,7 +262,6 @@ Cargo.lock
 /// `doctor` command — shows project state using the loaded Config
 fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
     use mdx_rust_core::registry::Registry;
-    use std::path::Path;
 
     let cwd = std::env::current_dir()?;
     let config = Config::load_from_project(&cwd).unwrap_or_default();
@@ -445,11 +444,18 @@ fn cmd_optimize(name: &str, iterations: u32, json: bool) -> anyhow::Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&runs)?);
     } else {
-        println!("Optimization skeleton run for '{}'", name);
-        for run in runs {
-            println!("  Iteration {} → scores: {:?} (accepted: {})", run.iteration, run.scores, run.accepted_changes);
+        println!("🚀 Optimization run for agent '{}'", name);
+        println!("   ({} iterations)", runs.len());
+        for run in &runs {
+            println!("   • Iteration {} | Avg score: {:.2} | Changes accepted: {}", 
+                     run.iteration, 
+                     run.scores.iter().sum::<f32>() / run.scores.len() as f32,
+                     run.accepted_changes);
+            if !run.notes.is_empty() {
+                println!("     → {}", run.notes);
+            }
         }
-        println!("\n(Real diagnosis, candidate generation, and safe apply coming in Phase 3)");
+        println!("\n(Full LLM diagnosis + real candidate application in next phases)");
     }
 
     Ok(())
