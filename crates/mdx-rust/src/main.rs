@@ -447,15 +447,16 @@ fn cmd_optimize(name: &str, iterations: u32, json: bool) -> anyhow::Result<()> {
         println!("🚀 Optimization run for agent '{}'", name);
         println!("   ({} iterations)", runs.len());
         for run in &runs {
-            println!("   • Iteration {} | Avg score: {:.2} | Changes accepted: {}", 
-                     run.iteration, 
-                     run.scores.iter().sum::<f32>() / run.scores.len() as f32,
-                     run.accepted_changes);
+            let avg = run.scores.iter().sum::<f32>() / run.scores.len() as f32;
+            println!("   • Iteration {} | Avg: {:.2} | Accepted: {}", run.iteration, avg, run.accepted_changes);
             if !run.notes.is_empty() {
                 println!("     → {}", run.notes);
             }
+            for (i, c) in run.candidates.iter().enumerate() {
+                println!("       [Candidate {}] {} — {}", i+1, c.focus, c.description);
+            }
         }
-        println!("\n(Full LLM diagnosis + real candidate application in next phases)");
+        println!("\n(Real LLM diagnosis + safe patch application coming next)");
     }
 
     Ok(())

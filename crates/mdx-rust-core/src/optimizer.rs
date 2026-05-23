@@ -32,6 +32,7 @@ pub struct OptimizationRun {
     pub scores: Vec<f32>,
     pub accepted_changes: u32,
     pub notes: String,
+    pub candidates: Vec<Candidate>,
 }
 
 /// A proposed improvement generated during an optimization iteration.
@@ -111,6 +112,7 @@ pub async fn run_optimization(
             scores: scores_this_iter,
             accepted_changes: accepted,
             notes,
+            candidates,
         });
 
         if accepted > 0 && iteration > 0 {

@@ -55,6 +55,7 @@
 - [x] Optimization runs are persisted as experiments under the agent (foundation for regression guards & reports)
 - [x] Rich human-friendly output for optimize showing per-iteration diagnosis notes
 - [x] Diagnosis step now consumes real bundle scope from the analysis crate (proper integration)
+- [x] Proper Candidate struct + generation of multiple concrete improvement proposals per iteration
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI
