@@ -6,15 +6,19 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-test-clippy:
+  lint:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -24,16 +28,60 @@ jobs:
     - name: Cargo cache
       uses: Swatinem/rust-cache@v2
 
-    - name: Build
-      run: cargo build --workspace --verbose
-
-    - name: Test
-      run: cargo test --workspace --verbose
-
-    - name: Clippy
-      run: cargo clippy --workspace -- -D warnings
-
     - name: Format check
       run: cargo fmt --all -- --check
 
-  # Future: add doc build, deny, and example-specific smoke tests
+    - name: Clippy
+      run: cargo clippy --workspace --locked -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cargo cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build
+      run: cargo build --workspace --locked --verbose
+
+    - name: Test
+      run: cargo test --workspace --locked --verbose
+
+  release-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cargo cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build release
+      run: cargo build --workspace --release --locked
+
+    - name: Package crates
+      run: |
+        cargo package -p mdx-rust-analysis --locked
+        cargo package -p mdx-rust-core --locked
+        cargo package -p mdx-rust --locked
+
+    - name: Install CLI from path
+      run: |
+        install_root="$(mktemp -d)"
+        cargo install --path crates/mdx-rust --root "$install_root" --locked --debug
+        "$install_root/bin/mdx-rust" --version

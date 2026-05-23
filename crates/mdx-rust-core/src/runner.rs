@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 /// A single trace event captured during an agent run.
-/// Made first-class for trace-to-patch optimization (per handoff).
+/// Made first-class for trace-to-patch optimization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraceEvent {
     pub timestamp_ms: u64,

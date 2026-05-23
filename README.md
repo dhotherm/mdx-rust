@@ -1,5 +1,11 @@
 # mdx-rust
 
+[![CI](https://github.com/dhotherm/mdx-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/dhotherm/mdx-rust/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/mdx-rust.svg)](https://crates.io/crates/mdx-rust)
+[![Docs.rs](https://docs.rs/mdx-rust/badge.svg)](https://docs.rs/mdx-rust)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust 1.80+](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
+
 **A Rust-native optimizer for LLM agents.**
 
 Point `mdx-rust` at an existing Rust agent (or crate), give it a behavioral **policy**, and let it safely improve prompts and simple single-file fallback behavior through structured experimentation - with compile-time safety gates at every step.
@@ -107,7 +113,7 @@ v1 is deliberately conservative:
 
 ## Status
 
-**Active dogfood / private beta (May 2026).**
+**Early public beta (May 2026).**
 
 mdx-rust can already:
 - Register Rig and generic agents
@@ -124,7 +130,14 @@ mdx-rust can already:
 
 The built-in example demonstrates a real before/after optimization win.
 
-See [PROGRESS.md](./PROGRESS.md) for the detailed build log.
+See [ROADMAP.md](./ROADMAP.md) for current scope and upcoming work.
+
+## Project Health
+
+- Published on crates.io as `mdx-rust`.
+- CI runs format, clippy, test, release build, crate packaging, and install smoke checks.
+- Security and acceptance invariants are documented in [SAFETY_INVARIANTS.md](./SAFETY_INVARIANTS.md).
+- Contributions are welcome through focused issues and pull requests.
 
 ## Contributing
 
@@ -135,7 +148,7 @@ We welcome contributions, especially around:
 - Support for additional agent frameworks
 - Evaluation harnesses and scoring functions
 
-See `AGENTS.md` for guidance on working in this codebase (especially important since this tool is designed to be used by agents).
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development workflow and review expectations.
 
 ## License
 

@@ -1,4 +1,4 @@
-//! Integration test for machine-pure --json mode (P1 Codex Stabilization requirement).
+//! Integration test for machine-pure --json mode.
 //!
 //! Runs the built `mdx-rust` binary with `--json` and verifies stdout is valid JSON
 //! (no human text leakage). Uses the already-built binary from the test profile when possible.

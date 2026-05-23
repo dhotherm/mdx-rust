@@ -1,6 +1,6 @@
 //! A minimal Rig-based agent used for testing mdx-rust itself.
 //!
-//! This agent is deliberately simple so we can dogfood the optimizer on it.
+//! This agent is deliberately simple so we can test the optimizer on it.
 
 use rig::completion::Prompt;
 use rig::providers::openai;

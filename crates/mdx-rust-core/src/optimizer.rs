@@ -1,6 +1,6 @@
 //! The core optimization loop (Phase 3).
 //!
-//! High-level flow (per the approved plan):
+//! High-level optimization flow:
 //! 1. Run the agent on the dataset while collecting rich traces.
 //! 2. Score outputs (mechanical rules + optional LLM-as-Judge).
 //! 3. Diagnose failures using a strong model + policy + traces + code bundle.

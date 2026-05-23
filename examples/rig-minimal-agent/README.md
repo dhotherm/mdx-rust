@@ -1,6 +1,6 @@
 # rig-minimal-agent
 
-A tiny Rig-based agent used to dogfood and test `mdx-rust`.
+A tiny Rig-based agent used to test `mdx-rust`.
 
 ## Purpose
 

@@ -623,7 +623,7 @@ fn cmd_optimize(
         ))?
     };
 
-    // Landing now happens inside the optimizer's safety pipeline (per Codex stabilization handoff).
+    // Landing happens inside the optimizer's safety pipeline.
     // We keep best/ persistence here for now, but only for runs that truly accepted.
 
     // Persist "best" version if any improvement was accepted (per original plan)

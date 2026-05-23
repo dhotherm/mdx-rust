@@ -1,6 +1,6 @@
 # Release Readiness
 
-`mdx-rust` is currently ready for private beta use from the GitHub repository.
+`mdx-rust` is currently ready for early public beta use from crates.io and GitHub.
 Version `0.1.0` is also published on crates.io for all three workspace crates.
 
 ## Supported Install Paths Today
@@ -24,7 +24,7 @@ cargo install --path crates/mdx-rust
 ```
 
 The crates.io path is the normal user install path. The GitHub and local paths
-remain useful for dogfooding unreleased changes.
+remain useful for testing unreleased changes.
 
 ## Crates.io Publish Order For Future Versions
 
@@ -67,7 +67,7 @@ see the crate that was just published.
 
 ## Beta Release Gate
 
-Before tagging a private beta, run:
+Before tagging a release, run:
 
 ```bash
 cargo fmt --all -- --check
@@ -96,5 +96,5 @@ test -f .mdx-rust/config.toml
 - Do not claim arbitrary multi-file rollback.
 - Do not imply scored standalone `mdx-rust eval` is complete.
 
-The honest public phrase is: private beta, safety-first, single-file
+The honest public phrase is: early public beta, safety-first, single-file
 prompt/fallback optimization for Rust agents, installable from crates.io.
