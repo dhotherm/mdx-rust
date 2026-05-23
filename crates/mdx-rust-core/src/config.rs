@@ -1,7 +1,6 @@
 //! Configuration loading and management for mdx-rust
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 /// Root configuration for an mdx-rust project
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -28,4 +27,24 @@ pub struct ModelConfig {
 
 fn default_artifact_dir() -> String {
     ".mdx-rust".to_string()
+}
+
+impl Config {
+    /// Load configuration from the standard location, with sensible defaults.
+    pub fn load_from_project(root: &std::path::Path) -> anyhow::Result<Self> {
+        let config_path = root.join(".mdx-rust/config.toml");
+
+        if !config_path.exists() {
+            return Ok(Self::default());
+        }
+
+        let content = std::fs::read_to_string(config_path)?;
+        let mut cfg: Config = toml::from_str(&content)?;
+
+        if cfg.artifact_dir.is_empty() {
+            cfg.artifact_dir = default_artifact_dir();
+        }
+
+        Ok(cfg)
+    }
 }
