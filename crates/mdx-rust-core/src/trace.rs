@@ -24,11 +24,15 @@ pub struct FailureSignal {
     pub kind: FailureKind,
     pub severity: u8,
     pub evidence: String,
+    #[serde(default)]
+    pub span_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TraceDiagnosis {
     pub signals: Vec<FailureSignal>,
+    #[serde(default)]
+    pub ranked_span_ids: Vec<String>,
 }
 
 impl TraceDiagnosis {
@@ -66,6 +70,7 @@ pub fn diagnose_run(result: &AgentRunResult) -> TraceDiagnosis {
             kind,
             severity: 3,
             evidence: truncate(&error, 240),
+            span_id: failing_span_id(result),
         });
     }
 
@@ -74,6 +79,7 @@ pub fn diagnose_run(result: &AgentRunResult) -> TraceDiagnosis {
             kind: FailureKind::InvalidJson,
             severity: 2,
             evidence: "agent stdout was not valid JSON".to_string(),
+            span_id: failing_span_id(result),
         });
     }
 
@@ -83,6 +89,7 @@ pub fn diagnose_run(result: &AgentRunResult) -> TraceDiagnosis {
                 kind: FailureKind::EchoFallback,
                 severity: 2,
                 evidence: truncate(answer, 160),
+                span_id: failing_span_id(result),
             });
         }
     }
@@ -97,6 +104,7 @@ pub fn diagnose_run(result: &AgentRunResult) -> TraceDiagnosis {
                 kind: FailureKind::LowConfidence,
                 severity: 1,
                 evidence: format!("confidence={confidence:.2}"),
+                span_id: failing_span_id(result),
             });
         }
     }
@@ -111,10 +119,29 @@ pub fn diagnose_run(result: &AgentRunResult) -> TraceDiagnosis {
             kind: FailureKind::MissingReasoning,
             severity: 1,
             evidence: "reasoning field missing or empty".to_string(),
+            span_id: failing_span_id(result),
         });
     }
 
-    TraceDiagnosis { signals }
+    let mut ranked_span_ids: Vec<String> = signals
+        .iter()
+        .filter_map(|signal| signal.span_id.clone())
+        .collect();
+    ranked_span_ids.sort();
+    ranked_span_ids.dedup();
+
+    TraceDiagnosis {
+        signals,
+        ranked_span_ids,
+    }
+}
+
+fn failing_span_id(result: &AgentRunResult) -> Option<String> {
+    result
+        .traces
+        .iter()
+        .rev()
+        .find_map(|event| event.span_id.clone())
 }
 
 fn truncate(value: &str, limit: usize) -> String {

@@ -66,6 +66,7 @@ fn other_json_commands_are_machine_pure_on_errors() {
         &["spec", "missing-json-agent", "--json"][..],
         &["invoke", "missing-json-agent", "--json"][..],
         &["eval", "missing-json-agent", "--json"][..],
+        &["audit", "missing-json-agent", "--json"][..],
     ] {
         let value = assert_machine_pure_json(args);
         if args[0] == "doctor" {

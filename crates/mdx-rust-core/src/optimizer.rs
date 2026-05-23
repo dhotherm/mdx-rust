@@ -15,7 +15,11 @@
 
 use crate::registry::RegisteredAgent;
 use crate::runner::AgentRunResult;
-use crate::{diagnose_run, EvaluationDataset, FailureKind, ScorerMetadata, TraceDiagnosis};
+use crate::{
+    diagnose_run, evaluate_builtin_hook, split_dataset, EvaluationDataset, ExperimentLedger,
+    FailureKind, HookContext, HookDecision, HookPolicy, HookStage, OptimizationBudget,
+    PromptVariantRecord, ScorerMetadata, TraceDiagnosis,
+};
 use mdx_rust_analysis::editing::ProposedEdit;
 use mdx_rust_analysis::AgentBundle;
 use serde::{Deserialize, Serialize};
@@ -93,6 +97,10 @@ pub struct OptimizeConfig {
     pub max_iterations: u32,
     pub candidates_per_iteration: u32,
     pub use_llm_judge: bool,
+    #[serde(default)]
+    pub budget: OptimizationBudget,
+    #[serde(default)]
+    pub hook_policy: HookPolicy,
     /// When true, the optimizer will print proposed changes and wait for confirmation before applying (Phase 4 review gate).
     #[serde(default)]
     pub review_before_apply: bool,
@@ -146,6 +154,14 @@ pub struct OptimizationRun {
     pub validation_commands: Option<Vec<String>>,
     #[serde(default)]
     pub trace_diagnosis: Vec<TraceDiagnosis>,
+    #[serde(default)]
+    pub hook_decisions: Vec<HookDecision>,
+    #[serde(default)]
+    pub ledger: Option<ExperimentLedger>,
+    #[serde(default)]
+    pub holdout_score: Option<f32>,
+    #[serde(default)]
+    pub budget: Option<OptimizationBudget>,
 }
 
 /// A proposed improvement generated during an optimization iteration.
@@ -180,10 +196,17 @@ pub async fn run_optimization(
     let mut runs = vec![];
 
     let dataset = EvaluationDataset::synthetic_v1();
+    let split = split_dataset(&dataset, config.budget);
+    let mut ledger = ExperimentLedger::new(config.budget, &dataset, &split);
     let dataset_hash = dataset.content_hash();
     let scorer = ScorerMetadata::mechanical_v1();
-    let test_inputs: Vec<serde_json::Value> = dataset
-        .samples
+    let test_inputs: Vec<serde_json::Value> = split
+        .train
+        .iter()
+        .map(|sample| sample.input.clone())
+        .collect();
+    let holdout_inputs: Vec<serde_json::Value> = split
+        .holdout
         .iter()
         .map(|sample| sample.input.clone())
         .collect();
@@ -225,6 +248,8 @@ pub async fn run_optimization(
         let mut validated = 0;
         let mut landed = 0;
         let mut trace_diagnoses = Vec::new();
+        let mut hook_decisions = Vec::new();
+        let mut accepted_holdout_score = None;
 
         for input in &test_inputs {
             let run_result = crate::runner::run_agent(agent, input.clone()).await?;
@@ -303,7 +328,9 @@ pub async fn run_optimization(
         }
 
         if !candidates.is_empty() {
-            let candidate_limit = config.candidates_per_iteration.max(1) as usize;
+            let candidate_limit = config
+                .budget
+                .candidate_limit(config.candidates_per_iteration);
             for (candidate_index, candidate) in candidates.iter().take(candidate_limit).enumerate()
             {
                 if accepted > 0 {
@@ -327,25 +354,35 @@ pub async fn run_optimization(
                     candidate.strategy
                 ));
 
-                let outcome = execute_candidate_edit(
+                ledger.record_variant(PromptVariantRecord::from_patch(
+                    format!("{:?}", candidate.strategy),
+                    edit.file.display().to_string(),
+                    edit.description.clone(),
+                    &edit.patch,
+                ));
+
+                let outcome = execute_candidate_edit(CandidateExecutionContext {
                     agent,
                     config,
                     iteration,
                     candidate_index,
-                    &edit,
-                    &test_inputs,
+                    edit: &edit,
+                    test_inputs: &test_inputs,
+                    holdout_inputs: &holdout_inputs,
                     baseline_score,
-                )
+                })
                 .await;
 
                 validated += outcome.validated;
                 landed += outcome.landed;
+                hook_decisions.extend(outcome.hook_decisions);
 
                 if outcome.accepted > 0 {
                     accepted = outcome.accepted;
                     accepted_diff = outcome.accepted_diff;
                     accepted_patched = outcome.patched_score;
                     accepted_delta = outcome.delta;
+                    accepted_holdout_score = outcome.holdout_score;
                 }
 
                 notes.push_str(&outcome.note);
@@ -424,6 +461,10 @@ pub async fn run_optimization(
             scorer: prov_scorer,
             validation_commands: prov_cmds,
             trace_diagnosis: trace_diagnoses,
+            hook_decisions,
+            ledger: Some(ledger.clone()),
+            holdout_score: accepted_holdout_score,
+            budget: Some(config.budget),
         });
 
         if accepted > 0 && iteration > 0 {
@@ -650,23 +691,69 @@ struct CandidateEditOutcome {
     accepted: u32,
     accepted_diff: Option<String>,
     patched_score: Option<f32>,
+    holdout_score: Option<f32>,
     delta: Option<f32>,
     note: String,
+    hook_decisions: Vec<HookDecision>,
 }
 
-async fn execute_candidate_edit(
-    agent: &RegisteredAgent,
-    config: &OptimizeConfig,
+struct CandidateExecutionContext<'a> {
+    agent: &'a RegisteredAgent,
+    config: &'a OptimizeConfig,
     iteration: u32,
     candidate_index: usize,
-    edit: &ProposedEdit,
-    test_inputs: &[serde_json::Value],
+    edit: &'a ProposedEdit,
+    test_inputs: &'a [serde_json::Value],
+    holdout_inputs: &'a [serde_json::Value],
     baseline_score: f32,
-) -> CandidateEditOutcome {
+}
+
+async fn execute_candidate_edit(context: CandidateExecutionContext<'_>) -> CandidateEditOutcome {
+    let agent = context.agent;
+    let config = context.config;
+    let edit = context.edit;
     let mut outcome = CandidateEditOutcome::default();
 
+    let pre_edit = evaluate_builtin_hook(
+        &config.hook_policy,
+        &HookContext {
+            stage: HookStage::PreEdit,
+            agent_name: agent.name.clone(),
+            edit_description: Some(edit.description.clone()),
+            patch_bytes: edit.patch.len(),
+            command: None,
+            validation_passed: None,
+            score_delta: None,
+        },
+    );
+    let pre_edit_denied = pre_edit.denied();
+    outcome.hook_decisions.push(pre_edit);
+    if pre_edit_denied {
+        outcome.note = " (pre-edit hook denied candidate)".to_string();
+        return outcome;
+    }
+
+    let pre_command = evaluate_builtin_hook(
+        &config.hook_policy,
+        &HookContext {
+            stage: HookStage::PreCommand,
+            agent_name: agent.name.clone(),
+            edit_description: Some(edit.description.clone()),
+            patch_bytes: edit.patch.len(),
+            command: Some("cargo check && cargo clippy -- -D warnings".to_string()),
+            validation_passed: None,
+            score_delta: None,
+        },
+    );
+    let pre_command_denied = pre_command.denied();
+    outcome.hook_decisions.push(pre_command);
+    if pre_command_denied {
+        outcome.note = " (pre-command hook denied validation)".to_string();
+        return outcome;
+    }
+
     // Always validate the proposed edit in an isolated workspace first.
-    let wt_name = format!("opt-{}-{}", iteration, candidate_index);
+    let wt_name = format!("opt-{}-{}", context.iteration, context.candidate_index);
     let validation_result =
         mdx_rust_analysis::editing::apply_and_validate(&agent.path, edit, &wt_name);
 
@@ -679,6 +766,19 @@ async fn execute_candidate_edit(
     };
 
     if !validation.passed {
+        let decision = evaluate_builtin_hook(
+            &config.hook_policy,
+            &HookContext {
+                stage: HookStage::PostValidation,
+                agent_name: agent.name.clone(),
+                edit_description: Some(edit.description.clone()),
+                patch_bytes: edit.patch.len(),
+                command: None,
+                validation_passed: Some(false),
+                score_delta: None,
+            },
+        );
+        outcome.hook_decisions.push(decision);
         if !config.quiet {
             println!("     [Safe Apply] Validation in isolated workspace failed.");
         }
@@ -687,6 +787,24 @@ async fn execute_candidate_edit(
     }
 
     outcome.validated = 1;
+    let post_validation = evaluate_builtin_hook(
+        &config.hook_policy,
+        &HookContext {
+            stage: HookStage::PostValidation,
+            agent_name: agent.name.clone(),
+            edit_description: Some(edit.description.clone()),
+            patch_bytes: edit.patch.len(),
+            command: None,
+            validation_passed: Some(true),
+            score_delta: None,
+        },
+    );
+    let post_validation_denied = post_validation.denied();
+    outcome.hook_decisions.push(post_validation);
+    if post_validation_denied {
+        outcome.note = " (post-validation hook denied candidate)".to_string();
+        return outcome;
+    }
     if !config.quiet {
         println!(
             "     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK)."
@@ -694,36 +812,55 @@ async fn execute_candidate_edit(
     }
 
     let patched_score = {
-        let score_name = format!("score-{}-{}", iteration, candidate_index);
+        let score_name = format!("score-{}-{}", context.iteration, context.candidate_index);
         match mdx_rust_analysis::editing::create_isolated_workspace(&agent.path, &score_name) {
             Ok(isolated) => {
                 let score = if mdx_rust_analysis::editing::apply_edit(&agent.path, &isolated, edit)
                     .is_ok()
                 {
-                    evaluate_workspace(&isolated, test_inputs)
+                    evaluate_workspace(&isolated, context.test_inputs)
                         .await
-                        .unwrap_or(baseline_score)
+                        .unwrap_or(context.baseline_score)
                 } else {
-                    baseline_score
+                    context.baseline_score
                 };
                 mdx_rust_analysis::editing::cleanup_isolated_workspace(&agent.path, &isolated);
                 score
             }
-            Err(_) => baseline_score,
+            Err(_) => context.baseline_score,
         }
     };
 
-    let delta = patched_score - baseline_score;
+    let delta = patched_score - context.baseline_score;
+    let pre_accept = evaluate_builtin_hook(
+        &config.hook_policy,
+        &HookContext {
+            stage: HookStage::PreAccept,
+            agent_name: agent.name.clone(),
+            edit_description: Some(edit.description.clone()),
+            patch_bytes: edit.patch.len(),
+            command: None,
+            validation_passed: Some(true),
+            score_delta: Some(delta),
+        },
+    );
+    let pre_accept_denied = pre_accept.denied();
+    outcome.hook_decisions.push(pre_accept);
+    if pre_accept_denied {
+        outcome.note = format!(" (pre-accept hook denied delta {:.2})", delta);
+        return outcome;
+    }
+
     if delta <= 0.0 {
         if !config.quiet {
             println!(
                 "     [Net-Negative] Patched score {:.2} vs baseline {:.2} (delta {:.2}) - change rejected.",
-                patched_score, baseline_score, delta
+                patched_score, context.baseline_score, delta
             );
         }
         outcome.note = format!(
             " (net-negative {:.2}->{:.2})",
-            baseline_score, patched_score
+            context.baseline_score, patched_score
         );
         return outcome;
     }
@@ -761,16 +898,24 @@ async fn execute_candidate_edit(
     let (final_ok, _final_output) = mdx_rust_analysis::editing::validate_build(&agent.path);
 
     if final_ok {
+        let holdout_score = if context.holdout_inputs.is_empty() {
+            None
+        } else {
+            evaluate_workspace(&agent.path, context.holdout_inputs)
+                .await
+                .ok()
+        };
         outcome.accepted = 1;
         outcome.accepted_diff = Some(edit.patch.clone());
         outcome.patched_score = Some(patched_score);
+        outcome.holdout_score = holdout_score;
         outcome.delta = Some(delta);
         outcome.note = format!(" (accepted +{delta:.2})");
 
         if !config.quiet {
             println!(
                 "     [Accepted] Landed + final validation OK (score {:.2} -> {:.2}, delta {:.2}).",
-                baseline_score, patched_score, delta
+                context.baseline_score, patched_score, delta
             );
         }
     } else {
@@ -991,6 +1136,8 @@ mod tests {
             max_iterations: 1,
             candidates_per_iteration: 1,
             use_llm_judge: false,
+            budget: OptimizationBudget::Medium,
+            hook_policy: HookPolicy::default(),
             review_before_apply: false,
             quiet: false,
         };
@@ -1026,13 +1173,16 @@ mod tests {
                     kind: FailureKind::EchoFallback,
                     severity: 2,
                     evidence: "Echo: hello".to_string(),
+                    span_id: None,
                 },
                 crate::FailureSignal {
                     kind: FailureKind::InvalidJson,
                     severity: 2,
                     evidence: "raw stdout".to_string(),
+                    span_id: None,
                 },
             ],
+            ranked_span_ids: vec![],
         }]);
 
         assert_eq!(candidates[0].strategy, Some(EditStrategy::FallbackLogic));

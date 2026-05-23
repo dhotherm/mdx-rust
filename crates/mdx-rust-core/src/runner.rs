@@ -16,7 +16,6 @@ pub struct TraceEvent {
     pub timestamp_ms: u64,
     pub event_type: String, // "llm_call", "tool_call", "error", "decision", etc.
     pub data: serde_json::Value,
-    // Future span fields for richer tracing
     #[serde(default)]
     pub span_id: Option<String>,
     #[serde(default)]
@@ -25,6 +24,42 @@ pub struct TraceEvent {
     pub latency_ms: Option<u64>,
     #[serde(default)]
     pub token_usage: Option<serde_json::Value>, // {prompt: , completion: , total: }
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub tool_name: Option<String>,
+    #[serde(default)]
+    pub cost_usd: Option<f64>,
+    #[serde(default)]
+    pub redacted: bool,
+    #[serde(default)]
+    pub candidate_id: Option<String>,
+}
+
+impl TraceEvent {
+    pub fn lifecycle(
+        timestamp_ms: u64,
+        event_type: impl Into<String>,
+        span_id: impl Into<String>,
+        parent_span_id: Option<String>,
+        latency_ms: Option<u64>,
+        data: serde_json::Value,
+    ) -> Self {
+        Self {
+            timestamp_ms,
+            event_type: event_type.into(),
+            data,
+            span_id: Some(span_id.into()),
+            parent_span_id,
+            latency_ms,
+            token_usage: None,
+            model: None,
+            tool_name: None,
+            cost_usd: None,
+            redacted: false,
+            candidate_id: None,
+        }
+    }
 }
 
 /// The result of running an agent on a single input, including traces.
@@ -55,18 +90,29 @@ pub async fn run_agent(
             // Real NativeRust support (in-process or harness) will come later.
             let result = run_process_agent(agent, input).await?;
 
-            traces.push(TraceEvent {
-                timestamp_ms: start.elapsed().as_millis() as u64,
-                event_type: "run_completed".to_string(),
-                data: serde_json::json!({
+            let run_span_id = format!("run-{}", start.elapsed().as_nanos());
+            traces.push(TraceEvent::lifecycle(
+                0,
+                "run_started",
+                run_span_id.clone(),
+                None,
+                None,
+                serde_json::json!({
+                    "agent": agent.name,
+                    "contract": format!("{:?}", agent.contract)
+                }),
+            ));
+            traces.push(TraceEvent::lifecycle(
+                start.elapsed().as_millis() as u64,
+                "run_completed",
+                format!("{run_span_id}:completed"),
+                Some(run_span_id),
+                Some(result.duration_ms),
+                serde_json::json!({
                     "success": result.success,
                     "duration_ms": result.duration_ms
                 }),
-                span_id: None,
-                parent_span_id: None,
-                latency_ms: Some(result.duration_ms),
-                token_usage: None,
-            });
+            ));
 
             if !result.success {
                 warn!(agent = %agent.name, error = ?result.error, "agent run failed");

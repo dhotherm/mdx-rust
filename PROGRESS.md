@@ -83,6 +83,13 @@
 - [x] Optimizer now supports `quiet` mode (used for --json) so human progress output can be fully suppressed. RUST_LOG=error in json mode for clean output. Scoped silent subscriber for optimize --json guarantees zero leakage.
 - [x] Experiment reports now include short git SHA + policy_hash + dataset_version fields for strong provenance/auditability (enterprise requirement).
 - [x] TraceEvent enriched with span_id, parent, latency, token_usage to start making traces first-class (handoff evolution item).
+- [x] TraceEvent now includes model/tool/cost/redaction/candidate metadata fields, giving the trace-to-safe-patch loop a stable schema to grow from.
+- [x] Built-in lifecycle hooks added for PreEdit, PreCommand, PostValidation, and PreAccept decisions. Hooks are deterministic policy checks today, with room for external hooks later.
+- [x] Optimization budgets added (`light`, `medium`, `heavy`) with deterministic candidate caps and train/holdout dataset splits.
+- [x] Experiment ledger primitives added for prompt/code variants, patch hashes, dataset hashes, train counts, and holdout counts.
+- [x] Optimizer records hook decisions, holdout scores, budget metadata, and prompt variant ledger entries in run artifacts.
+- [x] Security audit module and `mdx-rust audit` command added. Current static checks flag process execution surfaces, unsafe code, likely secret literals, and MCP/A2A-style integration boundaries.
+- [x] README updated to document the lifecycle, audit command, budgets, hook decisions, holdout splits, and artifact guarantees.
 
 **Core product is substantially complete ("fully done" for the original handoff vision).** The optimizer, analysis, safe editing, review, best persistence, spec, CLI, tests, and dogfooding example are all working end-to-end with high quality. Ready for your Codex feedback on next directions.
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)

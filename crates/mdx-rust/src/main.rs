@@ -52,6 +52,10 @@ enum Commands {
         #[arg(long, default_value = "3")]
         iterations: u32,
 
+        /// Optimization budget: light, medium, or heavy
+        #[arg(long, default_value = "medium", value_parser = ["light", "medium", "heavy"])]
+        budget: String,
+
         /// Pause and show proposed changes before applying (human review)
         #[arg(long)]
         review: bool,
@@ -71,6 +75,12 @@ enum Commands {
         /// Path to dataset JSON file
         #[arg(long)]
         dataset: Option<String>,
+    },
+
+    /// Run deterministic static security checks against a registered agent
+    Audit {
+        /// Agent name
+        name: String,
     },
 
     /// (Dev) Invoke a registered agent with a JSON input (useful for testing)
@@ -110,10 +120,11 @@ fn main() {
         Commands::Optimize {
             name,
             iterations,
+            budget,
             review,
             ..
         } => {
-            if let Err(e) = cmd_optimize(&name, iterations, review, cli.json) {
+            if let Err(e) = cmd_optimize(&name, iterations, &budget, review, cli.json) {
                 emit_error(cli.json, "optimize", &e);
                 std::process::exit(1);
             }
@@ -127,6 +138,12 @@ fn main() {
         Commands::Eval { name, dataset } => {
             if let Err(e) = cmd_eval(&name, dataset.as_deref(), cli.json) {
                 emit_error(cli.json, "eval", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Audit { name } => {
+            if let Err(e) = cmd_audit(&name, cli.json) {
+                emit_error(cli.json, "audit", &e);
                 std::process::exit(1);
             }
         }
@@ -544,9 +561,16 @@ fn cmd_eval(name: &str, dataset: Option<&str>, json: bool) -> anyhow::Result<()>
     Ok(())
 }
 
-fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow::Result<()> {
+fn cmd_optimize(
+    name: &str,
+    iterations: u32,
+    budget: &str,
+    review: bool,
+    json: bool,
+) -> anyhow::Result<()> {
     use mdx_rust_core::optimizer::{run_optimization, OptimizeConfig};
     use mdx_rust_core::registry::Registry;
+    use mdx_rust_core::{HookPolicy, OptimizationBudget};
 
     let cwd = std::env::current_dir()?;
     let config = Config::load_from_project(&cwd)?;
@@ -556,6 +580,7 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
     let agent = registry
         .get(name)
         .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered", name))?;
+    let budget = OptimizationBudget::from_label(budget)?;
 
     let rt = tokio::runtime::Runtime::new()?;
 
@@ -572,6 +597,8 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
                     max_iterations: iterations,
                     candidates_per_iteration: 2,
                     use_llm_judge: false,
+                    budget,
+                    hook_policy: HookPolicy::default(),
                     review_before_apply: review,
                     quiet: true,
                 },
@@ -584,6 +611,8 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
                 max_iterations: iterations,
                 candidates_per_iteration: 2,
                 use_llm_judge: false,
+                budget,
+                hook_policy: HookPolicy::default(),
                 review_before_apply: review,
                 quiet: false,
             },
@@ -648,6 +677,46 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
             name
         );
         println!("Use `mdx-rust doctor {}` to inspect scope and state.", name);
+    }
+
+    Ok(())
+}
+
+fn cmd_audit(name: &str, json: bool) -> anyhow::Result<()> {
+    use mdx_rust_core::registry::Registry;
+    use mdx_rust_core::security::audit_agent;
+
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd)?;
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let registry = Registry::load_from(&artifact_root)?;
+
+    let agent = registry
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered", name))?;
+
+    let report = audit_agent(&agent.path)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Security audit for '{}': {}", name, report.summary());
+        for finding in &report.findings {
+            let location = finding
+                .file
+                .as_ref()
+                .map(|file| {
+                    finding
+                        .line
+                        .map(|line| format!("{file}:{line}"))
+                        .unwrap_or_else(|| file.clone())
+                })
+                .unwrap_or_else(|| "workspace".to_string());
+            println!(
+                "  [{:?}] {} - {} ({})",
+                finding.severity, finding.id, finding.title, location
+            );
+        }
     }
 
     Ok(())

@@ -3,6 +3,7 @@
 
 use mdx_rust_core::optimizer::{run_optimization, OptimizeConfig};
 use mdx_rust_core::registry::{AgentContract, RegisteredAgent};
+use mdx_rust_core::{HookPolicy, OptimizationBudget};
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -57,6 +58,8 @@ async fn test_optimizer_runs_without_crashing_on_temp_agent() {
         max_iterations: 1,
         candidates_per_iteration: 1,
         use_llm_judge: false,
+        budget: OptimizationBudget::Light,
+        hook_policy: HookPolicy::default(),
         review_before_apply: false,
         quiet: false,
     };
