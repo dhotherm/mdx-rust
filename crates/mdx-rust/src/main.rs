@@ -298,7 +298,7 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
 
 /// First real implementation of `register`
 fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()> {
-    use std::fs;
+    use mdx_rust_core::registry::{RegisteredAgent, Registry};
     use std::path::Path;
     use std::process::Command;
 
@@ -309,34 +309,35 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
         .to_path_buf();
 
     let cargo_toml = target_path.join("Cargo.toml");
-
     if !cargo_toml.exists() {
         anyhow::bail!("No Cargo.toml found at {}. Is this a Rust crate?", target_path.display());
     }
 
     let config = Config::load_from_project(&cwd)?;
-    let artifact_root = &config.artifact_dir;
-    let agent_dir = cwd.join(artifact_root).join("agents").join(name);
+    let artifact_root = cwd.join(&config.artifact_dir);
 
-    fs::create_dir_all(&agent_dir)?;
+    // Load or create registry
+    let mut registry = Registry::load_from(&artifact_root)?;
 
-    // Basic registry entry (we'll improve this later)
-    let registry_entry = format!(
-        r#"{{
-  "name": "{}",
-  "path": "{}",
-  "registered_at": "{}",
-  "contract": "unknown"
-}}"#,
-        name,
-        target_path.display(),
-        std::time::SystemTime::now()
+    // Basic contract detection (improve later with real analysis)
+    let contract = detect_contract(&target_path);
+
+    let agent = RegisteredAgent {
+        name: name.to_string(),
+        path: target_path.clone(),
+        contract,
+        registered_at: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs().to_string())
-            .unwrap_or_else(|_| "0".to_string())
-    );
+            .unwrap_or_else(|_| "0".to_string()),
+    };
 
-    fs::write(agent_dir.join("registry.json"), registry_entry)?;
+    registry.register(agent);
+    registry.save_to(&artifact_root)?;
+
+    // Create per-agent directory for future artifacts
+    let agent_dir = artifact_root.join("agents").join(name);
+    std::fs::create_dir_all(&agent_dir)?;
 
     // Smoke test
     let check = Command::new("cargo")
@@ -350,15 +351,27 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
     };
 
     if json {
-        println!(r#"{{"status":"registered","name":"{}","path":"{}","smoke_test_passed":{}}}"#,
-                 name, target_path.display(), smoke_passed);
+        println!(r#"{{"status":"registered","name":"{}","path":"{}","contract":"{:?}","smoke_test_passed":{}}}"#,
+                 name, target_path.display(), registry.get(name).unwrap().contract, smoke_passed);
     } else {
         println!("✅ Registered agent '{}'", name);
         println!("   Path: {}", target_path.display());
+        println!("   Contract detected: {:?}", registry.get(name).unwrap().contract);
         println!("   Smoke test (cargo check): {}", if smoke_passed { "PASSED" } else { "FAILED or skipped" });
         println!();
         println!("Next: mdx-rust doctor {}", name);
     }
 
     Ok(())
+}
+
+fn detect_contract(path: &std::path::Path) -> mdx_rust_core::registry::AgentContract {
+    // Very basic heuristic for Phase 0
+    // Later this will use tree-sitter + syn to find Rig agents or run_agent functions
+    let cargo_content = std::fs::read_to_string(path.join("Cargo.toml")).unwrap_or_default();
+    if cargo_content.contains("rig-core") || cargo_content.contains("rig") {
+        mdx_rust_core::registry::AgentContract::NativeRust
+    } else {
+        mdx_rust_core::registry::AgentContract::Process
+    }
 }
