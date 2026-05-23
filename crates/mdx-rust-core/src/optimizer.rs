@@ -114,7 +114,9 @@ pub async fn run_optimization(
             notes.push_str(&format!(" → Top candidate: {} (patch would be applied via worktree)", top.focus));
 
             if top.focus == "system_prompt" || top.focus == "llm" {
-                println!("     [Editing] Would create git worktree → apply patch → cargo check → accept if green.");
+                // Real(ish) apply simulation — in next steps we will use the editing module + actual worktree
+                println!("     [Editing] Would create git worktree, patch the preamble, run cargo check, and accept if the new version scores higher.");
+                // Placeholder for actual edit application (will be wired to editing.rs + git2)
             }
         } else {
             current_score = avg_score;
