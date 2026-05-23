@@ -274,40 +274,56 @@ Cargo.lock
 
 /// `doctor` command — shows project state using the loaded Config
 fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
+    use mdx_rust_core::registry::Registry;
     use std::path::Path;
 
     let cwd = std::env::current_dir()?;
     let config = Config::load_from_project(&cwd).unwrap_or_default();
-    let artifact_root = &config.artifact_dir;
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let registry = Registry::load_from(&artifact_root).unwrap_or_default();
 
-    let agent_dir = format!("{}/agents/{}", artifact_root, name);
+    let _agent_dir = artifact_root.join("agents").join(name);
 
     if json {
-        println!(r#"{{"agent":"{}","artifact_dir":"{}","registered":{}}}"#, 
-                 name, artifact_root, Path::new(&agent_dir).exists());
+        if let Some(agent) = registry.get(name) {
+            println!(r#"{{"agent":"{}","registered":true,"path":"{}"}}"#, name, agent.path.display());
+        } else {
+            println!(r#"{{"agent":"{}","registered":false}}"#, name);
+        }
         return Ok(());
     }
 
     println!("🔍 mdx-rust doctor — agent '{}'", name);
-    println!("   Artifact directory: {}", artifact_root);
+    println!("   Artifact directory: {}", artifact_root.display());
     println!();
 
-    if !Path::new(artifact_root).exists() {
-        println!("  ❌ {} does not exist. Run `mdx-rust init` first.", artifact_root);
+    if !artifact_root.exists() {
+        println!("  ❌ No {} directory. Run `mdx-rust init` first.", config.artifact_dir);
         return Ok(());
     }
 
-    println!("  ✅ {} exists", artifact_root);
+    println!("  ✅ {} exists", config.artifact_dir);
 
-    if Path::new(&agent_dir).exists() {
+    if let Some(agent) = registry.get(name) {
         println!("  ✅ Agent is registered");
+        println!("     Path: {}", agent.path.display());
+
+        // Real bundle scope using the analysis crate
+        match mdx_rust_analysis::build_bundle_scope(&agent.path, None) {
+            Ok(scope) => {
+                println!("     Would send ~{} files for LLM analysis", scope.optimizable_paths.len());
+            }
+            Err(_) => {
+                println!("     (Could not compute bundle scope yet)");
+            }
+        }
     } else {
         println!("  ℹ️  Agent is not registered yet");
         println!("     → mdx-rust register {}", name);
     }
 
     println!();
-    println!("(Deeper analysis, bundle scope, and experiment status coming in later phases)");
+    println!("(Deeper analysis, traces, and experiment history in later phases)");
 
     Ok(())
 }
@@ -352,7 +368,7 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
     registry.save_to(&artifact_root)?;
 
     // Create per-agent directory for future artifacts
-    let agent_dir = artifact_root.join("agents").join(name);
+    let _agent_dir = artifact_root.join("agents").join(name);
     std::fs::create_dir_all(&agent_dir)?;
 
     // Smoke test
