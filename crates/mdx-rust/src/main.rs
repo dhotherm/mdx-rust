@@ -315,6 +315,12 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
 
     println!();
 
+    // Show best version if present
+    let best_dir = artifact_root.join("agents").join(name).join("best");
+    if best_dir.exists() && best_dir.join("src").exists() {
+        println!("  ✓ Best improved version available in best/ (from last accepted optimization)");
+    }
+
     // Show recent experiments if they exist
     let exps = artifact_root.join("agents").join(name).join("experiments");
     if exps.exists() {
@@ -466,6 +472,24 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
         },
     ))?;
 
+    // Persist "best" version if any improvement was accepted (per original plan)
+    if runs.iter().any(|r| r.accepted_changes > 0) {
+        let best_dir = artifact_root.join("agents").join(name).join("best");
+        let _ = std::fs::create_dir_all(&best_dir);
+
+        // Copy the key source files from the registered agent (simple but effective)
+        let src_dir = agent.path.join("src");
+        if src_dir.exists() {
+            let _ = copy_dir_recursive(&src_dir, &best_dir.join("src"));
+        }
+        // Also copy Cargo.toml for context
+        if let Ok(cargo) = std::fs::read_to_string(agent.path.join("Cargo.toml")) {
+            let _ = std::fs::write(best_dir.join("Cargo.toml"), cargo);
+        }
+
+        println!("   ✓ Best improved version saved to .mdx-rust/agents/{}/best/", name);
+    }
+
     if json {
         println!("{}", serde_json::to_string_pretty(&runs)?);
     } else {
@@ -506,4 +530,26 @@ fn detect_contract(path: &std::path::Path) -> mdx_rust_core::registry::AgentCont
     }
 
     mdx_rust_core::registry::AgentContract::Process
+}
+
+/// Simple recursive copy for best/ persistence (ignores target/, .git, .worktrees)
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if ty.is_dir() {
+            let name = entry.file_name();
+            if name == "target" || name == ".git" || name == ".worktrees" {
+                continue;
+            }
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    Ok(())
 }
