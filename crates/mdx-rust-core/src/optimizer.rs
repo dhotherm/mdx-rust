@@ -64,14 +64,17 @@ pub async fn run_optimization(
 
         let avg_score: f32 = scores_this_iter.iter().sum::<f32>() / scores_this_iter.len() as f32;
 
-        // Very naive "improvement" simulation
+        // Very naive "diagnosis + candidate" simulation
         let mut accepted = 0;
         let mut notes = format!("Avg score this iter: {:.2}", avg_score);
 
-        if avg_score > current_score + 0.03 {
+        if avg_score <= current_score {
+            // Simulate generating a candidate improvement
+            notes.push_str(" → Diagnosis: Agent is returning echo fallback. Candidate: Improve system prompt / add reasoning.");
+        } else {
             current_score = avg_score;
             accepted = 1;
-            notes.push_str(" → Improvement detected (simulated)");
+            notes.push_str(" → Improvement accepted (simulated)");
         }
 
         runs.push(OptimizationRun {
@@ -85,6 +88,9 @@ pub async fn run_optimization(
             // In real version we'd apply a safe edit here
         }
     }
+
+    // Basic experiment recording (persist under agent's dir in real version)
+    // For now we just return the runs; the CLI can decide what to do with them.
 
     Ok(runs)
 }
