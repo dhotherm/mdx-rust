@@ -45,6 +45,7 @@
 - [x] Central Registry with persistence + tests in core
 - [x] Working runner for Process contracts + `invoke` dev command (end-to-end tested)
 - [x] Structured TraceEvent support in runner (foundation for diagnosis & optimization loop)
+- [x] Doctor now shows real bundle scope using the analysis crate
 - [x] Syn + tree-sitter + basic finders in analysis crate (Phase 2 foundation)
 - [x] `spec` command surface + improved doctor/list groundwork
 - [x] Tracing events in runner + RUST_LOG support in CLI

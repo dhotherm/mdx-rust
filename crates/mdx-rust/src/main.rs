@@ -368,7 +368,7 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
     registry.save_to(&artifact_root)?;
 
     // Create per-agent directory for future artifacts
-    let _agent_dir = artifact_root.join("agents").join(name);
+    let agent_dir = artifact_root.join("agents").join(name);
     std::fs::create_dir_all(&agent_dir)?;
 
     // Smoke test
@@ -442,7 +442,7 @@ fn detect_contract(path: &std::path::Path) -> mdx_rust_core::registry::AgentCont
     // Try to find run_agent style functions using tree-sitter
     if let Ok(main_rs) = std::fs::read_to_string(path.join("src/main.rs")) {
         let found = find_run_agent_functions(&main_rs);
-        if !found.is_empty() {
+        if !found.is_empty() || mdx_rust_analysis::finders::looks_like_rig_agent(&main_rs) {
             return mdx_rust_core::registry::AgentContract::NativeRust;
         }
     }
