@@ -300,12 +300,24 @@ pub async fn run_optimization(
 /// Very rough mechanical scorer for the example agent.
 /// Gives higher score if the output is not the echo fallback.
 pub fn mechanical_score(result: &AgentRunResult) -> f32 {
-    if let Some(answer) = result.output.get("answer").and_then(|v| v.as_str()) {
-        if answer.starts_with("Echo:") {
-            return 0.45;
-        } else {
-            return 0.85; // "real" response
-        }
+    let answer = result.output.get("answer").and_then(|v| v.as_str()).unwrap_or("");
+    let reasoning = result.output.get("reasoning").and_then(|v| v.as_str()).unwrap_or("");
+
+    if answer.starts_with("Echo:") {
+        return 0.4;
     }
-    0.3
+
+    let mut score = 0.75f32;
+
+    // Bonus for explicit reasoning language (the improvement the optimizer tries to install)
+    if reasoning.to_lowercase().contains("think") || reasoning.to_lowercase().contains("reason") || reasoning.to_lowercase().contains("step") {
+        score += 0.12;
+    }
+
+    // Bonus for non-trivial answer length
+    if answer.len() > 20 {
+        score += 0.08;
+    }
+
+    score.min(0.95)
 }
