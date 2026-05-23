@@ -156,3 +156,31 @@ pub fn find_tools(source: &str, file_path: &Path) -> Vec<ExtractedTool> {
 pub fn looks_like_rig_agent(source: &str) -> bool {
     source.contains("rig::") || source.contains(".agent(") || source.contains("preamble(")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_preambles_basic() {
+        let source = r#"
+            let agent = client.agent("gpt-4o").preamble("You are helpful. Think step by step.").build();
+        "#;
+        let prompts = find_preambles(source, std::path::Path::new("test.rs"));
+        assert!(!prompts.is_empty());
+        assert!(prompts[0].text.contains("Think step by step"));
+    }
+
+    #[test]
+    fn test_looks_like_rig_agent() {
+        assert!(looks_like_rig_agent("let x = client.agent(\"..\").preamble(\"hi\")"));
+        assert!(!looks_like_rig_agent("fn main() {}"));
+    }
+
+    #[test]
+    fn test_find_run_agent_functions() {
+        let source = "pub async fn run_agent(input: Input) -> Result<Output> { Ok(()) }";
+        let fns = find_run_agent_functions(source);
+        assert!(!fns.is_empty());
+    }
+}
