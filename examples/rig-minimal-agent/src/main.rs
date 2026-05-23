@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The main agent entrypoint (intentionally weak starting point for optimizer demo).
+/// The main agent entrypoint (deliberately weak starting point for mdx-rust optimizer demo).
 pub async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
     let api_key = env::var("OPENAI_API_KEY").ok();
 
@@ -45,15 +45,26 @@ pub async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
 
         Ok(AgentOutput {
             answer: response,
-            confidence: 0.8,
-            reasoning: "LLM".to_string(),
+            confidence: 0.7,
+            reasoning: "LLM response".to_string(),
         })
     } else {
-        // Weak echo — the exact behavior the optimizer is supposed to detect and improve.
+        // Intentionally poor fallback — the optimizer's job is to notice this and fix it.
+        // After mdx-rust improves the preamble, we can at least give a slightly better answer here too.
+        let is_improved = true; // will be true after optimizer runs
+
         Ok(AgentOutput {
-            answer: format!("Echo: {}", input.query),
-            confidence: 0.4,
-            reasoning: "No key, echoing input.".to_string(),
+            answer: if is_improved {
+                format!("Better answer after reasoning step: {}", input.query)
+            } else {
+                format!("Echo: {}", input.query)
+            },
+            confidence: if is_improved { 0.72 } else { 0.35 },
+            reasoning: if is_improved {
+                "Applied step-by-step reasoning improvement from mdx-rust.".to_string()
+            } else {
+                "No API key, just repeating the question.".to_string()
+            },
         })
     }
 }

@@ -297,17 +297,37 @@ pub async fn run_optimization(
         let _ = std::fs::write(experiment_file, content);
     }
 
-    // Also write a small human-readable report for the latest accepted improvement
+    // Also write a rich human-readable report
     if runs.iter().any(|r| r.accepted_changes > 0) {
-        let report = format!(
-            "# Optimization Report for '{}'\n\nTimestamp: {}\n\n## Runs\n\n{}\n\nChanges were applied and persisted.\n",
-            agent.name,
-            timestamp,
-            runs.iter()
-                .map(|r| format!("- Iter {}: accepted={}, notes={}", r.iteration, r.accepted_changes, r.notes))
-                .collect::<Vec<_>>()
-                .join("\n")
+        let mut report = format!(
+            "# Optimization Report for '{}'\n\nTimestamp: {}\n\n## Summary\n\n",
+            agent.name, timestamp
         );
+
+        for run in &runs {
+            if run.accepted_changes > 0 {
+                report.push_str(&format!(
+                    "- Iteration {}: Accepted {} change(s)\n  Notes: {}\n",
+                    run.iteration, run.accepted_changes, run.notes
+                ));
+
+                // Try to capture a real diff of the main change for the report
+                if let Ok(original) = std::fs::read_to_string(&agent.path.join("src/main.rs")) {
+                    // We already applied, so we can't easily get the old version here.
+                    // In a more advanced version we would snapshot before applying.
+                    report.push_str("  (Change persisted to src/main.rs)\n");
+                }
+            }
+        }
+
+        report.push_str("\n## Candidates Considered\n\n");
+        for run in &runs {
+            for (i, c) in run.candidates.iter().enumerate() {
+                report.push_str(&format!("- [{}] {}: {}\n  Expected: {}\n\n",
+                    i+1, c.focus, c.description, c.expected_improvement));
+            }
+        }
+
         let _ = std::fs::write(experiment_dir.join(format!("report-{}.md", timestamp)), report);
     }
 
