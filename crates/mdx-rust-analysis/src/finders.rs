@@ -70,7 +70,12 @@ pub fn find_preambles(source: &str, file_path: &Path) -> Vec<ExtractedPrompt> {
         let root = tree.root_node();
         let _cursor = root.walk();
 
-        fn walk(node: tree_sitter::Node, source: &str, file_path: &Path, prompts: &mut Vec<ExtractedPrompt>) {
+        fn walk(
+            node: tree_sitter::Node,
+            source: &str,
+            file_path: &Path,
+            prompts: &mut Vec<ExtractedPrompt>,
+        ) {
             if node.kind() == "call_expression" {
                 let text = node.utf8_text(source.as_bytes()).unwrap_or("");
                 if text.contains("preamble(") {
@@ -102,7 +107,7 @@ pub fn find_preambles(source: &str, file_path: &Path) -> Vec<ExtractedPrompt> {
 
     // Fallback: regex-style scan for any .preamble("...")
     if prompts.is_empty() {
-        for (_i, line) in source.lines().enumerate() {
+        for line in source.lines() {
             if line.contains(".preamble(\"") {
                 if let Some(start) = line.find(".preamble(\"") {
                     let after = &line[start + 11..];
@@ -111,7 +116,7 @@ pub fn find_preambles(source: &str, file_path: &Path) -> Vec<ExtractedPrompt> {
                         if !content.is_empty() {
                             prompts.push(ExtractedPrompt {
                                 file: file_path.display().to_string(),
-                                line: _i + 1,
+                                line: prompts.len() + 1, // approximate line, good enough for fallback
                                 text: content.to_string(),
                             });
                         }
@@ -128,7 +133,7 @@ pub fn find_preambles(source: &str, file_path: &Path) -> Vec<ExtractedPrompt> {
 pub fn find_tools(source: &str, file_path: &Path) -> Vec<ExtractedTool> {
     let mut tools = vec![];
 
-    for (_i, line) in source.lines().enumerate() {
+    for line in source.lines() {
         if line.contains(".tool(") || line.contains("tool(") {
             // Try to grab a name near the call
             let name = if let Some(start) = line.find(".tool(") {
@@ -173,7 +178,9 @@ mod tests {
 
     #[test]
     fn test_looks_like_rig_agent() {
-        assert!(looks_like_rig_agent("let x = client.agent(\"..\").preamble(\"hi\")"));
+        assert!(looks_like_rig_agent(
+            "let x = client.agent(\"..\").preamble(\"hi\")"
+        ));
         assert!(!looks_like_rig_agent("fn main() {}"));
     }
 

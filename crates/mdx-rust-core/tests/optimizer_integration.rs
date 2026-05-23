@@ -13,15 +13,21 @@ async fn test_optimizer_runs_without_crashing_on_temp_agent() {
     std::fs::create_dir_all(&agent_dir).unwrap();
 
     // Minimal agent structure so the runner and analysis don't explode
-    std::fs::write(agent_dir.join("Cargo.toml"), r#"
+    std::fs::write(
+        agent_dir.join("Cargo.toml"),
+        r#"
         [package]
         name = "test-agent"
         version = "0.1.0"
         edition = "2021"
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     std::fs::create_dir_all(agent_dir.join("src")).unwrap();
-    std::fs::write(agent_dir.join("src/main.rs"), r#"
+    std::fs::write(
+        agent_dir.join("src/main.rs"),
+        r#"
         use serde::{Deserialize, Serialize};
 
         #[derive(Deserialize)]
@@ -37,7 +43,9 @@ async fn test_optimizer_runs_without_crashing_on_temp_agent() {
                 reasoning: "weak fallback".to_string(),
             })
         }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let agent = RegisteredAgent {
         name: "integration-test-agent".to_string(),
@@ -54,7 +62,10 @@ async fn test_optimizer_runs_without_crashing_on_temp_agent() {
     };
 
     let result = run_optimization(&agent, &cfg).await;
-    assert!(result.is_ok(), "optimizer should not crash on a minimal agent");
+    assert!(
+        result.is_ok(),
+        "optimizer should not crash on a minimal agent"
+    );
 
     let runs = result.unwrap();
     assert!(!runs.is_empty());

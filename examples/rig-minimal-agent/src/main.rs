@@ -2,19 +2,19 @@
 //!
 //! This agent is deliberately simple so we can dogfood the optimizer on it.
 
-use rig::providers::openai;
 use rig::completion::Prompt;
+use rig::providers::openai;
 use serde::{Deserialize, Serialize};
 use std::env;
 
 #[derive(Debug, Deserialize, Serialize)]
-struct AgentInput {
+pub struct AgentInput {
     pub query: String,
     pub context: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct AgentOutput {
+pub struct AgentOutput {
     pub answer: String,
     pub confidence: f32,
     pub reasoning: String,
@@ -41,7 +41,11 @@ pub async fn run_agent(input: AgentInput) -> anyhow::Result<AgentOutput> {
             .build();
         // Note: .tool(echo_tool) would be here in a fuller agent — the finder will still detect tool usage patterns in richer code.
 
-        let prompt = format!("Query: {}\nContext: {}", input.query, input.context.unwrap_or_default());
+        let prompt = format!(
+            "Query: {}\nContext: {}",
+            input.query,
+            input.context.unwrap_or_default()
+        );
         let response = agent.prompt(prompt).await?;
 
         Ok(AgentOutput {

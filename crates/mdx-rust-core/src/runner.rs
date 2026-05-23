@@ -87,14 +87,23 @@ async fn run_process_agent(
 
     let mut child = Command::new("cargo")
         .current_dir(&agent.path)
-        .args(["run", "-q", "--manifest-path", manifest.to_str().unwrap(), "--"])
+        .args([
+            "run",
+            "-q",
+            "--manifest-path",
+            manifest.to_str().unwrap(),
+            "--",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
 
     {
-        let stdin = child.stdin.as_mut().ok_or_else(|| anyhow::anyhow!("no stdin"))?;
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no stdin"))?;
         stdin.write_all(serde_json::to_string(&input)?.as_bytes())?;
         stdin.write_all(b"\n")?;
     }
@@ -114,8 +123,8 @@ async fn run_process_agent(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value =
-        serde_json::from_str(stdout.trim()).unwrap_or_else(|_| serde_json::json!({"raw": stdout.to_string()}));
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|_| serde_json::json!({"raw": stdout.to_string()}));
 
     Ok(AgentRunResult {
         output: parsed,

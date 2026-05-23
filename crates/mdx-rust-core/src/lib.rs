@@ -9,6 +9,8 @@ pub mod registry;
 pub mod runner;
 
 pub use config::Config;
-pub use optimizer::{mechanical_score, run_optimization, Candidate, OptimizeConfig, OptimizationRun};
+pub use optimizer::{
+    mechanical_score, run_optimization, Candidate, OptimizationRun, OptimizeConfig,
+};
 pub use registry::{AgentContract, RegisteredAgent, Registry};
 pub use runner::{run_agent, AgentRunResult, TraceEvent};

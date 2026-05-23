@@ -57,8 +57,6 @@ enum Commands {
         review: bool,
     },
 
-
-
     /// Inspect what would be bundled, editable scope, and current state
     Doctor {
         /// Agent name
@@ -156,8 +154,11 @@ fn main() {
 fn init_tracing(json: bool) {
     use tracing_subscriber::EnvFilter;
 
-    let filter = EnvFilter::from_default_env()
-        .add_directive("mdx_rust=info".parse().unwrap_or_else(|_| "info".parse().unwrap()));
+    let filter = EnvFilter::from_default_env().add_directive(
+        "mdx_rust=info"
+            .parse()
+            .unwrap_or_else(|_| "info".parse().unwrap()),
+    );
 
     if json {
         tracing_subscriber::fmt()
@@ -185,9 +186,15 @@ fn cmd_init(json: bool) -> anyhow::Result<()> {
 
     if Path::new(artifact_dir).exists() {
         if json {
-            println!(r#"{{"status":"already_initialized","path":"{}"}}"#, artifact_dir);
+            println!(
+                r#"{{"status":"already_initialized","path":"{}"}}"#,
+                artifact_dir
+            );
         } else {
-            println!("mdx-rust is already initialized in this directory ({} exists).", artifact_dir);
+            println!(
+                "mdx-rust is already initialized in this directory ({} exists).",
+                artifact_dir
+            );
         }
         return Ok(());
     }
@@ -249,7 +256,10 @@ Cargo.lock
     fs::write(format!("{}/eval_spec.json", artifact_dir), eval_spec)?;
 
     if json {
-        println!(r#"{{"status":"initialized","artifact_dir":"{}"}}"#, artifact_dir);
+        println!(
+            r#"{{"status":"initialized","artifact_dir":"{}"}}"#,
+            artifact_dir
+        );
     } else {
         println!("✅ mdx-rust initialized in {}", cwd.display());
         println!("   Artifact directory: {}", artifact_dir);
@@ -279,7 +289,11 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
 
     if json {
         if let Some(agent) = registry.get(name) {
-            println!(r#"{{"agent":"{}","registered":true,"path":"{}"}}"#, name, agent.path.display());
+            println!(
+                r#"{{"agent":"{}","registered":true,"path":"{}"}}"#,
+                name,
+                agent.path.display()
+            );
         } else {
             println!(r#"{{"agent":"{}","registered":false}}"#, name);
         }
@@ -291,7 +305,10 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
     println!();
 
     if !artifact_root.exists() {
-        println!("  ❌ No {} directory. Run `mdx-rust init` first.", config.artifact_dir);
+        println!(
+            "  ❌ No {} directory. Run `mdx-rust init` first.",
+            config.artifact_dir
+        );
         return Ok(());
     }
 
@@ -304,7 +321,10 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
         // Real bundle scope using the analysis crate
         match mdx_rust_analysis::build_bundle_scope(&agent.path, None) {
             Ok(scope) => {
-                println!("     Would send ~{} files for LLM analysis", scope.optimizable_paths.len());
+                println!(
+                    "     Would send ~{} files for LLM analysis",
+                    scope.optimizable_paths.len()
+                );
             }
             Err(_) => {
                 println!("     (Could not compute bundle scope yet)");
@@ -360,7 +380,10 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
 
     let cargo_toml = target_path.join("Cargo.toml");
     if !cargo_toml.exists() {
-        anyhow::bail!("No Cargo.toml found at {}. Is this a Rust crate?", target_path.display());
+        anyhow::bail!(
+            "No Cargo.toml found at {}. Is this a Rust crate?",
+            target_path.display()
+        );
     }
 
     let config = Config::load_from_project(&cwd)?;
@@ -403,13 +426,28 @@ fn cmd_register(name: &str, path: Option<&str>, json: bool) -> anyhow::Result<()
     };
 
     if json {
-        println!(r#"{{"status":"registered","name":"{}","path":"{}","contract":"{:?}","smoke_test_passed":{}}}"#,
-                 name, target_path.display(), registry.get(name).unwrap().contract, smoke_passed);
+        println!(
+            r#"{{"status":"registered","name":"{}","path":"{}","contract":"{:?}","smoke_test_passed":{}}}"#,
+            name,
+            target_path.display(),
+            registry.get(name).unwrap().contract,
+            smoke_passed
+        );
     } else {
         println!("✅ Registered agent '{}'", name);
         println!("   Path: {}", target_path.display());
-        println!("   Contract detected: {:?}", registry.get(name).unwrap().contract);
-        println!("   Smoke test (cargo check): {}", if smoke_passed { "PASSED" } else { "FAILED or skipped" });
+        println!(
+            "   Contract detected: {:?}",
+            registry.get(name).unwrap().contract
+        );
+        println!(
+            "   Smoke test (cargo check): {}",
+            if smoke_passed {
+                "PASSED"
+            } else {
+                "FAILED or skipped"
+            }
+        );
         println!();
         println!("Next: mdx-rust doctor {}", name);
     }
@@ -447,8 +485,6 @@ fn cmd_invoke(name: &str, input: Option<&str>, json: bool) -> anyhow::Result<()>
 
     Ok(())
 }
-
-
 
 fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow::Result<()> {
     use mdx_rust_core::optimizer::{run_optimization, OptimizeConfig};
@@ -489,7 +525,10 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
             let _ = std::fs::write(best_dir.join("Cargo.toml"), cargo);
         }
 
-        println!("   ✓ Best improved version saved to .mdx-rust/agents/{}/best/", name);
+        println!(
+            "   ✓ Best improved version saved to .mdx-rust/agents/{}/best/",
+            name
+        );
     }
 
     if json {
@@ -499,15 +538,26 @@ fn cmd_optimize(name: &str, iterations: u32, review: bool, json: bool) -> anyhow
         println!("   ({} iterations)", runs.len());
         for run in &runs {
             let avg = run.scores.iter().sum::<f32>() / run.scores.len() as f32;
-            println!("   • Iteration {} | Avg: {:.2} | Accepted: {}", run.iteration, avg, run.accepted_changes);
+            println!(
+                "   • Iteration {} | Avg: {:.2} | Accepted: {}",
+                run.iteration, avg, run.accepted_changes
+            );
             if !run.notes.is_empty() {
                 println!("     → {}", run.notes);
             }
             for (i, c) in run.candidates.iter().enumerate() {
-                println!("       [Candidate {}] {} — {}", i+1, c.focus, c.description);
+                println!(
+                    "       [Candidate {}] {} — {}",
+                    i + 1,
+                    c.focus,
+                    c.description
+                );
             }
         }
-        println!("\nArtifacts written under .mdx-rust/agents/{}/experiments/", name);
+        println!(
+            "\nArtifacts written under .mdx-rust/agents/{}/experiments/",
+            name
+        );
         println!("Use `mdx-rust doctor {}` to inspect scope and state.", name);
     }
 
@@ -522,29 +572,49 @@ fn cmd_spec(name: &str, json: bool) -> anyhow::Result<()> {
     let artifact_root = cwd.join(&config.artifact_dir);
     let registry = Registry::load_from(&artifact_root)?;
 
-    let agent = registry
-        .get(name)
-        .ok_or_else(|| anyhow::anyhow!("Agent '{}' not registered. Run `mdx-rust register {}` first.", name, name))?;
+    let agent = registry.get(name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Agent '{}' not registered. Run `mdx-rust register {}` first.",
+            name,
+            name
+        )
+    })?;
 
     let agent_dir = artifact_root.join("agents").join(name);
     std::fs::create_dir_all(&agent_dir)?;
 
     let bundle = mdx_rust_analysis::analyze_agent(&agent.path, None).ok();
     let analysis_summary = if let Some(b) = &bundle {
-        format!("{} files, Rig={}, preambles={:?}", b.scope.optimizable_paths.len(), b.is_rig_agent, b.preambles.iter().map(|p| &p.text).collect::<Vec<_>>())
-    } else { "limited analysis".into() };
+        format!(
+            "{} files, Rig={}, preambles={:?}",
+            b.scope.optimizable_paths.len(),
+            b.is_rig_agent,
+            b.preambles.iter().map(|p| &p.text).collect::<Vec<_>>()
+        )
+    } else {
+        "limited analysis".into()
+    };
 
     let policies = format!("# Policies for {}\n\n- Use explicit step-by-step reasoning in prompts.\n- Be concise but complete.\n- Structured output (answer + reasoning).\n\n(Generated from: {})", name, analysis_summary);
     std::fs::write(agent_dir.join("policies.md"), policies)?;
 
     let spec = serde_json::json!({"description": format!("Eval spec for {}", name), "dataset": "dataset.json"});
-    std::fs::write(agent_dir.join("eval_spec.json"), serde_json::to_string_pretty(&spec)?)?;
+    std::fs::write(
+        agent_dir.join("eval_spec.json"),
+        serde_json::to_string_pretty(&spec)?,
+    )?;
 
     let ds = serde_json::json!([{"query":"What is 2+2?"},{"query":"Explain the sky being blue."}]);
-    std::fs::write(agent_dir.join("dataset.json"), serde_json::to_string_pretty(&ds)?)?;
+    std::fs::write(
+        agent_dir.join("dataset.json"),
+        serde_json::to_string_pretty(&ds)?,
+    )?;
 
     if json {
-        println!("{}", serde_json::json!({"agent":name,"policies":"policies.md","eval_spec":"eval_spec.json","dataset":"dataset.json"}));
+        println!(
+            "{}",
+            serde_json::json!({"agent":name,"policies":"policies.md","eval_spec":"eval_spec.json","dataset":"dataset.json"})
+        );
     } else {
         println!("✅ Spec generated for '{}'\n   • policies.md\n   • eval_spec.json\n   • dataset.json\n   Analysis: {}", name, analysis_summary);
     }

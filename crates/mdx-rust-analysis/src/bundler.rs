@@ -4,7 +4,9 @@
 //! to determine what gets included when we send code to the LLM.
 //! Now also runs deep finders to extract prompts, tools, and entrypoints.
 
-use crate::finders::{find_preambles, find_tools, looks_like_rig_agent, ExtractedPrompt, ExtractedTool};
+use crate::finders::{
+    find_preambles, find_tools, looks_like_rig_agent, ExtractedPrompt, ExtractedTool,
+};
 use ignore::WalkBuilder;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -81,7 +83,7 @@ pub fn analyze_agent(root: &Path, custom_ignore: Option<&Path>) -> anyhow::Resul
         .scope
         .optimizable_paths
         .iter()
-        .filter(|p| p.extension().map_or(false, |e| e == "rs"))
+        .filter(|p| p.extension().is_some_and(|e| e == "rs"))
         .take(12)
         .cloned()
         .collect();

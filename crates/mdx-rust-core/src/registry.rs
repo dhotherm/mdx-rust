@@ -85,6 +85,9 @@ mod tests {
         let loaded = Registry::load_from(root).unwrap();
 
         assert_eq!(loaded.agents.len(), 1);
-        assert_eq!(loaded.get("test-agent").unwrap().contract, AgentContract::NativeRust);
+        assert_eq!(
+            loaded.get("test-agent").unwrap().contract,
+            AgentContract::NativeRust
+        );
     }
 }

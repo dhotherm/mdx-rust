@@ -33,18 +33,29 @@ pub fn create_isolated_workspace(agent_path: &Path, name: &str) -> anyhow::Resul
 
     // Try git worktree first (fast, shares objects, real git history)
     // But skip it if the agent lives deep inside another repo (common for examples/ in monorepos)
-    let should_try_worktree = !agent_path.to_string_lossy().contains("/examples/") &&
-                               !agent_path.to_string_lossy().contains("\\examples\\");
+    let should_try_worktree = !agent_path.to_string_lossy().contains("/examples/")
+        && !agent_path.to_string_lossy().contains("\\examples\\");
 
     if should_try_worktree {
         let _ = Command::new("git")
             .current_dir(agent_path)
-            .args(["worktree", "remove", "--force", worktree_path.to_str().unwrap()])
+            .args([
+                "worktree",
+                "remove",
+                "--force",
+                worktree_path.to_str().unwrap(),
+            ])
             .status();
 
         let git_status = Command::new("git")
             .current_dir(agent_path)
-            .args(["worktree", "add", "--detach", worktree_path.to_str().unwrap(), "HEAD"])
+            .args([
+                "worktree",
+                "add",
+                "--detach",
+                worktree_path.to_str().unwrap(),
+                "HEAD",
+            ])
             .status();
 
         if git_status.map(|s| s.success()).unwrap_or(false) {
@@ -94,8 +105,10 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// Apply the proposed patch inside an isolated directory.
 /// Strategy:
-/// 1. Try real `git apply` (best when the patch was generated with context).
-/// 2. Fall back to smart string replacement for the common Rig preamble/tool cases.
+///
+/// - Try real `git apply` (best when the patch was generated with context).
+/// - Fall back to smart string replacement for the common Rig preamble/tool cases.
+///
 /// This keeps the system reliable even when perfect unified diffs are hard to generate.
 pub fn apply_patch(dir: &Path, patch: &str) -> anyhow::Result<()> {
     // First attempt: real git apply (respects the patch the optimizer generated)
@@ -104,7 +117,12 @@ pub fn apply_patch(dir: &Path, patch: &str) -> anyhow::Result<()> {
 
     let apply_ok = Command::new("git")
         .current_dir(dir)
-        .args(["apply", "--reject", "--whitespace=fix", patch_file.to_str().unwrap()])
+        .args([
+            "apply",
+            "--reject",
+            "--whitespace=fix",
+            patch_file.to_str().unwrap(),
+        ])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
@@ -142,7 +160,10 @@ pub fn apply_patch(dir: &Path, patch: &str) -> anyhow::Result<()> {
                 content.clone()
             }
         } else if content.contains("concise, helpful assistant") {
-            content.replace("concise, helpful assistant", &improved.replace("You are a ", ""))
+            content.replace(
+                "concise, helpful assistant",
+                &improved.replace("You are a ", ""),
+            )
         } else {
             content.clone()
         };
@@ -153,7 +174,9 @@ pub fn apply_patch(dir: &Path, patch: &str) -> anyhow::Result<()> {
         }
     }
 
-    Err(anyhow::anyhow!("apply_patch could not apply the edit (neither git apply nor fallback succeeded)"))
+    Err(anyhow::anyhow!(
+        "apply_patch could not apply the edit (neither git apply nor fallback succeeded)"
+    ))
 }
 
 /// Run cargo check + clippy in a directory.
@@ -175,7 +198,9 @@ pub fn validate_build(dir: &Path) -> (bool, String) {
     if let Ok(out) = check {
         output.push_str(&String::from_utf8_lossy(&out.stdout));
         output.push_str(&String::from_utf8_lossy(&out.stderr));
-        if !out.status.success() { success = false; }
+        if !out.status.success() {
+            success = false;
+        }
     } else {
         success = false;
     }
@@ -183,7 +208,9 @@ pub fn validate_build(dir: &Path) -> (bool, String) {
     if let Ok(out) = clippy {
         output.push_str(&String::from_utf8_lossy(&out.stdout));
         output.push_str(&String::from_utf8_lossy(&out.stderr));
-        if !out.status.success() { success = false; }
+        if !out.status.success() {
+            success = false;
+        }
     }
 
     (success, output)
@@ -203,7 +230,10 @@ pub fn apply_and_validate(
     let (passed, output) = validate_build(&isolated);
 
     // Best-effort cleanup
-    if isolated.parent().map_or(false, |p| p.file_name() == Some(std::ffi::OsStr::new(".worktrees"))) {
+    if isolated
+        .parent()
+        .is_some_and(|p| p.file_name() == Some(std::ffi::OsStr::new(".worktrees")))
+    {
         // Only try git worktree remove if it looks like a real worktree dir
         let _ = Command::new("git")
             .current_dir(agent_path)

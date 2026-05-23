@@ -109,7 +109,7 @@ pub struct OptimizationRun {
 /// A proposed improvement generated during an optimization iteration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Candidate {
-    pub focus: String,           // e.g. "system_prompt", "tool_descriptions", "reasoning_step"
+    pub focus: String, // e.g. "system_prompt", "tool_descriptions", "reasoning_step"
     pub description: String,
     pub expected_improvement: String,
 }
@@ -144,16 +144,28 @@ pub async fn run_optimization(
 
         // Rich analysis: extract real preambles, tools, entrypoints
         let rich_bundle = mdx_rust_analysis::analyze_agent(&agent.path, None).ok();
-        let file_count = rich_bundle.as_ref().map(|b| b.scope.optimizable_paths.len()).unwrap_or(0);
+        let file_count = rich_bundle
+            .as_ref()
+            .map(|b| b.scope.optimizable_paths.len())
+            .unwrap_or(0);
 
         // Build a high-signal summary for the LLM
         let bundle_summary = if let Some(ref b) = rich_bundle {
-            let mut s = format!("{} source files, Rig agent = {}", file_count, b.is_rig_agent);
+            let mut s = format!(
+                "{} source files, Rig agent = {}",
+                file_count, b.is_rig_agent
+            );
             if !b.preambles.is_empty() {
-                s.push_str(&format!(", current preambles: {:?}", b.preambles.iter().map(|p| &p.text).collect::<Vec<_>>()));
+                s.push_str(&format!(
+                    ", current preambles: {:?}",
+                    b.preambles.iter().map(|p| &p.text).collect::<Vec<_>>()
+                ));
             }
             if !b.tools.is_empty() {
-                s.push_str(&format!(", tools: {:?}", b.tools.iter().map(|t| &t.name).collect::<Vec<_>>()));
+                s.push_str(&format!(
+                    ", tools: {:?}",
+                    b.tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+                ));
             }
             s
         } else {
@@ -172,7 +184,10 @@ pub async fn run_optimization(
 
         let mut candidates = vec![];
         let mut accepted = 0;
-        let mut notes = format!("Avg score this iter: {:.2} ({} files in bundle)", avg_score, file_count);
+        let mut notes = format!(
+            "Avg score this iter: {:.2} ({} files in bundle)",
+            avg_score, file_count
+        );
         let mut accepted_diff: Option<String> = None;
 
         if let Some(d) = diagnosis {
@@ -188,14 +203,18 @@ pub async fn run_optimization(
             // Fallback
             candidates = vec![Candidate {
                 focus: "system_prompt".to_string(),
-                description: "Strengthen the system prompt with explicit reasoning instructions.".to_string(),
+                description: "Strengthen the system prompt with explicit reasoning instructions."
+                    .to_string(),
                 expected_improvement: "Reduce echo fallback.".to_string(),
             }];
         }
 
         if !candidates.is_empty() {
             let top = &candidates[0];
-            notes.push_str(&format!(" → Top candidate: {} (attempting real worktree apply)", top.focus));
+            notes.push_str(&format!(
+                " → Top candidate: {} (attempting real worktree apply)",
+                top.focus
+            ));
 
             if top.focus == "system_prompt" || top.focus == "llm" {
                 // Generate a proper unified diff with context so git apply succeeds
@@ -214,65 +233,37 @@ pub async fn run_optimization(
                     patch: patch.clone(),
                 };
 
-                // Real safe editing via isolated workspace (git worktree or filesystem copy)
-                if !config.review_before_apply {
-                    let wt_name = format!("opt-{}", iteration);
-                    if let Ok(val) = mdx_rust_analysis::editing::apply_and_validate(&agent.path, &edit, &wt_name) {
-                        if val.passed {
-                            println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
-                            accepted = 1;
-                        }
-                    }
-                }
+                // Always validate the proposed edit in an isolated workspace first.
+                // This is the required safety gate.
+                let wt_name = format!("opt-{}", iteration);
+                let validation_result = mdx_rust_analysis::editing::apply_and_validate(
+                    &agent.path,
+                    &edit,
+                    &wt_name,
+                );
 
-                // Safe editing path (Phase 3/4) + review gate
-                let main_rs_path = agent.path.join("src/main.rs");
+                if let Ok(val) = validation_result {
+                    if val.passed {
+                        println!("     [Safe Apply] Edit validated in isolated workspace (cargo check + clippy OK).");
 
-                if config.review_before_apply {
-                    println!("     [Review] Review mode enabled. Proposed change for focus '{}':", top.focus);
-                    println!("       {}", top.description);
-                    println!("       Expected: {}", top.expected_improvement);
-                    println!("     (In a full build this would show a unified diff and prompt for y/n. Auto-apply skipped for safety.)");
-                    // We still record that we would have accepted it
-                    accepted = 1;
-                    notes.push_str(" (review mode — change shown but not auto-applied)");
-                } else if main_rs_path.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&main_rs_path) {
-                        let improved = "You are a concise, helpful assistant. Think step-by-step before answering. Always explain your reasoning in one sentence, then give the final answer.";
-
-                        let new_content = if let Some(start) = content.find(".preamble(\"") {
-                            let prefix = &content[..start + 11];
-                            let rest = &content[start + 11..];
-                            if let Some(end) = rest.find("\"") {
-                                format!("{}{}{}", prefix, improved, &rest[end..])
+                        if !config.review_before_apply {
+                            // Only after successful isolated validation do we consider landing the change
+                            // on the real source, and we do it via the controlled apply_patch path.
+                            if let Err(e) = mdx_rust_analysis::editing::apply_patch(&agent.path, &edit.patch) {
+                                println!("     [Warning] Could not land validated patch on original source: {}", e);
                             } else {
-                                content.clone()
+                                accepted = 1;
+                                println!("     [Accept] Validated change landed on real agent source.");
+                                accepted_diff = Some(edit.patch.clone());
                             }
-                        } else if content.contains("concise, helpful assistant") {
-                            content.replace("concise, helpful assistant", "concise, helpful assistant. Think step-by-step before answering")
                         } else {
-                            content.clone()
-                        };
-
-                        if new_content != content {
-                            let _ = std::fs::write(&main_rs_path, &new_content);
-                            println!("     [Safe Edit] Improvement applied and validated (cargo check passed on workspace).");
-                            accepted = 1;
-                            println!("     [Accept] Change persisted. The example agent is now stronger.");
-
-                            // Capture a simple diff for the report
-                            let old_line = content.lines().find(|l| l.contains("preamble")).unwrap_or("old").to_string();
-                            let new_line = new_content.lines().find(|l| l.contains("preamble")).unwrap_or("new").to_string();
-                            accepted_diff = Some(format!(
-                                "diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@\n- {}\n+ {}",
-                                old_line, new_line
-                            ));
-                        } else {
-                            println!("     [Safe Edit] No textual change was needed (preamble already strong?).");
+                            // Review mode: we validated it, but we do not apply it.
+                            println!("     [Review] Change was validated in isolation but not applied (--review).");
+                            notes.push_str(" (review mode — validated in isolation, not applied)");
                         }
                     }
                 } else {
-                    println!("     [Safe Edit] Could not locate agent source to improve.");
+                    println!("     [Safe Apply] Validation in isolated workspace failed.");
                 }
             }
         } else {
@@ -338,12 +329,20 @@ pub async fn run_optimization(
         report.push_str("\n## Candidates Considered\n\n");
         for run in &runs {
             for (i, c) in run.candidates.iter().enumerate() {
-                report.push_str(&format!("- [{}] {}: {}\n  Expected: {}\n\n",
-                    i+1, c.focus, c.description, c.expected_improvement));
+                report.push_str(&format!(
+                    "- [{}] {}: {}\n  Expected: {}\n\n",
+                    i + 1,
+                    c.focus,
+                    c.description,
+                    c.expected_improvement
+                ));
             }
         }
 
-        let _ = std::fs::write(experiment_dir.join(format!("report-{}.md", timestamp)), report);
+        let _ = std::fs::write(
+            experiment_dir.join(format!("report-{}.md", timestamp)),
+            report,
+        );
     }
 
     // Final re-evaluation after any accepted changes (shows the win)
@@ -356,7 +355,10 @@ pub async fn run_optimization(
         }
         if !final_scores.is_empty() {
             let final_avg = final_scores.iter().sum::<f32>() / final_scores.len() as f32;
-            println!("   Final re-evaluation after accepted changes: {:.2}", final_avg);
+            println!(
+                "   Final re-evaluation after accepted changes: {:.2}",
+                final_avg
+            );
         }
     }
 
@@ -366,8 +368,16 @@ pub async fn run_optimization(
 /// Very rough mechanical scorer for the example agent.
 /// Gives higher score if the output is not the echo fallback.
 pub fn mechanical_score(result: &AgentRunResult) -> f32 {
-    let answer = result.output.get("answer").and_then(|v| v.as_str()).unwrap_or("");
-    let reasoning = result.output.get("reasoning").and_then(|v| v.as_str()).unwrap_or("");
+    let answer = result
+        .output
+        .get("answer")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let reasoning = result
+        .output
+        .get("reasoning")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
     if answer.starts_with("Echo:") {
         return 0.4;
@@ -376,7 +386,10 @@ pub fn mechanical_score(result: &AgentRunResult) -> f32 {
     let mut score = 0.75f32;
 
     // Bonus for explicit reasoning language (the improvement the optimizer tries to install)
-    if reasoning.to_lowercase().contains("think") || reasoning.to_lowercase().contains("reason") || reasoning.to_lowercase().contains("step") {
+    if reasoning.to_lowercase().contains("think")
+        || reasoning.to_lowercase().contains("reason")
+        || reasoning.to_lowercase().contains("step")
+    {
         score += 0.12;
     }
 

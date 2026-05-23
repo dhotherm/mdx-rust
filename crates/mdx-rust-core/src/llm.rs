@@ -3,15 +3,15 @@
 //! Currently backed by Rig for convenience. Later we can support direct HTTP
 //! for more control over "heavy reasoning" models.
 
-use rig::providers::openai;
 use rig::completion::Prompt;
+use rig::providers::openai;
 use serde::Serialize;
 
 /// Very simple diagnosis request.
 #[derive(Serialize)]
 pub struct DiagnosisRequest {
     pub policy: String,
-    pub bundle_summary: String,   // path count + key files
+    pub bundle_summary: String, // path count + key files
     pub traces_summary: String,
     pub scores: Vec<f32>,
 }
@@ -19,7 +19,7 @@ pub struct DiagnosisRequest {
 /// Structured candidate returned by the LLM.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StructuredCandidate {
-    pub focus: String,           // "system_prompt", "tool_descriptions", "reasoning", "logic"
+    pub focus: String, // "system_prompt", "tool_descriptions", "reasoning", "logic"
     pub description: String,
     pub expected_improvement: String,
 }
@@ -38,7 +38,9 @@ pub struct LlmClient {
 
 impl LlmClient {
     pub fn new(model: impl Into<String>) -> Self {
-        Self { model: model.into() }
+        Self {
+            model: model.into(),
+        }
     }
 
     /// Ask a strong model for diagnosis and candidate ideas.
@@ -74,37 +76,48 @@ impl LlmClient {
             candidates: Option<Vec<StructuredCandidate>>,
         }
 
-        let parsed: Option<LlmOutput> = serde_json::from_str(&response).ok()
-            .or_else(|| {
-                // Sometimes the model wraps it in ```json ... ```
-                if let Some(start) = response.find('{') {
-                    if let Some(end) = response.rfind('}') {
-                        serde_json::from_str(&response[start..=end]).ok()
-                    } else {
-                        None
-                    }
+        let parsed: Option<LlmOutput> = serde_json::from_str(&response).ok().or_else(|| {
+            // Sometimes the model wraps it in ```json ... ```
+            if let Some(start) = response.find('{') {
+                if let Some(end) = response.rfind('}') {
+                    serde_json::from_str(&response[start..=end]).ok()
                 } else {
                     None
                 }
-            });
+            } else {
+                None
+            }
+        });
 
         if let Some(out) = parsed {
-            let summary = out.summary.unwrap_or_else(|| "LLM diagnosis completed.".to_string());
+            let summary = out
+                .summary
+                .unwrap_or_else(|| "LLM diagnosis completed.".to_string());
             let candidates = out.candidates.unwrap_or_default();
             if !candidates.is_empty() {
-                return Ok(DiagnosisResult { summary, candidates });
+                return Ok(DiagnosisResult {
+                    summary,
+                    candidates,
+                });
             }
         }
 
         // Fallback: treat the whole response as a single textual candidate
-        let summary = response.lines().next().unwrap_or("LLM returned free text").to_string();
+        let summary = response
+            .lines()
+            .next()
+            .unwrap_or("LLM returned free text")
+            .to_string();
         let fallback = vec![StructuredCandidate {
             focus: "system_prompt".to_string(),
             description: response.chars().take(280).collect(),
             expected_improvement: "Model suggestion".to_string(),
         }];
 
-        Ok(DiagnosisResult { summary, candidates: fallback })
+        Ok(DiagnosisResult {
+            summary,
+            candidates: fallback,
+        })
     }
 }
 
