@@ -314,7 +314,26 @@ fn cmd_doctor(name: &str, json: bool) -> anyhow::Result<()> {
     }
 
     println!();
-    println!("(Deeper analysis, traces, and experiment history in later phases)");
+
+    // Show recent experiments if they exist
+    let exps = artifact_root.join("agents").join(name).join("experiments");
+    if exps.exists() {
+        if let Ok(entries) = std::fs::read_dir(&exps) {
+            let mut reports: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().starts_with("report-"))
+                .collect();
+
+            reports.sort_by_key(|e| std::fs::metadata(e.path()).and_then(|m| m.modified()).ok());
+
+            if !reports.is_empty() {
+                println!("Recent optimization runs:");
+                for r in reports.iter().rev().take(3) {
+                    println!("  • {}", r.file_name().to_string_lossy());
+                }
+            }
+        }
+    }
 
     Ok(())
 }
