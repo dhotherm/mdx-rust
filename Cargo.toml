@@ -1,15 +1,19 @@
-[package]
-name = "mdx-rust"
+[workspace]
+resolver = "2"
+members = [
+    "crates/mdx-rust",
+    "crates/mdx-rust-core",
+    "crates/mdx-rust-analysis",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-description = "Rust-native optimizer for LLM agents. Policy-driven experimentation with safe, compile-validated edits."
-repository = "https://github.com/dhotherm/mdx-rust"
 license = "MIT"
-keywords = ["llm", "agents", "optimization", "rust", "rig"]
-categories = ["command-line-utilities", "development-tools"]
+repository = "https://github.com/dhotherm/mdx-rust"
 
-[dependencies]
+[workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
@@ -17,6 +21,5 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-
-[dev-dependencies]
+thiserror = "1"
 tempfile = "3"

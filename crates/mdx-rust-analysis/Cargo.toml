@@ -1,0 +1,19 @@
+[package]
+name = "mdx-rust-analysis"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Rust source analysis, bundling, and safe editing for mdx-rust"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# Will add syn + tree-sitter in Phase 2
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "mdx-rust-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Core library for mdx-rust — optimizer loop, safety, registry, and experiment management"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
