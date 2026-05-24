@@ -17,7 +17,8 @@ mdx-rust schema audit-packet --json
 Other exported schemas include `candidate`, `optimization-run`,
 `hook-decision`, `trace-event`, `hardening-run`, `hardening-finding`,
 `evidence-run`, `agent-contract`, `refactor-plan`, `refactor-apply-run`,
-`refactor-batch-apply-run`, `codebase-map`, and `autopilot-run`.
+`refactor-batch-apply-run`, `codebase-map`, `evolution-scorecard`, and
+`autopilot-run`.
 
 ## Required Fields
 
@@ -185,6 +186,37 @@ The contract records:
 The agent contract is guidance for safe automation. It is not itself validation
 or permission to mutate source files.
 
+## Evolution Scorecards
+
+`v0.8` scorecards produce separate reports:
+
+```text
+.mdx-rust/scorecards/evolution-scorecard-<timestamp>-<scorecard-id>.json
+```
+
+The scorecard schema version is `"0.8"`.
+
+Scorecards record:
+
+- workspace root and optional target
+- autonomy readiness grade, max safe recipe tier, candidate counts, blockers,
+  and recommended command
+- embedded codebase map
+- embedded refactor plan
+- recipe catalog snapshot
+- next commands for agents to run safely
+- artifact path
+
+Scorecards are read-only briefing artifacts. They do not validate or apply any
+candidate. Their purpose is to let a coding agent make an informed next move
+from one schema-backed artifact instead of combining human-oriented output.
+
+Print the scorecard schema with:
+
+```bash
+mdx-rust schema evolution-scorecard --json
+```
+
 ## Recipe Catalog And Artifact Explanation
 
 `v0.8` exposes two read-only agent surfaces:
@@ -218,6 +250,7 @@ Refactor plans record:
 - optional behavior eval spec path
 - measured evidence artifact reference when available
 - security posture summary
+- autonomy readiness summary
 - plan hash and source snapshot hashes
 - file and module scan counts
 - public API pressure
@@ -228,6 +261,8 @@ Refactor plans record:
   command
 - candidate evidence context explaining whether eligibility came from a
   measured file profile or a broader evidence summary
+- candidate autonomy decision explaining whether it is allowed, review-only, or
+  blocked for autonomous execution
 
 A refactor plan is not acceptance evidence. It is a review artifact.
 `mdx-rust apply-plan` must verify source snapshot hashes before it can execute
@@ -279,6 +314,8 @@ Codebase maps record:
 - measured evidence artifact reference when available
 - evidence grade, analysis depth, evidence signals, unlocked recipe tiers, max
   autonomous tier, and unlock suggestions
+- autonomy readiness grade, max safe tier, and allowed/review-only/blocked
+  candidate counts
 - quality grade, debt score, and security score
 - security posture severity counts and top findings
 - patchable and review-only finding counts

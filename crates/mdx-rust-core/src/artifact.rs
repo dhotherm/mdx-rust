@@ -21,6 +21,7 @@ pub enum ArtifactKind {
     AutopilotRun,
     CodebaseMap,
     EvidenceRun,
+    EvolutionScorecard,
     HardeningRun,
     RefactorApplyRun,
     RefactorBatchApplyRun,
@@ -52,6 +53,8 @@ fn artifact_kind(value: &serde_json::Value) -> ArtifactKind {
         ArtifactKind::AuditPacket
     } else if value.get("passes").is_some() && value.get("execution_summary").is_some() {
         ArtifactKind::AutopilotRun
+    } else if value.get("scorecard_id").is_some() {
+        ArtifactKind::EvolutionScorecard
     } else if value.get("map_id").is_some() {
         ArtifactKind::CodebaseMap
     } else if value.get("run_id").is_some() && value.get("unlocked_recipe_tiers").is_some() {
@@ -102,6 +105,16 @@ fn artifact_summary(kind: &ArtifactKind, value: &serde_json::Value) -> String {
                 .map(|profiles| profiles.len())
                 .unwrap_or(0)
         ),
+        ArtifactKind::EvolutionScorecard => format!(
+            "evolution scorecard {:?}: {} executable candidate(s)",
+            value
+                .pointer("/readiness/grade")
+                .and_then(|value| value.as_str()),
+            value
+                .pointer("/readiness/executable_candidates")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0)
+        ),
         ArtifactKind::HardeningRun => format!(
             "hardening run {:?} with {} proposed change(s)",
             value
@@ -144,6 +157,10 @@ fn artifact_next_actions(kind: &ArtifactKind, value: &serde_json::Value) -> Vec<
         ArtifactKind::CodebaseMap => vec![
             "Inspect recommended_actions and capability_gates before mutation.".to_string(),
             "Run mdx-rust --json plan <target> to create a stale-checked plan.".to_string(),
+        ],
+        ArtifactKind::EvolutionScorecard => vec![
+            "Inspect readiness and next_commands before choosing mutation.".to_string(),
+            "Only add --apply to suggested commands after explicit human approval.".to_string(),
         ],
         ArtifactKind::RefactorPlan => {
             let has_executable = value

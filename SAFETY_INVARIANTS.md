@@ -121,8 +121,17 @@ allowed to move quickly, but it must not create a second mutation path.
   It can raise risk, add recommendations, or keep candidates plan-only, but it
   must not bypass validation, evidence, stale snapshot, behavior eval, or
   rollback gates.
-- `mdx-rust recipes` and `mdx-rust explain` are read-only agent surfaces. They
-  must never mutate source files or approve mutation by themselves.
+- v0.8 candidate autonomy decisions are queue gates. `Allowed` candidates may
+  enter autonomous queues only when all existing evidence, risk, status, public
+  API, recipe support, and security checks pass. `ReviewOnly` and `Blocked`
+  candidates must not be queued by `apply-plan --all`, `autopilot`, or
+  `evolve`.
+- `mdx-rust scorecard`, `mdx-rust recipes`, and `mdx-rust explain` are read-only
+  agent surfaces. They must never mutate source files or approve mutation by
+  themselves.
+- `mdx-rust scorecard` may embed maps, plans, recipe catalogs, autonomy
+  readiness, and suggested commands, but it is briefing evidence only. It does
+  not validate, apply, land, or accept changes.
 - `Tested` evidence may surface additional boundary-aware Tier 2 review
   candidates, but those candidates remain plan-only until a dedicated
   executable recipe and validation contract exists.
@@ -146,6 +155,9 @@ allowed to move quickly, but it must not create a second mutation path.
 - Ledgers are records only. A `PromptVariantRecord` means "considered", not "validated", "landed", or "accepted".
 - Refactor plans are records only. A `RefactorPlan` means "reviewed candidate
   areas", not "validated", "applied", "landed", or "accepted".
+- Evolution scorecards are records only. An `EvolutionScorecard` means
+  "briefed map, plan, recipes, and autonomy readiness", not "validated",
+  "applied", "landed", or "accepted".
 - Codebase maps are records only. A `CodebaseMap` means "scanned and
   summarized", not "validated", "applied", "landed", or "accepted".
 - Evidence grades are execution gates, not proof by themselves. A `Compiled`
@@ -249,6 +261,9 @@ Changes touching optimization, hooks, validation, scoring, patch application, or
 - At least one CLI integration test proves `evolve --json` respects budget and
   evidence gating, including a higher-than-available evidence request that
   blocks execution without mutating source files.
+- At least one CLI integration test proves `scorecard --json` writes a
+  machine-parseable read-only briefing artifact with map, plan, recipe catalog,
+  autonomy readiness, and explain support.
 
 The current invariant tests live primarily in:
 

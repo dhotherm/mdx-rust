@@ -130,6 +130,9 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     let recipe_catalog = assert_machine_pure_json(&["schema", "recipe-catalog", "--json"]);
     assert_eq!(recipe_catalog["title"], "RecipeCatalog");
 
+    let scorecard = assert_machine_pure_json(&["schema", "evolution-scorecard", "--json"]);
+    assert_eq!(scorecard["title"], "EvolutionScorecard");
+
     let value = assert_machine_pure_json(&["schema", "audit-packet", "--json"]);
 
     assert_eq!(value["title"], "AuditPacket");
@@ -194,6 +197,19 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .as_array()
         .expect("commands array")
         .iter()
+        .any(|command| command["name"] == "scorecard"
+            && command["primary_schema"] == "evolution-scorecard"));
+    assert!(value["artifact_globs"]
+        .as_array()
+        .expect("artifact globs")
+        .iter()
+        .any(|glob| glob
+            .as_str()
+            .is_some_and(|glob| glob.contains("/scorecards/"))));
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
         .any(|command| command["name"] == "explain"
             && command["primary_schema"] == "artifact-explanation"));
     assert!(value["safety_rules"]
@@ -203,6 +219,161 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .any(|rule| rule
             .as_str()
             .is_some_and(|rule| rule.contains("Never add --apply"))));
+}
+
+#[test]
+fn scorecard_json_mode_briefs_agents_without_applying() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-scorecard-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let value = assert_machine_pure_json_in(&["scorecard", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(value["schema_version"], "0.8");
+    assert!(value["scorecard_id"].as_str().is_some());
+    assert_eq!(value["readiness"]["grade"], "Tier1Ready");
+    assert_eq!(value["readiness"]["executable_candidates"], 1);
+    assert!(value["map"]["map_id"].as_str().is_some());
+    assert!(value["plan"]["plan_id"].as_str().is_some());
+    assert!(
+        value["recipes"]["recipes"]
+            .as_array()
+            .expect("recipes")
+            .len()
+            >= 5
+    );
+    assert!(value["next_commands"]
+        .as_array()
+        .expect("next commands")
+        .iter()
+        .any(|command| command
+            .as_str()
+            .is_some_and(|command| command.contains("evolve"))));
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+    let artifact_path = value["artifact_path"]
+        .as_str()
+        .expect("scorecard should persist artifact");
+    assert!(std::path::Path::new(artifact_path).exists());
+    let explanation =
+        assert_machine_pure_json_in(&["explain", artifact_path, "--json"], dir.path());
+    assert_eq!(explanation["artifact_kind"], "EvolutionScorecard");
+}
+
+#[test]
+fn scorecard_json_mode_makes_high_security_review_only() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-scorecard-security-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn run_shell() -> anyhow::Result<String> {
+    let output = std::process::Command::new("sh").arg("-c").arg("echo hi").output().unwrap();
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let value = assert_machine_pure_json_in(&["scorecard", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(value["readiness"]["grade"], "ReviewOnly");
+    assert_eq!(value["readiness"]["executable_candidates"], 0);
+    assert!(value["readiness"]["blockers"]
+        .as_array()
+        .expect("blockers")
+        .iter()
+        .any(|blocker| blocker
+            .as_str()
+            .is_some_and(|blocker| blocker.contains("high-severity security"))));
+    assert!(value["plan"]["candidates"]
+        .as_array()
+        .expect("candidates")
+        .iter()
+        .any(|candidate| candidate["recipe"] == "SecurityBoundaryReview"
+            && candidate["autonomy"]["decision"] == "ReviewOnly"));
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+}
+
+#[test]
+fn scorecard_json_mode_scopes_security_to_target() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-scorecard-scoped-security-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        src.join("danger.rs"),
+        r#"pub fn run_shell() {
+    let _ = std::process::Command::new("sh").arg("-c").arg("echo hi").status();
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let value = assert_machine_pure_json_in(&["scorecard", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(value["readiness"]["grade"], "Tier1Ready");
+    assert_eq!(value["readiness"]["executable_candidates"], 1);
+    assert_eq!(value["map"]["security"]["high"], 0);
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
 }
 
 #[test]
@@ -422,6 +593,12 @@ anyhow = "1"
         .expect("candidates")
         .iter()
         .any(|candidate| candidate["evidence_context"]["grade"] == "Compiled"));
+    assert!(value["candidates"]
+        .as_array()
+        .expect("candidates")
+        .iter()
+        .any(|candidate| candidate["autonomy"]["decision"] == "Allowed"));
+    assert_eq!(value["autonomy"]["grade"], "Tier1Ready");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
     let artifact_path = value["artifact_path"]
         .as_str()
@@ -476,6 +653,7 @@ anyhow = "1"
     assert_eq!(value["evidence"]["max_autonomous_tier"], 1);
     assert!(value["security"]["score"].as_u64().is_some());
     assert!(value["quality"]["security_score"].as_u64().is_some());
+    assert_eq!(value["autonomy"]["grade"], "Tier1Ready");
     assert_eq!(value["quality"]["patchable_findings"], 1);
     assert!(value["capability_gates"].as_array().unwrap().len() >= 4);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);

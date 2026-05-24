@@ -16,6 +16,7 @@ For `0.8.x`, the supported product surface is:
 - Versioned agent contract schemas.
 - Versioned recipe catalog schemas.
 - Versioned artifact explanation schemas.
+- Versioned evolution scorecard schemas.
 - Versioned refactor plan schemas.
 - Versioned refactor apply-run schemas.
 - Versioned codebase map schemas.
@@ -54,9 +55,11 @@ Automation should prefer:
 - `mdx-rust agent-contract --json`.
 - `mdx-rust recipes --json`.
 - `mdx-rust explain <artifact> --json`.
+- `mdx-rust scorecard <target> --json`.
 - Versioned audit packet JSON.
 - Versioned hardening report JSON.
 - Versioned evidence run JSON.
+- Versioned evolution scorecard JSON.
 - Versioned refactor plan JSON.
 - Versioned refactor apply-run JSON.
 
@@ -67,19 +70,24 @@ still keeps accepted edits single-file. The hardening engine has a separate
 bounded transaction path for scoped module hardening and requires validation,
 optional behavior evals, and final validation before reporting applied success.
 
-Refactor planning and autonomous orchestration records are stable enough for CLI automation through
-`mdx-rust plan --json`, `mdx-rust apply-plan --json`,
+Refactor planning and autonomous orchestration records are stable enough for
+CLI automation through `mdx-rust plan --json`, `mdx-rust apply-plan --json`,
 `mdx-rust evidence --json`, `mdx-rust map --json`,
 `mdx-rust autopilot --json`, `mdx-rust evolve --json`,
 `mdx-rust agent-contract --json`, `mdx-rust recipes --json`,
-`mdx-rust explain <artifact> --json`,
-`mdx-rust schema refactor-plan --json`, and
-`mdx-rust schema refactor-apply-run --json`, and
-`mdx-rust schema refactor-batch-apply-run --json`,
-`mdx-rust schema evidence-run --json`,
-`mdx-rust schema agent-contract --json`,
-`mdx-rust schema recipe-catalog --json`,
-`mdx-rust schema artifact-explanation --json`,
-`mdx-rust schema codebase-map --json`, and
-`mdx-rust schema autopilot-run --json`. The Rust types and module paths that
-produce those records remain unstable before `1.0`.
+`mdx-rust explain <artifact> --json`, `mdx-rust scorecard --json`, and their
+schema commands:
+
+- `mdx-rust schema refactor-plan --json`
+- `mdx-rust schema refactor-apply-run --json`
+- `mdx-rust schema refactor-batch-apply-run --json`
+- `mdx-rust schema evidence-run --json`
+- `mdx-rust schema agent-contract --json`
+- `mdx-rust schema recipe-catalog --json`
+- `mdx-rust schema artifact-explanation --json`
+- `mdx-rust schema evolution-scorecard --json`
+- `mdx-rust schema codebase-map --json`
+- `mdx-rust schema autopilot-run --json`
+
+The Rust types and module paths that produce those records remain unstable
+before `1.0`.

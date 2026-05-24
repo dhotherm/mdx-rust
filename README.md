@@ -58,8 +58,12 @@ Today it supports:
   mutation-path contracts.
 - `explain` artifact summaries so coding agents can inspect saved JSON reports
   and choose safe next actions.
+- `scorecard` agent briefings that combine map, plan, recipes, autonomy
+  readiness, and next commands into one artifact.
 - File/function evidence profiles that attach evidence context to plan
   candidates instead of relying only on repo-level grades.
+- Per-candidate autonomy decisions that explain whether a candidate is allowed,
+  blocked, or review-only.
 - Security posture summaries in maps and plans, with high/medium/low finding
   counts and a security score that affects prioritization.
 - Five executable Tier 1 mechanical recipes: contextual error hardening,
@@ -99,6 +103,8 @@ agents can ask the CLI which recipes exist and what an artifact means.
   `--apply`, which schemas to expect, and which artifacts to inspect.
 - Run `mdx-rust recipes --json` to inspect every recipe, required evidence
   grade, tier, execution status, risk level, and mutation path.
+- Run `mdx-rust scorecard <target> --json` to get one agent briefing with map,
+  plan, recipe catalog, autonomy readiness, and suggested next commands.
 - Run `mdx-rust explain <artifact> --json` to summarize evidence, plan, map,
   hardening, apply, or autopilot artifacts and get safe next actions.
 - Run `mdx-rust map <target>` to get a repo quality profile, debt score,
@@ -383,7 +389,7 @@ file/function profiles, and unlocked recipe tiers.
 `v0.8` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
 with impact summaries, source snapshot hashes, public API pressure, module
 edges, security posture, required gates, policy/eval references, candidate
-evidence context, and candidate actions. Plan
+evidence context, per-candidate autonomy decisions, and candidate actions. Plan
 artifacts are evidence for review and orchestration; they are not proof that a
 change has been applied. `apply-plan` reports are also written under
 `.mdx-rust/plans/` and record whether a candidate or execution queue was
@@ -404,6 +410,7 @@ mdx-rust schema behavior-eval-report --json
 mdx-rust schema evidence-run --json
 mdx-rust schema recipe-catalog --json
 mdx-rust schema artifact-explanation --json
+mdx-rust schema evolution-scorecard --json
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
 mdx-rust schema refactor-batch-apply-run --json
@@ -453,8 +460,9 @@ guessing which checks matter.
 
 `v0.8.0` is the current evidence-driven, agent-first evolution target. It adds
 file/function evidence profiles, recipe catalog export, artifact explanations,
-security posture in maps/plans, and keeps broad semantic refactors behind
-explicit review and future verification work.
+scorecards, per-candidate autonomy decisions, security posture in maps/plans,
+and keeps broad semantic refactors behind explicit review and future
+verification work.
 
 ## License
 

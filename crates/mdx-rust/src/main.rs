@@ -72,6 +72,24 @@ enum Commands {
         artifact: String,
     },
 
+    /// Build one agent-first evolution scorecard with map, plan, recipes, and readiness
+    Scorecard {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Optional policy file to hash and attach to the scorecard
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Optional behavior eval spec that future apply commands should pass
+        #[arg(long)]
+        eval_spec: Option<String>,
+
+        /// Maximum Rust files to scan
+        #[arg(long, default_value = "250")]
+        max_files: usize,
+    },
+
     /// Collect measured evidence that controls autonomous recipe depth
     Evidence {
         /// File or directory to associate with the evidence run
@@ -318,8 +336,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: agent-contract, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["agent-contract", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: agent-contract, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["agent-contract", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -384,6 +402,23 @@ fn main() {
         Commands::Explain { artifact } => {
             if let Err(e) = cmd_explain(&artifact, cli.json) {
                 emit_error(cli.json, "explain", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Scorecard {
+            target,
+            policy,
+            eval_spec,
+            max_files,
+        } => {
+            if let Err(e) = cmd_scorecard(
+                target.as_deref(),
+                policy.as_deref(),
+                eval_spec.as_deref(),
+                max_files,
+                cli.json,
+            ) {
+                emit_error(cli.json, "scorecard", &e);
                 std::process::exit(1);
             }
         }
@@ -858,6 +893,59 @@ fn cmd_explain(artifact: &str, json: bool) -> anyhow::Result<()> {
     println!("   Next actions:");
     for action in &explanation.recommended_next_actions {
         println!("   - {}", action);
+    }
+    Ok(())
+}
+
+fn cmd_scorecard(
+    target: Option<&str>,
+    policy: Option<&str>,
+    eval_spec: Option<&str>,
+    max_files: usize,
+    json: bool,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let scorecard = mdx_rust_core::build_evolution_scorecard(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::EvolutionScorecardConfig {
+            target: target.map(std::path::PathBuf::from),
+            policy_path: policy.map(std::path::PathBuf::from),
+            behavior_spec_path: eval_spec.map(std::path::PathBuf::from),
+            max_files,
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&scorecard)?);
+        return Ok(());
+    }
+
+    println!("📊 mdx-rust scorecard");
+    println!("   Scorecard: {}", scorecard.scorecard_id);
+    println!("   Root: {}", scorecard.root);
+    if let Some(target) = &scorecard.target {
+        println!("   Target: {}", target);
+    }
+    println!(
+        "   Readiness: {:?} ({} executable, {} review-only, {} blocked)",
+        scorecard.readiness.grade,
+        scorecard.readiness.executable_candidates,
+        scorecard.readiness.review_only_candidates,
+        scorecard.readiness.blocked_candidates
+    );
+    println!(
+        "   Quality: {:?} | debt={} | security={}",
+        scorecard.map.quality.grade, scorecard.map.quality.debt_score, scorecard.map.security.score
+    );
+    println!("   Next commands:");
+    for command in &scorecard.next_commands {
+        println!("   - {}", command);
+    }
+    if let Some(path) = &scorecard.artifact_path {
+        println!("   Artifact: {}", path);
     }
     Ok(())
 }
@@ -1997,6 +2085,9 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         "evidence-run" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::EvidenceRun))?,
         "recipe-catalog" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::RecipeCatalog))?
+        }
+        "evolution-scorecard" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::EvolutionScorecard))?
         }
         "refactor-plan" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorPlan))?

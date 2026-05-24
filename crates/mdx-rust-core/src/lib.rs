@@ -91,10 +91,12 @@ pub use policy::{load_project_policy, PolicyCategory, PolicyRule, PolicySeverity
 /// Plan-first refactor and autonomous orchestration records. Unstable before `1.0`.
 pub use refactor::{
     apply_refactor_plan_batch, apply_refactor_plan_candidate, build_codebase_map,
-    build_refactor_plan, recipe_catalog, run_autopilot, AutopilotConfig, AutopilotPass,
-    AutopilotPassStatus, AutopilotRun, AutopilotStatus, CandidateEvidenceContext, CapabilityGate,
-    CodebaseMap, CodebaseMapConfig, CodebaseQualityGrade, CodebaseQualitySummary, EvidenceGrade,
-    EvidenceSignal, EvidenceSummary, RecipeCatalog, RecipeSpec, RecipeTier, RefactorApplyConfig,
+    build_evolution_scorecard, build_refactor_plan, recipe_catalog, run_autopilot,
+    AutonomyDecision, AutonomyReadiness, AutonomyReadinessGrade, AutopilotConfig, AutopilotPass,
+    AutopilotPassStatus, AutopilotRun, AutopilotStatus, CandidateAutonomyDecision,
+    CandidateEvidenceContext, CapabilityGate, CodebaseMap, CodebaseMapConfig, CodebaseQualityGrade,
+    CodebaseQualitySummary, EvidenceGrade, EvidenceSignal, EvidenceSummary, EvolutionScorecard,
+    EvolutionScorecardConfig, RecipeCatalog, RecipeSpec, RecipeTier, RefactorApplyConfig,
     RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus, RefactorBatchApplyConfig,
     RefactorBatchApplyRun, RefactorBatchApplyStatus, RefactorBatchCandidateRun, RefactorCandidate,
     RefactorCandidateStatus, RefactorImpactSummary, RefactorPlan, RefactorPlanConfig,

@@ -67,6 +67,12 @@ names, artifact globs, and recommended workflows. Agents should consume that
 contract before calling `map`, `plan`, `evidence`, `autopilot`, `evolve`, or
 `apply-plan`.
 
+`mdx-rust scorecard` is the preferred intake surface for agents in `v0.8`.
+It builds a codebase map, refactor plan, recipe catalog, autonomy readiness
+summary, and suggested next commands into one read-only artifact. The scorecard
+does not approve mutation; it gives agents enough structured context to choose
+the next safe command without scraping human output.
+
 ## Hardening Lifecycle
 
 The hardening engine is a separate path for ordinary Rust modules:
@@ -169,9 +175,31 @@ by a measured file profile or a broader evidence summary.
 `mdx-rust map` scans the requested workspace, file, or directory and writes a
 codebase map under `.mdx-rust/maps/`. The map includes workspace metadata,
 quality grade, debt score, security posture, inferred or measured evidence
-grade, hardening findings, public API pressure, module edges, available optional gates such as
-`cargo-nextest`, `cargo-llvm-cov`, `cargo-mutants`, and
-`cargo-semver-checks`, and recommended next actions.
+grade, autonomy readiness, hardening findings, public API pressure, module
+edges, available optional gates such as `cargo-nextest`, `cargo-llvm-cov`,
+`cargo-mutants`, and `cargo-semver-checks`, and recommended next actions.
+
+`mdx-rust scorecard` writes `.mdx-rust/scorecards/` reports that combine the
+map, plan, recipe catalog, autonomy readiness, and recommended next commands.
+It is read-only and designed as the single briefing artifact for coding agents
+before they decide whether to run `evolve`, inspect a plan, or request stronger
+evidence.
+
+Each refactor candidate carries an explicit autonomy decision:
+
+- `Allowed`: the candidate is low-risk, executable, evidence-satisfied, and
+  supported by the existing mutation path.
+- `ReviewOnly`: the candidate is useful planning evidence but needs human
+  judgment, public API allowance, higher-risk design, or security review.
+- `Blocked`: the candidate lacks the minimum evidence required to proceed.
+
+`apply-plan --all`, `autopilot`, and `evolve` may queue only `Allowed`
+candidates. Security audit findings are surfaced as plan candidates so agents
+can see risky modules in the same planning artifact, but they remain
+review-oriented unless a dedicated executable recipe exists. Targeted map,
+plan, and scorecard runs audit the requested target rather than freezing a
+safe file because another part of the workspace contains unrelated high-risk
+code.
 
 `mdx-rust autopilot` coordinates the existing map, plan, apply-plan, and
 hardening paths:

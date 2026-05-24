@@ -126,6 +126,8 @@ pub struct RefactorPlan {
     pub measured_evidence: Option<EvidenceArtifactRef>,
     #[serde(default)]
     pub security: SecurityPostureSummary,
+    #[serde(default)]
+    pub autonomy: AutonomyReadiness,
     pub impact: RefactorImpactSummary,
     pub source_snapshots: Vec<SourceSnapshot>,
     pub files: Vec<RefactorFileSummary>,
@@ -150,6 +152,8 @@ pub struct CodebaseMap {
     pub measured_evidence: Option<EvidenceArtifactRef>,
     #[serde(default)]
     pub security: SecurityPostureSummary,
+    #[serde(default)]
+    pub autonomy: AutonomyReadiness,
     pub quality: CodebaseQualitySummary,
     pub capability_gates: Vec<CapabilityGate>,
     pub impact: RefactorImpactSummary,
@@ -281,6 +285,62 @@ impl Default for SecurityPostureSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AutonomyReadiness {
+    pub grade: AutonomyReadinessGrade,
+    pub max_safe_tier: RecipeTier,
+    pub executable_candidates: usize,
+    pub review_only_candidates: usize,
+    pub blocked_candidates: usize,
+    pub blockers: Vec<String>,
+    pub recommended_command: Option<String>,
+}
+
+impl Default for AutonomyReadiness {
+    fn default() -> Self {
+        Self {
+            grade: AutonomyReadinessGrade::Blocked,
+            max_safe_tier: RecipeTier::Tier1,
+            executable_candidates: 0,
+            review_only_candidates: 0,
+            blocked_candidates: 0,
+            blockers: Vec::new(),
+            recommended_command: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum AutonomyReadinessGrade {
+    Blocked,
+    ReviewOnly,
+    Tier1Ready,
+    Tier2Ready,
+    Tier3Planning,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CandidateAutonomyDecision {
+    pub decision: AutonomyDecision,
+    pub reasons: Vec<String>,
+}
+
+impl Default for CandidateAutonomyDecision {
+    fn default() -> Self {
+        Self {
+            decision: AutonomyDecision::ReviewOnly,
+            reasons: vec!["legacy artifact without explicit autonomy decision".to_string()],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum AutonomyDecision {
+    Allowed,
+    Blocked,
+    ReviewOnly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AutopilotRun {
     pub schema_version: String,
     pub run_id: String,
@@ -390,6 +450,8 @@ pub struct RefactorCandidate {
     pub evidence_satisfied: bool,
     #[serde(default)]
     pub evidence_context: CandidateEvidenceContext,
+    #[serde(default)]
+    pub autonomy: CandidateAutonomyDecision,
     pub public_api_impact: bool,
     pub apply_command: Option<String>,
     pub required_gates: Vec<String>,
@@ -445,6 +507,39 @@ pub struct RecipeSpec {
     pub risk: RefactorRiskLevel,
     pub mutation_path: String,
     pub description: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct EvolutionScorecardConfig {
+    pub target: Option<PathBuf>,
+    pub policy_path: Option<PathBuf>,
+    pub behavior_spec_path: Option<PathBuf>,
+    pub max_files: usize,
+}
+
+impl Default for EvolutionScorecardConfig {
+    fn default() -> Self {
+        Self {
+            target: None,
+            policy_path: None,
+            behavior_spec_path: None,
+            max_files: 250,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvolutionScorecard {
+    pub schema_version: String,
+    pub scorecard_id: String,
+    pub root: String,
+    pub target: Option<String>,
+    pub readiness: AutonomyReadiness,
+    pub map: CodebaseMap,
+    pub plan: RefactorPlan,
+    pub recipes: RecipeCatalog,
+    pub next_commands: Vec<String>,
+    pub artifact_path: Option<String>,
 }
 
 pub fn recipe_catalog() -> RecipeCatalog {
@@ -683,7 +778,9 @@ pub fn build_refactor_plan(
         },
     )?;
     let policy = load_project_policy(&root, config.policy_path.as_deref())?;
-    let security = security_posture_summary(&audit_agent(&root)?.findings);
+    let audit_scope = audit_scope_path(&root, config.target.as_deref());
+    let audit = audit_agent(&audit_scope)?;
+    let security = security_posture_summary(&audit.findings);
     let workspace = workspace_summary(&root);
     let behavior_spec = config
         .behavior_spec_path
@@ -715,6 +812,13 @@ pub fn build_refactor_plan(
         &evidence,
         measured_evidence.as_ref(),
     ));
+    candidates.extend(security_candidates(
+        &audit.findings,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
+    annotate_candidate_autonomy(&mut candidates, &evidence, &security);
+    let autonomy = autonomy_readiness(&evidence, &security, &candidates);
     for candidate in &mut candidates {
         candidate.candidate_hash = candidate_hash(candidate);
     }
@@ -744,6 +848,7 @@ pub fn build_refactor_plan(
         evidence,
         measured_evidence: measured_evidence.as_ref().map(EvidenceArtifactRef::from),
         security,
+        autonomy,
         impact,
         source_snapshots,
         files: refactor.files,
@@ -788,7 +893,9 @@ pub fn build_codebase_map(
         },
     )?;
     let policy = load_project_policy(&root, config.policy_path.as_deref())?;
-    let security = security_posture_summary(&audit_agent(&root)?.findings);
+    let audit_scope = audit_scope_path(&root, config.target.as_deref());
+    let audit = audit_agent(&audit_scope)?;
+    let security = security_posture_summary(&audit.findings);
     let workspace = workspace_summary(&root);
     let behavior_spec = config
         .behavior_spec_path
@@ -808,6 +915,30 @@ pub fn build_codebase_map(
         &hardening.findings,
         hardening.changes.len(),
     );
+    let mut readiness_candidates = Vec::new();
+    readiness_candidates.extend(hardening_candidates(
+        &hardening.findings,
+        &RefactorPlanConfig {
+            target: config.target.clone(),
+            policy_path: config.policy_path.clone(),
+            behavior_spec_path: config.behavior_spec_path.clone(),
+            max_files: config.max_files,
+        },
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
+    readiness_candidates.extend(structural_candidates(
+        &refactor.files,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
+    readiness_candidates.extend(security_candidates(
+        &audit.findings,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
+    annotate_candidate_autonomy(&mut readiness_candidates, &evidence, &security);
+    let autonomy = autonomy_readiness(&evidence, &security, &readiness_candidates);
     let quality = summarize_quality(&refactor.files, &hardening.findings, &impact, &security);
     let recommended_actions =
         recommended_actions(&quality, &impact, &capability_gates, &evidence, &security);
@@ -827,6 +958,7 @@ pub fn build_codebase_map(
         evidence,
         measured_evidence: measured_evidence.as_ref().map(EvidenceArtifactRef::from),
         security,
+        autonomy,
         quality,
         capability_gates,
         impact,
@@ -845,6 +977,61 @@ pub fn build_codebase_map(
     }
 
     Ok(map)
+}
+
+pub fn build_evolution_scorecard(
+    root: &Path,
+    artifact_root: Option<&Path>,
+    config: &EvolutionScorecardConfig,
+) -> anyhow::Result<EvolutionScorecard> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let map = build_codebase_map(
+        &root,
+        artifact_root,
+        &CodebaseMapConfig {
+            target: config.target.clone(),
+            policy_path: config.policy_path.clone(),
+            behavior_spec_path: config.behavior_spec_path.clone(),
+            max_files: config.max_files,
+        },
+    )?;
+    let plan = build_refactor_plan(
+        &root,
+        artifact_root,
+        &RefactorPlanConfig {
+            target: config.target.clone(),
+            policy_path: config.policy_path.clone(),
+            behavior_spec_path: config.behavior_spec_path.clone(),
+            max_files: config.max_files,
+        },
+    )?;
+    let recipes = recipe_catalog();
+    let readiness = plan.autonomy.clone();
+    let next_commands = scorecard_next_commands(&readiness, &plan);
+    let scorecard_id = evolution_scorecard_id(&root, config, &map, &plan);
+    let mut scorecard = EvolutionScorecard {
+        schema_version: "0.8".to_string(),
+        scorecard_id,
+        root: root.display().to_string(),
+        target: config
+            .target
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        readiness,
+        map,
+        plan,
+        recipes,
+        next_commands,
+        artifact_path: None,
+    };
+
+    if let Some(artifact_root) = artifact_root {
+        let path = persist_evolution_scorecard(artifact_root, &scorecard)?;
+        scorecard.artifact_path = Some(path.display().to_string());
+        std::fs::write(&path, serde_json::to_string_pretty(&scorecard)?)?;
+    }
+
+    Ok(scorecard)
 }
 
 pub fn run_autopilot(
@@ -1108,6 +1295,16 @@ pub fn apply_refactor_plan_candidate(
         run.note = format!(
             "candidate requires {:?} evidence but plan evidence is {:?}",
             candidate.required_evidence, plan.evidence.grade
+        );
+        return persist_apply_run(artifact_root, run);
+    }
+
+    if candidate.autonomy.decision != AutonomyDecision::Allowed {
+        run.status = RefactorApplyStatus::Unsupported;
+        run.note = format!(
+            "candidate autonomy decision is {:?}: {}",
+            candidate.autonomy.decision,
+            candidate.autonomy.reasons.join("; ")
         );
         return persist_apply_run(artifact_root, run);
     }
@@ -1568,6 +1765,162 @@ fn security_posture_summary(findings: &[AuditFinding]) -> SecurityPostureSummary
     summary
 }
 
+fn annotate_candidate_autonomy(
+    candidates: &mut [RefactorCandidate],
+    evidence: &EvidenceSummary,
+    security: &SecurityPostureSummary,
+) {
+    for candidate in candidates {
+        candidate.autonomy = candidate_autonomy_decision(candidate, evidence, security);
+    }
+}
+
+fn candidate_autonomy_decision(
+    candidate: &RefactorCandidate,
+    evidence: &EvidenceSummary,
+    security: &SecurityPostureSummary,
+) -> CandidateAutonomyDecision {
+    let mut reasons = Vec::new();
+    if evidence.grade == EvidenceGrade::None {
+        reasons.push("no usable evidence grade is available".to_string());
+        return CandidateAutonomyDecision {
+            decision: AutonomyDecision::Blocked,
+            reasons,
+        };
+    }
+    if security.high > 0 {
+        reasons.push(
+            "high-severity security finding requires human review before autonomous apply"
+                .to_string(),
+        );
+        return CandidateAutonomyDecision {
+            decision: AutonomyDecision::ReviewOnly,
+            reasons,
+        };
+    }
+    if !candidate.evidence_satisfied || candidate.required_evidence > evidence.grade {
+        reasons.push(format!(
+            "candidate requires {:?} evidence but target has {:?}",
+            candidate.required_evidence, evidence.grade
+        ));
+        return CandidateAutonomyDecision {
+            decision: AutonomyDecision::Blocked,
+            reasons,
+        };
+    }
+    if candidate.public_api_impact {
+        reasons.push("public API impact requires explicit human allowance".to_string());
+        return CandidateAutonomyDecision {
+            decision: AutonomyDecision::ReviewOnly,
+            reasons,
+        };
+    }
+    if candidate.status != RefactorCandidateStatus::ApplyViaImprove {
+        reasons.push("candidate is plan-only or needs human design".to_string());
+        return CandidateAutonomyDecision {
+            decision: AutonomyDecision::ReviewOnly,
+            reasons,
+        };
+    }
+    if !is_supported_mechanical_recipe(&candidate.recipe) {
+        reasons.push("candidate has no supported executable recipe".to_string());
+        return CandidateAutonomyDecision {
+            decision: AutonomyDecision::ReviewOnly,
+            reasons,
+        };
+    }
+    if candidate.risk != RefactorRiskLevel::Low {
+        reasons.push("only low-risk candidates are autonomous by default".to_string());
+        return CandidateAutonomyDecision {
+            decision: AutonomyDecision::ReviewOnly,
+            reasons,
+        };
+    }
+
+    reasons.push("low-risk executable recipe satisfies current evidence gates".to_string());
+    CandidateAutonomyDecision {
+        decision: AutonomyDecision::Allowed,
+        reasons,
+    }
+}
+
+fn autonomy_readiness(
+    evidence: &EvidenceSummary,
+    security: &SecurityPostureSummary,
+    candidates: &[RefactorCandidate],
+) -> AutonomyReadiness {
+    let executable_candidates = candidates
+        .iter()
+        .filter(|candidate| candidate.autonomy.decision == AutonomyDecision::Allowed)
+        .count();
+    let review_only_candidates = candidates
+        .iter()
+        .filter(|candidate| candidate.autonomy.decision == AutonomyDecision::ReviewOnly)
+        .count();
+    let blocked_candidates = candidates
+        .iter()
+        .filter(|candidate| candidate.autonomy.decision == AutonomyDecision::Blocked)
+        .count();
+    let mut blockers = Vec::new();
+    if evidence.grade == EvidenceGrade::None {
+        blockers.push("no usable evidence grade is available".to_string());
+    }
+    if security.high > 0 {
+        blockers.push("high-severity security findings require review first".to_string());
+    }
+    if executable_candidates == 0 {
+        blockers.push("no low-risk executable candidates are currently allowed".to_string());
+    }
+
+    let has_tier2_allowed = candidates.iter().any(|candidate| {
+        candidate.autonomy.decision == AutonomyDecision::Allowed
+            && candidate.tier >= RecipeTier::Tier2
+    });
+    let has_tier3_plan = candidates.iter().any(|candidate| {
+        candidate.tier >= RecipeTier::Tier3
+            && candidate.autonomy.decision != AutonomyDecision::Blocked
+    });
+    let grade = if evidence.grade == EvidenceGrade::None {
+        AutonomyReadinessGrade::Blocked
+    } else if executable_candidates > 0 && has_tier2_allowed {
+        AutonomyReadinessGrade::Tier2Ready
+    } else if executable_candidates > 0 {
+        AutonomyReadinessGrade::Tier1Ready
+    } else if has_tier3_plan {
+        AutonomyReadinessGrade::Tier3Planning
+    } else {
+        AutonomyReadinessGrade::ReviewOnly
+    };
+    let max_safe_tier = candidates
+        .iter()
+        .filter(|candidate| candidate.autonomy.decision == AutonomyDecision::Allowed)
+        .map(|candidate| candidate.tier)
+        .max()
+        .unwrap_or(RecipeTier::Tier1);
+    let recommended_command = match grade {
+        AutonomyReadinessGrade::Tier2Ready => Some(
+            "mdx-rust evolve <target> --budget 10m --tier 2 --min-evidence covered".to_string(),
+        ),
+        AutonomyReadinessGrade::Tier1Ready => {
+            Some("mdx-rust evolve <target> --budget 10m --tier 1".to_string())
+        }
+        AutonomyReadinessGrade::Tier3Planning => Some("mdx-rust plan <target> --json".to_string()),
+        AutonomyReadinessGrade::ReviewOnly | AutonomyReadinessGrade::Blocked => {
+            Some("mdx-rust map <target> --json".to_string())
+        }
+    };
+
+    AutonomyReadiness {
+        grade,
+        max_safe_tier,
+        executable_candidates,
+        review_only_candidates,
+        blocked_candidates,
+        blockers,
+        recommended_command,
+    }
+}
+
 fn analysis_depth_for_evidence(grade: EvidenceGrade) -> EvidenceAnalysisDepth {
     match grade {
         EvidenceGrade::None => EvidenceAnalysisDepth::None,
@@ -1796,6 +2149,7 @@ fn hardening_candidates(
                 required_evidence,
                 evidence_satisfied,
                 evidence_context: candidate_evidence_context(&file, evidence, measured),
+                autonomy: CandidateAutonomyDecision::default(),
                 public_api_impact: false,
                 apply_command: (finding.patchable && evidence_satisfied)
                     .then(|| apply_command(&file, config, required_evidence)),
@@ -1928,6 +2282,7 @@ fn structural_candidates(
                 required_evidence,
                 evidence_satisfied: evidence.grade >= required_evidence,
                 evidence_context: candidate_evidence_context(&file_path, evidence, measured),
+                autonomy: CandidateAutonomyDecision::default(),
                 public_api_impact: file.public_item_count > 0,
                 apply_command: None,
                 required_gates: vec![
@@ -1958,6 +2313,7 @@ fn structural_candidates(
                 required_evidence,
                 evidence_satisfied: evidence.grade >= required_evidence,
                 evidence_context: candidate_evidence_context(&file_path, evidence, measured),
+                autonomy: CandidateAutonomyDecision::default(),
                 public_api_impact: file.public_item_count > 0,
                 apply_command: None,
                 required_gates: vec![
@@ -1987,6 +2343,7 @@ fn structural_candidates(
                 required_evidence,
                 evidence_satisfied: evidence.grade >= required_evidence,
                 evidence_context: candidate_evidence_context(&file_path, evidence, measured),
+                autonomy: CandidateAutonomyDecision::default(),
                 public_api_impact: true,
                 apply_command: None,
                 required_gates: vec![
@@ -1998,6 +2355,65 @@ fn structural_candidates(
     }
 
     candidates
+}
+
+fn security_candidates(
+    findings: &[AuditFinding],
+    evidence: &EvidenceSummary,
+    measured: Option<&EvidenceRun>,
+) -> Vec<RefactorCandidate> {
+    findings
+        .iter()
+        .filter(|finding| finding.severity != AuditSeverity::Info)
+        .map(|finding| {
+            let file = finding
+                .file
+                .clone()
+                .unwrap_or_else(|| "<workspace>".to_string());
+            let line = finding.line.unwrap_or(1);
+            let required_evidence = match finding.severity {
+                AuditSeverity::High => EvidenceGrade::Tested,
+                AuditSeverity::Medium => EvidenceGrade::Tested,
+                AuditSeverity::Low | AuditSeverity::Info => EvidenceGrade::Compiled,
+            };
+            let risk = match finding.severity {
+                AuditSeverity::High => RefactorRiskLevel::High,
+                AuditSeverity::Medium => RefactorRiskLevel::Medium,
+                AuditSeverity::Low | AuditSeverity::Info => RefactorRiskLevel::Low,
+            };
+            RefactorCandidate {
+                id: format!(
+                    "plan-security-{}-{}-{}",
+                    sanitize_id(&file),
+                    sanitize_id(&finding.id),
+                    line
+                ),
+                candidate_hash: String::new(),
+                recipe: RefactorRecipe::SecurityBoundaryReview,
+                title: finding.title.clone(),
+                rationale: format!(
+                    "Security audit flagged {:?}: {}",
+                    finding.severity, finding.description
+                ),
+                file: file.clone(),
+                line,
+                risk,
+                status: RefactorCandidateStatus::PlanOnly,
+                tier: RecipeTier::Tier2,
+                required_evidence,
+                evidence_satisfied: evidence.grade >= required_evidence,
+                evidence_context: candidate_evidence_context(&file, evidence, measured),
+                autonomy: CandidateAutonomyDecision::default(),
+                public_api_impact: false,
+                apply_command: None,
+                required_gates: vec![
+                    "human security review".to_string(),
+                    "policy update or explicit risk acceptance".to_string(),
+                    "behavior evals or tests must cover the boundary".to_string(),
+                ],
+            }
+        })
+        .collect()
 }
 
 fn candidate_evidence_context(
@@ -2135,6 +2551,77 @@ fn autopilot_run_id(root: &Path, config: &AutopilotConfig, map: &CodebaseMap) ->
     stable_hash_hex(&bytes)
 }
 
+fn evolution_scorecard_id(
+    root: &Path,
+    config: &EvolutionScorecardConfig,
+    map: &CodebaseMap,
+    plan: &RefactorPlan,
+) -> String {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(root.display().to_string().as_bytes());
+    bytes.extend_from_slice(format!("{:?}", config.target).as_bytes());
+    bytes.extend_from_slice(map.map_hash.as_bytes());
+    bytes.extend_from_slice(plan.plan_hash.as_bytes());
+    stable_hash_hex(&bytes)
+}
+
+fn scorecard_next_commands(readiness: &AutonomyReadiness, plan: &RefactorPlan) -> Vec<String> {
+    let target = plan.target.as_deref().unwrap_or("<target>");
+    let target_arg = if target == "<target>" {
+        target.to_string()
+    } else {
+        shell_quote_argument(target)
+    };
+    let mut commands = vec![
+        format!("mdx-rust --json evidence {target_arg}"),
+        format!("mdx-rust --json map {target_arg}"),
+        format!("mdx-rust --json plan {target_arg}"),
+    ];
+    match readiness.grade {
+        AutonomyReadinessGrade::Tier2Ready => commands.push(format!(
+            "mdx-rust --json evolve {target_arg} --budget 10m --tier 2 --min-evidence covered"
+        )),
+        AutonomyReadinessGrade::Tier1Ready => commands.push(format!(
+            "mdx-rust --json evolve {target_arg} --budget 10m --tier 1"
+        )),
+        AutonomyReadinessGrade::Tier3Planning => {
+            commands.push(format!("mdx-rust --json plan {target_arg} --max-files 250"))
+        }
+        AutonomyReadinessGrade::ReviewOnly | AutonomyReadinessGrade::Blocked => {
+            commands.push("mdx-rust --json audit".to_string())
+        }
+    }
+    if let Some(path) = &plan.artifact_path {
+        commands.push(format!(
+            "mdx-rust --json explain {}",
+            shell_quote_argument(path)
+        ));
+    }
+    commands
+}
+
+fn shell_quote_argument(value: &str) -> String {
+    if value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'-' | b'_'))
+    {
+        return value.to_string();
+    }
+
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn audit_scope_path(root: &Path, target: Option<&Path>) -> PathBuf {
+    let Some(target) = target else {
+        return root.to_path_buf();
+    };
+    if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        root.join(target)
+    }
+}
+
 fn refactor_plan_hash(plan: &RefactorPlan) -> String {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(plan.schema_version.as_bytes());
@@ -2165,6 +2652,7 @@ fn candidate_hash(candidate: &RefactorCandidate) -> String {
     bytes.extend_from_slice(format!("{:?}", candidate.required_evidence).as_bytes());
     bytes.extend_from_slice(candidate.evidence_satisfied.to_string().as_bytes());
     bytes.extend_from_slice(format!("{:?}", candidate.evidence_context).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", candidate.autonomy).as_bytes());
     bytes.extend_from_slice(candidate.public_api_impact.to_string().as_bytes());
     bytes.extend_from_slice(format!("{:?}", candidate.apply_command).as_bytes());
     stable_hash_hex(&bytes)
@@ -2256,6 +2744,7 @@ fn executable_candidate_queue<'a>(
             || candidate.required_evidence > plan.evidence.grade
             || plan.evidence.grade < config.min_evidence
             || candidate.tier > config.max_tier
+            || candidate.autonomy.decision != AutonomyDecision::Allowed
         {
             continue;
         }
@@ -2548,6 +3037,22 @@ fn persist_autopilot_run(
         std::fs::write(&path, serde_json::to_string_pretty(&run)?)?;
     }
     Ok(run)
+}
+
+fn persist_evolution_scorecard(
+    artifact_root: &Path,
+    scorecard: &EvolutionScorecard,
+) -> anyhow::Result<PathBuf> {
+    let dir = artifact_root.join("scorecards");
+    std::fs::create_dir_all(&dir)?;
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    Ok(dir.join(format!(
+        "evolution-scorecard-{millis}-{}.json",
+        sanitize_id(&scorecard.scorecard_id)
+    )))
 }
 
 #[cfg(test)]

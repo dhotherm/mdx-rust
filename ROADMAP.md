@@ -111,8 +111,14 @@ Agent-first evidence-driven evolution.
   thresholds, risk, executable status, and mutation path for external agents.
 - `mdx-rust explain <artifact> --json` lets agents summarize evidence, map,
   plan, hardening, apply, and autopilot reports before choosing the next step.
+- `mdx-rust scorecard <target> --json` gives agents one briefing artifact with
+  map, plan, recipe catalog, autonomy readiness, and suggested next commands.
 - Maps and plans include security posture scores and severity counts to
   prioritize risky modules without weakening safety gates.
+- Plans include per-candidate autonomy decisions, and autonomous queues may
+  execute only candidates marked `Allowed`.
+- Security audit findings appear as review-oriented plan candidates so risky
+  modules are visible inside the same planning surface.
 - The agent contract advertises the new agent-facing commands and schema names.
 - Mutation remains CLI/JSON-first. MCP and API surfaces stay future work until
   the artifact contract has more field time.

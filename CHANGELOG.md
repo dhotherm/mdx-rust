@@ -9,7 +9,8 @@ Agent-first evidence-driven Rust evolution.
 This release makes mdx-rust easier for coding agents to drive safely and gives
 evidence more teeth. Evidence runs now profile files and functions, plans carry
 candidate evidence context, maps and plans include security posture, and the CLI
-can explain saved artifacts plus expose a typed recipe catalog.
+can explain saved artifacts, expose a typed recipe catalog, and produce one
+agent-first evolution scorecard.
 
 ### Added
 
@@ -21,10 +22,15 @@ can explain saved artifacts plus expose a typed recipe catalog.
   evidence, risk, execution status, and mutation path.
 - `mdx-rust explain <artifact>` for agent-readable artifact summaries and safe
   next actions.
-- JSON Schema export for `recipe-catalog` and `artifact-explanation`.
-- Agent contract entries for `recipes` and `explain`.
+- `mdx-rust scorecard [target]` for a single read-only briefing artifact that
+  combines map, plan, recipe catalog, autonomy readiness, and next commands.
+- Per-candidate autonomy decisions: allowed, review-only, or blocked.
+- Security audit findings as review-oriented plan candidates.
+- JSON Schema export for `recipe-catalog`, `artifact-explanation`, and
+  `evolution-scorecard`.
+- Agent contract entries for `recipes`, `explain`, and `scorecard`.
 - Tests proving recipe catalog, artifact explanation, evidence profiles, and
-  security posture remain machine-parseable.
+  scorecards remain machine-parseable.
 
 ### Changed
 
@@ -33,6 +39,8 @@ can explain saved artifacts plus expose a typed recipe catalog.
   now use schema version `0.8`.
 - Codebase quality scoring now includes security posture as an advisory
   prioritization signal.
+- `apply-plan --all`, `autopilot`, and `evolve` now require candidate autonomy
+  decisions to be `Allowed` before queueing a candidate.
 - README, safety invariants, API stability docs, architecture docs, provenance
   docs, release readiness, and the local mdx-rust hardening skill were refreshed
   for the v0.8 agent-first contract.

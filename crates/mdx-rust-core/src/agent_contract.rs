@@ -57,6 +57,16 @@ pub fn agent_contract() -> MdxAgentContract {
                 example: "mdx-rust --json recipes".to_string(),
             },
             AgentCommandSpec {
+                name: "scorecard".to_string(),
+                purpose:
+                    "Build one agent briefing with map, plan, recipe catalog, readiness, and next commands."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "evolution-scorecard".to_string(),
+                example: "mdx-rust --json scorecard src/service".to_string(),
+            },
+            AgentCommandSpec {
                 name: "evidence".to_string(),
                 purpose:
                     "Collect measured evidence profiles that control autonomous recipe depth."
@@ -134,6 +144,7 @@ pub fn agent_contract() -> MdxAgentContract {
                 steps: vec![
                     "mdx-rust --json agent-contract".to_string(),
                     "mdx-rust --json recipes".to_string(),
+                    "mdx-rust --json scorecard <target>".to_string(),
                     "mdx-rust --json evidence <target>".to_string(),
                     "mdx-rust --json map <target>".to_string(),
                     "mdx-rust --json plan <target>".to_string(),
@@ -154,6 +165,7 @@ pub fn agent_contract() -> MdxAgentContract {
         artifact_globs: vec![
             ".mdx-rust/evidence/*.json".to_string(),
             ".mdx-rust/maps/*.json".to_string(),
+            ".mdx-rust/scorecards/*.json".to_string(),
             ".mdx-rust/plans/*.json".to_string(),
             ".mdx-rust/autopilot/*.json".to_string(),
             ".mdx-rust/hardening/*.json".to_string(),

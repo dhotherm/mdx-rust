@@ -140,6 +140,12 @@ fn collect_rust_files_inner(
     if !root.exists() {
         return Ok(());
     }
+    if root.is_file() {
+        if root.extension().is_some_and(|extension| extension == "rs") {
+            files.push(root.to_path_buf());
+        }
+        return Ok(());
+    }
 
     for entry in std::fs::read_dir(root)? {
         let entry = entry?;

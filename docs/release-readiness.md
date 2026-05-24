@@ -55,6 +55,7 @@ mdx-rust schema evidence-run --json >/tmp/mdx-rust-evidence-schema.json
 mdx-rust schema agent-contract --json >/tmp/mdx-rust-agent-contract-schema.json
 mdx-rust schema recipe-catalog --json >/tmp/mdx-rust-recipe-catalog-schema.json
 mdx-rust schema artifact-explanation --json >/tmp/mdx-rust-artifact-explanation-schema.json
+mdx-rust schema evolution-scorecard --json >/tmp/mdx-rust-evolution-scorecard-schema.json
 mdx-rust schema refactor-plan --json >/tmp/mdx-rust-refactor-schema.json
 mdx-rust schema refactor-apply-run --json >/tmp/mdx-rust-refactor-apply-schema.json
 mdx-rust schema refactor-batch-apply-run --json >/tmp/mdx-rust-refactor-batch-apply-schema.json
@@ -63,6 +64,7 @@ mdx-rust schema autopilot-run --json >/tmp/mdx-rust-autopilot-schema.json
 mdx-rust eval --json >/tmp/mdx-rust-eval.json
 mdx-rust agent-contract --json >/tmp/mdx-rust-agent-contract.json
 mdx-rust recipes --json >/tmp/mdx-rust-recipes.json
+mdx-rust scorecard --json >/tmp/mdx-rust-scorecard.json
 mdx-rust evidence --json >/tmp/mdx-rust-evidence.json
 mdx-rust doctor --json >/tmp/mdx-rust-doctor.json
 mdx-rust map --json >/tmp/mdx-rust-map.json
@@ -109,6 +111,7 @@ From a clean checkout:
 ```bash
 cargo run -p mdx-rust -- plan crates/mdx-rust-core/src/refactor.rs --json
 cargo run -p mdx-rust -- map crates/mdx-rust-core/src/refactor.rs --json
+cargo run -p mdx-rust -- scorecard crates/mdx-rust-core/src/refactor.rs --json
 cargo run -p mdx-rust -- autopilot crates/mdx-rust-core/src/refactor.rs --json
 cargo run -p mdx-rust -- evolve crates/mdx-rust-core/src/refactor.rs --budget 60s --json
 cargo run -p mdx-rust -- schema refactor-plan --json
@@ -116,6 +119,7 @@ cargo run -p mdx-rust -- schema refactor-apply-run --json
 cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
 cargo run -p mdx-rust -- schema evidence-run --json
 cargo run -p mdx-rust -- schema agent-contract --json
+cargo run -p mdx-rust -- schema evolution-scorecard --json
 cargo run -p mdx-rust -- schema codebase-map --json
 cargo run -p mdx-rust -- schema autopilot-run --json
 ```
@@ -132,6 +136,7 @@ mdx-rust apply-plan .mdx-rust/plans/<plan>.json --candidate <candidate-id> --app
 mdx-rust apply-plan .mdx-rust/plans/<plan>.json --all --json
 mdx-rust apply-plan .mdx-rust/plans/<plan>.json --all --apply --json
 mdx-rust map src --json
+mdx-rust scorecard src --json
 mdx-rust autopilot src --json
 mdx-rust autopilot src --apply --json
 mdx-rust evolve src --budget 60s --min-evidence tested --json
