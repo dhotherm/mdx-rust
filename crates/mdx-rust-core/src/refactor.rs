@@ -10,8 +10,8 @@ use crate::hardening::{
 };
 use crate::policy::{load_project_policy, ProjectPolicy};
 use mdx_rust_analysis::{
-    analyze_hardening, analyze_refactor, HardeningAnalyzeConfig, HardeningFinding, ModuleEdge,
-    RefactorAnalyzeConfig, RefactorFileSummary,
+    analyze_hardening, analyze_refactor, HardeningAnalyzeConfig, HardeningEvidenceDepth,
+    HardeningFinding, ModuleEdge, RefactorAnalyzeConfig, RefactorFileSummary,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -361,10 +361,13 @@ pub enum RecipeTier {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum RefactorRecipe {
     BorrowParameterTightening,
+    ClonePressureReview,
     ContextualErrorHardening,
     ErrorContextPropagation,
     ExtractFunctionCandidate,
     IteratorCloned,
+    LenCheckIsEmpty,
+    LongFunctionReview,
     MustUsePublicReturn,
     RepeatedStringLiteralConst,
     SecurityBoundaryReview,
@@ -473,6 +476,7 @@ pub fn build_refactor_plan(
             target: config.target.as_deref(),
             max_files: config.max_files,
             max_recipe_tier: measured_hardening_tier(measured_evidence.as_ref()),
+            evidence_depth: hardening_depth_for_evidence(measured_evidence.as_ref()),
         },
     )?;
     let policy = load_project_policy(&root, config.policy_path.as_deref())?;
@@ -566,6 +570,7 @@ pub fn build_codebase_map(
             target: config.target.as_deref(),
             max_files: config.max_files,
             max_recipe_tier: measured_hardening_tier(measured_evidence.as_ref()),
+            evidence_depth: hardening_depth_for_evidence(measured_evidence.as_ref()),
         },
     )?;
     let policy = load_project_policy(&root, config.policy_path.as_deref())?;
@@ -911,6 +916,7 @@ pub fn apply_refactor_plan_candidate(
             apply: config.apply,
             max_files: 1,
             max_recipe_tier: recipe_tier_number(candidate.tier),
+            evidence_depth: hardening_depth_for_grade(candidate.required_evidence),
             validation_timeout: config.validation_timeout,
         },
     )?;
@@ -1054,6 +1060,7 @@ pub fn apply_refactor_plan_batch(
                 apply: config.apply,
                 max_files: 1,
                 max_recipe_tier: recipe_tier_number(candidate.tier),
+                evidence_depth: hardening_depth_for_grade(candidate.required_evidence),
                 validation_timeout: config.validation_timeout,
             },
         )?;
@@ -1345,10 +1352,30 @@ fn max_tier_for_evidence(grade: EvidenceGrade) -> u8 {
 }
 
 fn measured_hardening_tier(measured: Option<&EvidenceRun>) -> u8 {
-    if measured.is_some_and(|run| run.grade >= EvidenceGrade::Covered) {
-        2
-    } else {
-        1
+    match measured.map(|run| run.grade) {
+        Some(EvidenceGrade::Hardened | EvidenceGrade::Proven) => 3,
+        Some(EvidenceGrade::Covered) => 2,
+        _ => 1,
+    }
+}
+
+fn hardening_depth_for_evidence(measured: Option<&EvidenceRun>) -> HardeningEvidenceDepth {
+    match measured.map(|run| run.grade) {
+        Some(EvidenceGrade::Proven) => HardeningEvidenceDepth::Proven,
+        Some(EvidenceGrade::Hardened) => HardeningEvidenceDepth::Hardened,
+        Some(EvidenceGrade::Covered) => HardeningEvidenceDepth::Covered,
+        Some(EvidenceGrade::Tested) => HardeningEvidenceDepth::Tested,
+        _ => HardeningEvidenceDepth::Basic,
+    }
+}
+
+fn hardening_depth_for_grade(grade: EvidenceGrade) -> HardeningEvidenceDepth {
+    match grade {
+        EvidenceGrade::Proven => HardeningEvidenceDepth::Proven,
+        EvidenceGrade::Hardened => HardeningEvidenceDepth::Hardened,
+        EvidenceGrade::Covered => HardeningEvidenceDepth::Covered,
+        EvidenceGrade::Tested => HardeningEvidenceDepth::Tested,
+        EvidenceGrade::None | EvidenceGrade::Compiled => HardeningEvidenceDepth::Basic,
     }
 }
 
@@ -1457,11 +1484,7 @@ fn hardening_candidates(
         .iter()
         .filter_map(|finding| {
             let file = finding.file.display().to_string();
-            let required_evidence = if finding.patchable {
-                required_evidence_for_hardening_strategy(&finding.strategy)
-            } else {
-                EvidenceGrade::Tested
-            };
+            let required_evidence = required_evidence_for_hardening_strategy(&finding.strategy);
             let evidence_satisfied = evidence.grade >= required_evidence;
             let recipe = recipe_for_hardening_strategy(&finding.strategy);
             if !finding.patchable && !evidence_satisfied {
@@ -1469,7 +1492,12 @@ fn hardening_candidates(
             }
 
             Some(RefactorCandidate {
-                id: format!("plan-hardening-{}-{}", sanitize_id(&file), finding.line),
+                id: format!(
+                    "plan-hardening-{}-{}-{}",
+                    sanitize_id(&file),
+                    sanitize_id(&format!("{:?}", finding.strategy)),
+                    finding.line
+                ),
                 candidate_hash: String::new(),
                 recipe,
                 title: finding.title.clone(),
@@ -1494,7 +1522,9 @@ fn hardening_candidates(
                 } else {
                     RefactorCandidateStatus::PlanOnly
                 },
-                tier: if required_evidence >= EvidenceGrade::Covered {
+                tier: if required_evidence >= EvidenceGrade::Hardened {
+                    RecipeTier::Tier3
+                } else if required_evidence >= EvidenceGrade::Covered {
                     RecipeTier::Tier2
                 } else if finding.patchable {
                     RecipeTier::Tier1
@@ -1525,7 +1555,17 @@ fn required_evidence_for_hardening_strategy(
     strategy: &mdx_rust_analysis::HardeningStrategy,
 ) -> EvidenceGrade {
     match strategy {
-        mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => EvidenceGrade::Covered,
+        mdx_rust_analysis::HardeningStrategy::LenCheckIsEmpty
+        | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => {
+            EvidenceGrade::Covered
+        }
+        mdx_rust_analysis::HardeningStrategy::ClonePressureReview
+        | mdx_rust_analysis::HardeningStrategy::LongFunctionReview => EvidenceGrade::Hardened,
+        mdx_rust_analysis::HardeningStrategy::EnvAccessReview
+        | mdx_rust_analysis::HardeningStrategy::FileIoReview
+        | mdx_rust_analysis::HardeningStrategy::HttpSurfaceReview
+        | mdx_rust_analysis::HardeningStrategy::ProcessExecutionReview
+        | mdx_rust_analysis::HardeningStrategy::UnsafeReview => EvidenceGrade::Tested,
         _ => EvidenceGrade::Compiled,
     }
 }
@@ -1541,8 +1581,15 @@ fn recipe_for_hardening_strategy(
             RefactorRecipe::ErrorContextPropagation
         }
         mdx_rust_analysis::HardeningStrategy::IteratorCloned => RefactorRecipe::IteratorCloned,
+        mdx_rust_analysis::HardeningStrategy::LenCheckIsEmpty => RefactorRecipe::LenCheckIsEmpty,
         mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => {
             RefactorRecipe::MustUsePublicReturn
+        }
+        mdx_rust_analysis::HardeningStrategy::ClonePressureReview => {
+            RefactorRecipe::ClonePressureReview
+        }
+        mdx_rust_analysis::HardeningStrategy::LongFunctionReview => {
+            RefactorRecipe::LongFunctionReview
         }
         mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => {
             RefactorRecipe::RepeatedStringLiteralConst
@@ -1570,6 +1617,8 @@ fn risk_for_hardening_strategy(
         | mdx_rust_analysis::HardeningStrategy::UnsafeReview => RefactorRiskLevel::High,
         mdx_rust_analysis::HardeningStrategy::EnvAccessReview
         | mdx_rust_analysis::HardeningStrategy::FileIoReview
+        | mdx_rust_analysis::HardeningStrategy::ClonePressureReview
+        | mdx_rust_analysis::HardeningStrategy::LongFunctionReview
         | mdx_rust_analysis::HardeningStrategy::HttpSurfaceReview => RefactorRiskLevel::Medium,
         _ => RefactorRiskLevel::Low,
     }
@@ -1580,9 +1629,19 @@ fn structural_candidates(
     evidence: &EvidenceSummary,
 ) -> Vec<RefactorCandidate> {
     let mut candidates = Vec::new();
+    let split_threshold = if evidence.grade >= EvidenceGrade::Hardened {
+        220
+    } else {
+        300
+    };
+    let extract_threshold = if evidence.grade >= EvidenceGrade::Hardened {
+        50
+    } else {
+        80
+    };
     for file in files {
         let file_path = file.file.display().to_string();
-        if file.line_count >= 300 {
+        if file.line_count >= split_threshold {
             let required_evidence = EvidenceGrade::Covered;
             candidates.push(RefactorCandidate {
                 id: format!("plan-split-module-{}", sanitize_id(&file_path)),
@@ -1590,7 +1649,7 @@ fn structural_candidates(
                 recipe: RefactorRecipe::SplitModuleCandidate,
                 title: "Split oversized module".to_string(),
                 rationale: format!(
-                    "{} has {} lines. Split only after reviewing public API and module edges.",
+                    "{} has {} lines. Current evidence threshold is {split_threshold} lines for split-module planning.",
                     file_path, file.line_count
                 ),
                 file: file_path.clone(),
@@ -1615,7 +1674,7 @@ fn structural_candidates(
             });
         }
 
-        if file.largest_function_lines >= 80 {
+        if file.largest_function_lines >= extract_threshold {
             let required_evidence = EvidenceGrade::Covered;
             candidates.push(RefactorCandidate {
                 id: format!("plan-extract-function-{}", sanitize_id(&file_path)),
@@ -1623,7 +1682,7 @@ fn structural_candidates(
                 recipe: RefactorRecipe::ExtractFunctionCandidate,
                 title: "Extract long function".to_string(),
                 rationale: format!(
-                    "Largest function in {} is {} lines. Extract only with behavior coverage in place.",
+                    "Largest function in {} is {} lines. Current evidence threshold is {extract_threshold} lines for extract-function planning.",
                     file_path, file.largest_function_lines
                 ),
                 file: file_path.clone(),
@@ -1913,6 +1972,7 @@ fn is_supported_mechanical_recipe(recipe: &RefactorRecipe) -> bool {
             | RefactorRecipe::ContextualErrorHardening
             | RefactorRecipe::ErrorContextPropagation
             | RefactorRecipe::IteratorCloned
+            | RefactorRecipe::LenCheckIsEmpty
             | RefactorRecipe::MustUsePublicReturn
             | RefactorRecipe::RepeatedStringLiteralConst
     )
@@ -2303,7 +2363,10 @@ edition = "2021"
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
         std::fs::write(
             dir.path().join("src/lib.rs"),
-            r#"pub fn labels() -> Vec<&'static str> {
+            r#"pub fn labels(items: &[String]) -> Vec<&'static str> {
+    if items.len() == 0 {
+        return vec!["shared boundary label"];
+    }
     vec![
         "shared boundary label",
         "shared boundary label",
@@ -2322,6 +2385,7 @@ edition = "2021"
             target: Some("src/lib.rs".to_string()),
             grade: EvidenceGrade::Covered,
             analysis_depth: EvidenceAnalysisDepth::Structural,
+            metrics: Vec::new(),
             commands: Vec::new(),
             unlocked_recipe_tiers: vec!["Tier 2 structural mechanical recipes".to_string()],
             unlock_suggestions: Vec::new(),
@@ -2360,5 +2424,10 @@ edition = "2021"
                 .apply_command
                 .as_deref()
                 .is_some_and(|command| command.contains("--tier 2"))));
+        assert!(plan.candidates.iter().any(|candidate| candidate.recipe
+            == RefactorRecipe::LenCheckIsEmpty
+            && candidate.status == RefactorCandidateStatus::ApplyViaImprove
+            && candidate.required_evidence == EvidenceGrade::Covered
+            && candidate.tier == RecipeTier::Tier2));
     }
 }

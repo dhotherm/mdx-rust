@@ -30,8 +30,11 @@ pub struct HardeningFinding {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum HardeningStrategy {
     BorrowParameterTightening,
+    ClonePressureReview,
     ErrorContextPropagation,
     IteratorCloned,
+    LenCheckIsEmpty,
+    LongFunctionReview,
     MechanicalTier1Cleanup,
     MustUsePublicReturn,
     RepeatedStringLiteralConst,
@@ -58,6 +61,18 @@ pub struct HardeningAnalyzeConfig<'a> {
     pub target: Option<&'a Path>,
     pub max_files: usize,
     pub max_recipe_tier: u8,
+    pub evidence_depth: HardeningEvidenceDepth,
+}
+
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord,
+)]
+pub enum HardeningEvidenceDepth {
+    Basic,
+    Tested,
+    Covered,
+    Hardened,
+    Proven,
 }
 
 pub fn analyze_hardening(
@@ -160,6 +175,10 @@ pub fn analyze_hardening(
             }
         }
 
+        if config.evidence_depth >= HardeningEvidenceDepth::Hardened {
+            add_hardened_evidence_findings(&rel, &content, &function_ranges, &mut findings);
+        }
+
         if let Some(change) =
             build_mechanical_change(root, file, &content, &function_ranges, &config)?
         {
@@ -225,6 +244,7 @@ fn build_mechanical_change(
         &mut findings,
     );
     if config.max_recipe_tier >= 2 {
+        apply_len_check_is_empty_recipe(&rel, &mut lines, &mut finding_ids, &mut findings);
         apply_repeated_string_literal_const_recipe(
             &rel,
             &mut lines,
@@ -266,6 +286,57 @@ fn build_mechanical_change(
         },
         findings,
     }))
+}
+
+fn add_hardened_evidence_findings(
+    rel: &Path,
+    content: &str,
+    function_ranges: &[FunctionRange],
+    findings: &mut Vec<HardeningFinding>,
+) {
+    let mut clone_lines = Vec::new();
+    for (index, line) in content.lines().enumerate() {
+        let pattern_line = line_without_comments_or_strings(line);
+        if pattern_line.contains(".clone()") {
+            clone_lines.push(index + 1);
+        }
+    }
+    if clone_lines.len() >= 3 {
+        findings.push(HardeningFinding {
+            id: format!("clone-pressure-review:{}:{}", rel.display(), clone_lines[0]),
+            title: "Clone pressure review".to_string(),
+            description: format!(
+                "Hardened evidence unlocks deeper clone-pressure analysis; this file has {} visible clone callsites for future semantic cleanup.",
+                clone_lines.len()
+            ),
+            file: rel.to_path_buf(),
+            line: clone_lines[0],
+            strategy: HardeningStrategy::ClonePressureReview,
+            patchable: false,
+        });
+    }
+
+    for range in function_ranges {
+        let function_len = range.end_line.saturating_sub(range.start_line) + 1;
+        if function_len >= 50 {
+            findings.push(HardeningFinding {
+                id: format!(
+                    "long-function-review:{}:{}",
+                    rel.display(),
+                    range.signature_start_line
+                ),
+                title: "Long function refactor candidate".to_string(),
+                description: format!(
+                    "Hardened evidence unlocks deeper function-shape analysis; `{}` spans {function_len} lines and may be ready for extract-function planning.",
+                    range.name
+                ),
+                file: rel.to_path_buf(),
+                line: range.signature_start_line,
+                strategy: HardeningStrategy::LongFunctionReview,
+                patchable: false,
+            });
+        }
+    }
 }
 
 fn apply_result_context_recipe(
@@ -535,6 +606,38 @@ fn apply_borrowed_vec_literal_recipe(
             file: rel.to_path_buf(),
             line: line_no,
             strategy: HardeningStrategy::BorrowParameterTightening,
+            patchable: true,
+        });
+    }
+}
+
+fn apply_len_check_is_empty_recipe(
+    rel: &Path,
+    lines: &mut [String],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    for (line_index, line) in lines.iter_mut().enumerate() {
+        if line.trim_start().starts_with("//") || !line.contains(".len() == 0") {
+            continue;
+        }
+        let original = line.clone();
+        let rewritten = original.replace(".len() == 0", ".is_empty()");
+        if rewritten == original {
+            continue;
+        }
+
+        *line = rewritten;
+        let line_no = line_index + 1;
+        let id = format!("len-check-is-empty:{}:{line_no}", rel.display());
+        finding_ids.push(id.clone());
+        findings.push(HardeningFinding {
+            id,
+            title: "Use is_empty for zero-length check".to_string(),
+            description: "Replace len() == 0 with is_empty() under Tier 2 evidence gates and compile validation.".to_string(),
+            file: rel.to_path_buf(),
+            line: line_no,
+            strategy: HardeningStrategy::LenCheckIsEmpty,
             patchable: true,
         });
     }
@@ -1019,6 +1122,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
             },
         )
         .unwrap();
@@ -1053,6 +1157,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
             },
         )
         .unwrap();
@@ -1091,6 +1196,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
             },
         )
         .unwrap();
@@ -1118,6 +1224,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
             },
         )
         .unwrap();
@@ -1154,6 +1261,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
             },
         )
         .unwrap();
@@ -1188,6 +1296,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
             },
         )
         .unwrap();
@@ -1226,6 +1335,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
             },
         )
         .unwrap();
@@ -1237,6 +1347,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 2,
+                evidence_depth: HardeningEvidenceDepth::Covered,
             },
         )
         .unwrap();
@@ -1249,6 +1360,89 @@ mod tests {
             .iter()
             .any(|id| id.contains("repeated-string-literal-const")));
         assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
+    fn tier2_rewrites_len_zero_checks_when_enabled() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"pub fn empty(items: &[String]) -> bool {
+    items.len() == 0
+}
+"#,
+        )
+        .unwrap();
+
+        let tier2 = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 2,
+                evidence_depth: HardeningEvidenceDepth::Covered,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(tier2.changes.len(), 1);
+        let change = &tier2.changes[0];
+        assert!(change.new_content.contains("items.is_empty()"));
+        assert!(change
+            .finding_ids
+            .iter()
+            .any(|id| id.contains("len-check-is-empty")));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
+    fn hardened_evidence_adds_deeper_review_findings() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut body = String::from("pub fn clone_pressure(values: &[String]) -> Vec<String> {\n");
+        body.push_str("    let a = values[0].clone();\n");
+        body.push_str("    let b = values[1].clone();\n");
+        body.push_str("    let c = values[2].clone();\n");
+        for index in 0..50 {
+            body.push_str(&format!("    let _v{index} = {index};\n"));
+        }
+        body.push_str("    vec![a, b, c]\n}\n");
+        std::fs::write(src.join("lib.rs"), body).unwrap();
+
+        let basic = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
+            },
+        )
+        .unwrap();
+        assert!(!basic.findings.iter().any(|finding| matches!(
+            finding.strategy,
+            HardeningStrategy::ClonePressureReview | HardeningStrategy::LongFunctionReview
+        )));
+
+        let hardened = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Hardened,
+            },
+        )
+        .unwrap();
+        assert!(hardened.findings.iter().any(|finding| {
+            finding.strategy == HardeningStrategy::ClonePressureReview && !finding.patchable
+        }));
+        assert!(hardened.findings.iter().any(|finding| {
+            finding.strategy == HardeningStrategy::LongFunctionReview && !finding.patchable
+        }));
     }
 
     #[test]
@@ -1272,6 +1466,7 @@ mod tests {
                 target: None,
                 max_files: 10,
                 max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
             },
         )
         .unwrap();

@@ -61,6 +61,12 @@ agent-facing contracts inspectable and gives future MCP or hook integrations a
 stable validation target without making the Rust library API stable before
 `1.0`.
 
+`mdx-rust agent-contract` is the discovery surface for external coding agents.
+It emits the command list, mutation contract, required mutation flags, schema
+names, artifact globs, and recommended workflows. Agents should consume that
+contract before calling `map`, `plan`, `evidence`, `autopilot`, `evolve`, or
+`apply-plan`.
+
 ## Hardening Lifecycle
 
 The hardening engine is a separate path for ordinary Rust modules:
@@ -145,9 +151,11 @@ Public API-impacting candidates require explicit allowance before execution.
 without creating a second mutation engine.
 
 `mdx-rust evidence` runs bounded local commands, persists command records under
-`.mdx-rust/evidence/`, and assigns an evidence grade. By default it measures
-Cargo metadata and `cargo test`. Optional flags can request coverage, mutation,
-and semver checks when the corresponding Cargo tools are installed.
+`.mdx-rust/evidence/`, assigns an evidence grade, and records parsed metrics
+such as coverage percentage or mutation score when tool output exposes them. By
+default it measures Cargo metadata and `cargo test`. Optional flags can request
+coverage, mutation, and semver checks when the corresponding Cargo tools are
+installed.
 
 `mdx-rust map` scans the requested workspace, file, or directory and writes a
 codebase map under `.mdx-rust/maps/`. The map includes workspace metadata,
@@ -186,8 +194,10 @@ Evidence grades control proportional aggression:
   for boundary and security-sensitive findings.
 - `Covered`: Tier 2 structural mechanical recipes may execute when the caller
   explicitly requests Tier 2.
-- `Hardened` and `Proven`: reserved for broader Tier 3 semantic recipes once
-  mutation and stronger proof evidence are actually run.
+- `Hardened` and `Proven`: unlock deeper clone-pressure and long-function
+  review findings, lower structural planning thresholds, and prepare the queue
+  for future Tier 3 semantic recipes once those recipes have dedicated
+  validation contracts.
 
 The v0.7 executable Tier 1 recipe set is intentionally mechanical:
 
@@ -200,10 +210,11 @@ The v0.7 executable Tier 1 recipe set is intentionally mechanical:
   form such as `to_vec()`
 - `#[must_use]` annotations for public value-returning functions
 
-The first v0.7 executable Tier 2 recipe is deliberately narrow:
+The v0.7 executable Tier 2 recipes are deliberately narrow:
 
 - repeated private string literal extraction into a file-local constant
+- zero-length checks from `len() == 0` to `is_empty()`
 
-It only appears in the executable queue when a measured evidence artifact
+They only appear in the executable queue when a measured evidence artifact
 reaches `Covered`, the caller requests Tier 2, and the candidate still passes
 plan freshness, isolated validation, final validation, and rollback gates.

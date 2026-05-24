@@ -16,6 +16,8 @@
 //! hidden from rustdoc because they are implementation detail for now.
 
 #[doc(hidden)]
+pub mod agent_contract;
+#[doc(hidden)]
 pub mod config;
 #[doc(hidden)]
 pub mod eval;
@@ -46,6 +48,8 @@ pub mod security;
 #[doc(hidden)]
 pub mod trace;
 
+/// Agent-facing command contract for safe automation.
+pub use agent_contract::{agent_contract, AgentCommandSpec, AgentWorkflow, MdxAgentContract};
 /// Configuration loading and defaults used by the CLI.
 pub use config::Config;
 /// Dataset and scorer metadata used by optimizer reports.
@@ -56,13 +60,13 @@ pub use eval::{
 /// Measured evidence artifacts used to gate autonomy. Unstable before `1.0`.
 pub use evidence::{
     load_latest_evidence, load_latest_evidence_for_root, run_evidence, EvidenceArtifactRef,
-    EvidenceCommandRecord, EvidenceRun, EvidenceRunConfig,
+    EvidenceCommandRecord, EvidenceMetric, EvidenceRun, EvidenceRunConfig,
 };
 /// Scoped Rust hardening engine for ordinary Rust modules. Unstable before `1.0`.
 pub use hardening::{
-    run_hardening, HardeningChangeSummary, HardeningConfig, HardeningMode, HardeningOutcome,
-    HardeningPolicyRecord, HardeningRiskSummary, HardeningRun, HardeningStatus, PolicyFindingMatch,
-    WorkspaceSummary,
+    run_hardening, HardeningChangeSummary, HardeningConfig, HardeningEvidenceDepth, HardeningMode,
+    HardeningOutcome, HardeningPolicyRecord, HardeningRiskSummary, HardeningRun, HardeningStatus,
+    PolicyFindingMatch, WorkspaceSummary,
 };
 /// Built-in lifecycle hook primitives. These are unstable before `1.0`.
 pub use hooks::{

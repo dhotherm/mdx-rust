@@ -51,12 +51,19 @@ Today it supports:
 - `autopilot` multi-pass orchestration that maps, plans, applies the safe
   queue, replans after mutation, and persists an audit report.
 - `evolve` budget-bounded autonomous improvement for agent callers.
+- `agent-contract` machine-readable command guidance so external coding agents
+  can discover safe commands, mutation requirements, schemas, and artifact
+  locations before acting.
 - Five executable Tier 1 mechanical recipes: contextual error hardening,
   boundary error context propagation, private borrow parameter tightening,
   iterator clone cleanup, and
   `#[must_use]` annotations for public value-returning functions.
-- One coverage-gated Tier 2 structural mechanical recipe: extracting repeated
-  private string literals into file-local constants.
+- Two coverage-gated Tier 2 structural mechanical recipes: extracting repeated
+  private string literals into file-local constants, and replacing zero-length
+  checks with `is_empty()`.
+- Hardened evidence analysis that surfaces deeper clone-pressure and long
+  function review candidates, with lower structural planning thresholds than
+  low-evidence targets.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -77,6 +84,9 @@ how aggressive it may be.
   `.mdx-rust/evidence/`.
 - Add `--include-coverage`, `--include-mutation`, and `--include-semver` when
   you want heavier proof signals to unlock deeper autonomy.
+- Run `mdx-rust agent-contract --json` before handing control to another
+  coding agent. It tells the agent which commands are read-only, which require
+  `--apply`, which schemas to expect, and which artifacts to inspect.
 - Run `mdx-rust map <target>` to get a repo quality profile, debt score,
   measured evidence reference, capability gates, findings, and next actions.
 - Run `mdx-rust plan <target>` to produce a non-mutating refactor plan.
@@ -117,11 +127,18 @@ The executable Tier 1 recipe set is deliberately broader than panic cleanup:
 - Add `#[must_use]` to public value-returning functions when the return type is
   not already a common must-use type.
 
-The first executable Tier 2 recipe is intentionally narrow but real:
+The first executable Tier 2 recipes are intentionally narrow but real:
 
 - Extract a repeated private string literal into a file-local constant only
   when measured evidence reaches `Covered`, the caller allows Tier 2, and the
   normal validation and rollback gates pass.
+- Replace `len() == 0` with `is_empty()` under the same measured `Covered`
+  evidence, explicit Tier 2 request, and validation gates.
+
+Evidence also changes analysis depth, not just execution permission. A
+`Hardened` or `Proven` evidence artifact unlocks deeper clone-pressure findings
+and lower thresholds for long-function and split-module planning. Those higher
+risk items still remain plan-first unless a dedicated executable recipe exists.
 
 Not yet supported:
 
@@ -189,7 +206,31 @@ environment access, filesystem boundaries, and HTTP surfaces. `mdx-rust
 evidence` can persist measured test, coverage, mutation, and semver command
 outcomes. When the latest evidence artifact reaches `Covered`, Tier 2
 structural mechanical recipes can enter the executable queue if the caller also
-requests Tier 2.
+requests Tier 2. When evidence reaches `Hardened` or `Proven`, mdx-rust also
+searches for deeper refactor pressure that low-evidence targets do not surface.
+
+## Agent-First Usage
+
+`mdx-rust` treats external coding agents as first-class callers. Agents should
+start by reading the command contract:
+
+```bash
+mdx-rust --json agent-contract
+mdx-rust --json schema agent-contract
+```
+
+A safe agent workflow for a normal Rust backend looks like this:
+
+```bash
+mdx-rust --json evidence src/service --include-coverage
+mdx-rust --json map src/service
+mdx-rust --json plan src/service
+mdx-rust --json evolve src/service --budget 10m --tier 2 --min-evidence covered
+```
+
+The final command is review mode by default. An agent should add `--apply` only
+when the human asked for mutation. Every JSON response includes artifact paths
+that the agent can inspect before recommending or continuing work.
 
 ## Quick Start
 

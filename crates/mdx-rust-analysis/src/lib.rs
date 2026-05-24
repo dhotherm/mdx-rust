@@ -31,8 +31,8 @@ pub use finders::{
 };
 /// Conservative Rust hardening analysis for ordinary Rust modules.
 pub use hardening::{
-    analyze_hardening, HardeningAnalysis, HardeningAnalyzeConfig, HardeningFileChange,
-    HardeningFinding, HardeningStrategy,
+    analyze_hardening, HardeningAnalysis, HardeningAnalyzeConfig, HardeningEvidenceDepth,
+    HardeningFileChange, HardeningFinding, HardeningStrategy,
 };
 /// Plan-first refactor analysis for ordinary Rust modules.
 pub use refactor::{

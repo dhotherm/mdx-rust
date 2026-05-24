@@ -60,6 +60,9 @@ enum Commands {
         review: bool,
     },
 
+    /// Print the machine-readable command contract for coding agents
+    AgentContract,
+
     /// Collect measured evidence that controls autonomous recipe depth
     Evidence {
         /// File or directory to associate with the evidence run
@@ -306,8 +309,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: agent-contract, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["agent-contract", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -354,6 +357,12 @@ fn main() {
         } => {
             if let Err(e) = cmd_optimize(&name, iterations, &budget, review, cli.json) {
                 emit_error(cli.json, "optimize", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::AgentContract => {
+            if let Err(e) = cmd_agent_contract(cli.json) {
+                emit_error(cli.json, "agent-contract", &e);
                 std::process::exit(1);
             }
         }
@@ -761,6 +770,31 @@ struct EvidenceCommand<'a> {
     include_semver: bool,
     timeout_seconds: u64,
     json: bool,
+}
+
+fn cmd_agent_contract(json: bool) -> anyhow::Result<()> {
+    let contract = mdx_rust_core::agent_contract();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&contract)?);
+        return Ok(());
+    }
+
+    println!("🤖 mdx-rust agent contract");
+    println!("   Schema: {}", contract.schema_version);
+    println!("   Version: {}", contract.product_version);
+    println!("   JSON mode: {}", contract.json_mode_contract);
+    println!("   Mutation: {}", contract.mutation_contract);
+    println!("   Agent-safe commands:");
+    for command in &contract.commands {
+        let mutation = if command.mutates_source {
+            "mutation-capable"
+        } else {
+            "read-only"
+        };
+        println!("   - {} ({mutation}): {}", command.name, command.purpose);
+    }
+    println!("   Start with: mdx-rust --json agent-contract");
+    Ok(())
 }
 
 fn cmd_evidence(args: EvidenceCommand<'_>) -> anyhow::Result<()> {
@@ -1327,6 +1361,7 @@ fn cmd_improve(args: ImproveCommand<'_>) -> anyhow::Result<()> {
             apply: args.apply,
             max_files: args.max_files,
             max_recipe_tier: parse_recipe_tier_number(args.tier)?,
+            evidence_depth: evidence_depth_for_tier(parse_recipe_tier_number(args.tier)?),
             validation_timeout: std::time::Duration::from_secs(args.timeout_seconds),
         },
     )?;
@@ -1618,6 +1653,14 @@ fn parse_recipe_tier_number(value: &str) -> anyhow::Result<u8> {
     })
 }
 
+fn evidence_depth_for_tier(tier: u8) -> mdx_rust_core::HardeningEvidenceDepth {
+    match tier {
+        0 | 1 => mdx_rust_core::HardeningEvidenceDepth::Basic,
+        2 => mdx_rust_core::HardeningEvidenceDepth::Covered,
+        _ => mdx_rust_core::HardeningEvidenceDepth::Hardened,
+    }
+}
+
 fn parse_evidence_grade(value: &str) -> anyhow::Result<mdx_rust_core::EvidenceGrade> {
     match value.to_ascii_lowercase().as_str() {
         "none" => Ok(mdx_rust_core::EvidenceGrade::None),
@@ -1854,6 +1897,9 @@ fn cmd_workspace_audit(policy: Option<&str>, json: bool) -> anyhow::Result<()> {
 
 fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
     let schema = match kind {
+        "agent-contract" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::MdxAgentContract))?
+        }
         "audit-packet" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::AuditPacket))?,
         "candidate" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::Candidate))?,
         "optimization-run" => {

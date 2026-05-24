@@ -52,12 +52,14 @@ mdx-rust schema hardening-run --json >/tmp/mdx-rust-hardening-schema.json
 mdx-rust schema behavior-eval-report --json >/tmp/mdx-rust-behavior-schema.json
 mdx-rust schema project-policy --json >/tmp/mdx-rust-policy-schema.json
 mdx-rust schema evidence-run --json >/tmp/mdx-rust-evidence-schema.json
+mdx-rust schema agent-contract --json >/tmp/mdx-rust-agent-contract-schema.json
 mdx-rust schema refactor-plan --json >/tmp/mdx-rust-refactor-schema.json
 mdx-rust schema refactor-apply-run --json >/tmp/mdx-rust-refactor-apply-schema.json
 mdx-rust schema refactor-batch-apply-run --json >/tmp/mdx-rust-refactor-batch-apply-schema.json
 mdx-rust schema codebase-map --json >/tmp/mdx-rust-codebase-map-schema.json
 mdx-rust schema autopilot-run --json >/tmp/mdx-rust-autopilot-schema.json
 mdx-rust eval --json >/tmp/mdx-rust-eval.json
+mdx-rust agent-contract --json >/tmp/mdx-rust-agent-contract.json
 mdx-rust evidence --json >/tmp/mdx-rust-evidence.json
 mdx-rust doctor --json >/tmp/mdx-rust-doctor.json
 mdx-rust map --json >/tmp/mdx-rust-map.json
@@ -110,6 +112,7 @@ cargo run -p mdx-rust -- schema refactor-plan --json
 cargo run -p mdx-rust -- schema refactor-apply-run --json
 cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
 cargo run -p mdx-rust -- schema evidence-run --json
+cargo run -p mdx-rust -- schema agent-contract --json
 cargo run -p mdx-rust -- schema codebase-map --json
 cargo run -p mdx-rust -- schema autopilot-run --json
 ```
@@ -158,9 +161,14 @@ The evidence smoke should include a measured `Tested` fixture with a
 review-only boundary finding and prove the plan surfaces a Tier 2 plan-only
 candidate without making it executable.
 
-The Tier 2 smoke should include a measured `Covered` fixture and prove that a
-repeated private string literal candidate becomes executable only when the
-caller requests Tier 2 and `--min-evidence covered`.
+The Tier 2 smoke should include a measured `Covered` fixture and prove that
+repeated private string literal extraction and `len() == 0` to `is_empty()`
+candidates become executable only when the caller requests Tier 2 and
+`--min-evidence covered`.
+
+The hardened evidence smoke should include a measured `Hardened` fixture and
+prove that clone-pressure and long-function review findings appear where a
+basic evidence scan would not surface them.
 
 ## Performance Sanity
 

@@ -107,9 +107,13 @@ allowed to move quickly, but it must not create a second mutation path.
   cleanup, and `#[must_use]` annotation. They are allowed to execute only
   through the same hardening transaction path.
 - v0.7 executable Tier 2 recipes require measured `Covered` evidence, an
-  explicit Tier 2 request, and the same hardening transaction path. The first
-  supported Tier 2 recipe is repeated private string literal extraction into a
-  file-local constant.
+  explicit Tier 2 request, and the same hardening transaction path. The
+  supported Tier 2 recipes are repeated private string literal extraction into a
+  file-local constant and `len() == 0` to `is_empty()` cleanup.
+- v0.7 `Hardened` and `Proven` evidence may unlock deeper analysis findings,
+  such as clone-pressure review and long-function review. These findings are
+  planning evidence only unless a dedicated executable recipe marks them
+  executable and routes them through the same hardening transaction path.
 - `Tested` evidence may surface additional boundary-aware Tier 2 review
   candidates, but those candidates remain plan-only until a dedicated
   executable recipe and validation contract exists.
@@ -141,6 +145,9 @@ allowed to move quickly, but it must not create a second mutation path.
 - Measured evidence artifacts can raise the visible grade, but they never
   replace per-candidate isolated validation, final validation, rollback, or
   behavior eval gates.
+- Measured evidence may change what the analyzer looks for. That extra analysis
+  must only add candidates or gates; it must not make a lower-evidence
+  candidate executable.
 - Autopilot reports are orchestration evidence only. They must point back to
   the concrete plans, apply-plan reports, hardening reports, validation
   records, and rollback evidence that justified each step.
@@ -184,6 +191,11 @@ Accepted runs must record enough evidence for another engineer or agent to inspe
 Agent-facing provenance, hook, trace, candidate, eval, and audit records should
 derive JSON Schema so external agents can validate the contract before
 depending on it.
+
+`mdx-rust agent-contract --json` is the machine-readable entrypoint for coding
+agents. It must describe read-only commands, mutation-capable commands,
+required mutation flags, schemas, artifact globs, and safety rules. It is
+guidance for agents, not permission to bypass any invariant in this document.
 
 For `v0.2`, every accepted change must also emit a versioned JSON audit packet
 under `.mdx-rust/agents/<name>/experiments/`. See

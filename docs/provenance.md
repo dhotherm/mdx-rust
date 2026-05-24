@@ -16,8 +16,8 @@ mdx-rust schema audit-packet --json
 
 Other exported schemas include `candidate`, `optimization-run`,
 `hook-decision`, `trace-event`, `hardening-run`, `hardening-finding`,
-`evidence-run`, `refactor-plan`, `refactor-apply-run`, `refactor-batch-apply-run`,
-`codebase-map`, and `autopilot-run`.
+`evidence-run`, `agent-contract`, `refactor-plan`, `refactor-apply-run`,
+`refactor-batch-apply-run`, `codebase-map`, and `autopilot-run`.
 
 ## Required Fields
 
@@ -139,6 +139,8 @@ Evidence runs record:
 
 - workspace root and optional target
 - measured grade and analysis depth
+- parsed metrics such as coverage percentage and mutation score when present in
+  tool output
 - command records for cargo metadata, cargo test, coverage, mutation, and
   semver checks
 - skipped command reasons when heavier evidence was not requested or the tool
@@ -156,6 +158,30 @@ Print the evidence schema with:
 ```bash
 mdx-rust schema evidence-run --json
 ```
+
+## Agent Contract
+
+`v0.7` also exposes an agent-facing command contract:
+
+```bash
+mdx-rust agent-contract --json
+mdx-rust schema agent-contract --json
+```
+
+The contract records:
+
+- CLI product version and contract schema version
+- JSON mode expectations
+- mutation contract for `--apply`
+- read-only and mutation-capable commands
+- required flags for source mutation
+- primary schema names for each command
+- recommended agent workflows
+- artifact globs agents should inspect
+- safety rules for external automation
+
+The agent contract is guidance for safe automation. It is not itself validation
+or permission to mutate source files.
 
 ## Refactor Plans
 

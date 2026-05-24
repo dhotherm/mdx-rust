@@ -8,8 +8,8 @@ Measured evidence-gated autonomy for deeper Rust evolution.
 
 This release makes evidence a real artifact instead of an inferred hint.
 `mdx-rust` can now collect bounded command evidence, feed that evidence into
-maps and plans, and unlock the first narrow Tier 2 executable refactor when a
-target has measured coverage evidence.
+maps and plans, change analysis depth, and unlock narrow Tier 2 executable
+refactors when a target has measured coverage evidence.
 
 ### Added
 
@@ -17,15 +17,24 @@ target has measured coverage evidence.
   `.mdx-rust/evidence/`.
 - Evidence command records with status code, timeout flag, duration, stdout,
   stderr, skipped state, and skip reason.
+- Evidence metrics for parsed coverage and mutation percentages when tool
+  output exposes them.
 - Optional evidence collection flags for coverage, mutation testing, and semver
   checks when `cargo-llvm-cov`, `cargo-mutants`, and `cargo-semver-checks` are
   installed.
 - Measured evidence references on codebase maps, refactor plans, and autopilot
   runs.
 - JSON Schema export for `evidence-run`.
+- `mdx-rust agent-contract` and JSON Schema export for `agent-contract`, giving
+  external coding agents a machine-readable command, mutation, schema, and
+  artifact contract.
 - Coverage-gated Tier 2 execution for supported structural mechanical recipes.
 - First executable Tier 2 recipe: repeated private string literal extraction
   into a file-local constant.
+- Second executable Tier 2 recipe: `len() == 0` to `is_empty()` cleanup under
+  the same measured evidence and validation gates.
+- Hardened evidence analysis that surfaces clone-pressure review and
+  long-function review candidates that lower-evidence targets do not see.
 - `mdx-rust improve --tier 2` for directly reviewing or applying supported Tier
   2 hardening recipes.
 - Tests proving Tier 2 recipes stay disabled at Tier 1 and become executable
@@ -38,6 +47,8 @@ target has measured coverage evidence.
   artifacts now use schema version `0.7`.
 - `map`, `plan`, `autopilot`, and `evolve` consume the latest evidence artifact
   when available.
+- Hardened or Proven evidence lowers structural planning thresholds for
+  long-function and split-module candidates while keeping them plan-first.
 - Autonomy language in README, safety invariants, provenance docs, architecture
   docs, release readiness, and roadmap now describes measured evidence as the
   proportional aggression gate.

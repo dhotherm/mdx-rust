@@ -10,6 +10,7 @@ use mdx_rust_analysis::editing::{
     cleanup_isolated_workspace, create_isolated_workspace, restore_transaction,
     snapshot_transaction, validate_build_detailed_with_budget, ValidationCommandRecord,
 };
+pub use mdx_rust_analysis::HardeningEvidenceDepth;
 use mdx_rust_analysis::{
     analyze_hardening, HardeningAnalyzeConfig, HardeningFileChange, HardeningFinding,
 };
@@ -26,6 +27,7 @@ pub struct HardeningConfig {
     pub apply: bool,
     pub max_files: usize,
     pub max_recipe_tier: u8,
+    pub evidence_depth: HardeningEvidenceDepth,
     pub validation_timeout: Duration,
 }
 
@@ -38,6 +40,7 @@ impl Default for HardeningConfig {
             apply: false,
             max_files: 100,
             max_recipe_tier: 1,
+            evidence_depth: HardeningEvidenceDepth::Basic,
             validation_timeout: Duration::from_secs(180),
         }
     }
@@ -142,6 +145,7 @@ pub fn run_hardening(
             target: config.target.as_deref(),
             max_files: config.max_files,
             max_recipe_tier: config.max_recipe_tier,
+            evidence_depth: config.evidence_depth,
         },
     )?;
     let workspace = workspace_summary(&root);
@@ -428,6 +432,7 @@ fn match_findings_to_policy(
 fn category_for_finding(finding: &HardeningFinding) -> PolicyCategory {
     match finding.strategy {
         mdx_rust_analysis::HardeningStrategy::BorrowParameterTightening
+        | mdx_rust_analysis::HardeningStrategy::LenCheckIsEmpty
         | mdx_rust_analysis::HardeningStrategy::IteratorCloned
         | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
         | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn
@@ -437,6 +442,8 @@ fn category_for_finding(finding: &HardeningFinding) -> PolicyCategory {
         mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation => {
             PolicyCategory::ErrorContext
         }
+        mdx_rust_analysis::HardeningStrategy::ClonePressureReview
+        | mdx_rust_analysis::HardeningStrategy::LongFunctionReview => PolicyCategory::General,
         mdx_rust_analysis::HardeningStrategy::ResultUnwrapContext => PolicyCategory::PanicSafety,
         mdx_rust_analysis::HardeningStrategy::ProcessExecutionReview => {
             PolicyCategory::ProcessExecution
@@ -467,11 +474,14 @@ fn summarize_risk(findings: &[HardeningFinding]) -> HardeningRiskSummary {
             mdx_rust_analysis::HardeningStrategy::ProcessExecutionReview
             | mdx_rust_analysis::HardeningStrategy::UnsafeReview => summary.high += 1,
             mdx_rust_analysis::HardeningStrategy::BorrowParameterTightening
+            | mdx_rust_analysis::HardeningStrategy::LenCheckIsEmpty
             | mdx_rust_analysis::HardeningStrategy::IteratorCloned
             | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
             | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn
             | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => summary.low += 1,
             mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation
+            | mdx_rust_analysis::HardeningStrategy::ClonePressureReview
+            | mdx_rust_analysis::HardeningStrategy::LongFunctionReview
             | mdx_rust_analysis::HardeningStrategy::ResultUnwrapContext
             | mdx_rust_analysis::HardeningStrategy::EnvAccessReview
             | mdx_rust_analysis::HardeningStrategy::FileIoReview

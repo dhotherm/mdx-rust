@@ -119,6 +119,10 @@ fn other_json_commands_are_machine_pure_on_errors() {
 
 #[test]
 fn schema_json_mode_outputs_machine_parseable_schema() {
+    let agent_contract = assert_machine_pure_json(&["schema", "agent-contract", "--json"]);
+    assert_eq!(agent_contract["title"], "MdxAgentContract");
+    assert!(agent_contract["properties"]["commands"].is_object());
+
     let value = assert_machine_pure_json(&["schema", "audit-packet", "--json"]);
 
     assert_eq!(value["title"], "AuditPacket");
@@ -155,6 +159,30 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     let autopilot = assert_machine_pure_json(&["schema", "autopilot-run", "--json"]);
     assert_eq!(autopilot["title"], "AutopilotRun");
     assert!(autopilot["properties"]["passes"].is_object());
+}
+
+#[test]
+fn agent_contract_json_mode_is_machine_parseable() {
+    let value = assert_machine_pure_json(&["agent-contract", "--json"]);
+
+    assert_eq!(value["schema_version"], "0.7");
+    assert_eq!(
+        value["json_mode_contract"],
+        "Pass --json for machine-pure stdout. Errors are emitted as structured JSON when --json is set."
+    );
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
+        .any(|command| command["name"] == "evolve"
+            && command["mutates_source"] == serde_json::Value::Bool(true)));
+    assert!(value["safety_rules"]
+        .as_array()
+        .expect("safety rules")
+        .iter()
+        .any(|rule| rule
+            .as_str()
+            .is_some_and(|rule| rule.contains("Never add --apply"))));
 }
 
 #[test]

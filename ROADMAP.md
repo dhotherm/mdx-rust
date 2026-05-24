@@ -103,7 +103,8 @@ Autonomous Rust evolution for safe executable work.
 
 ## v0.7.0 Focus
 
-Measured evidence-gated autonomy with the first executable Tier 2 recipe.
+Measured evidence-gated autonomy with executable Tier 2 recipes and an
+agent-first command contract.
 
 - `mdx-rust evidence` persists measured command evidence under
   `.mdx-rust/evidence/`.
@@ -114,6 +115,12 @@ Measured evidence-gated autonomy with the first executable Tier 2 recipe.
   satisfied.
 - First executable Tier 2 recipe: repeated private string literal extraction
   into file-local constants.
+- Second executable Tier 2 recipe: zero-length checks from `len() == 0` to
+  `is_empty()`.
+- Hardened and Proven evidence unlock deeper clone-pressure and long-function
+  review findings and lower structural planning thresholds.
+- `mdx-rust agent-contract --json` gives coding agents a machine-readable
+  command, schema, artifact, and mutation contract.
 - Mutation and semver checks are collected as evidence when requested, but broad
   Tier 3 semantic refactors remain future work.
 - Agent distribution remains CLI and JSON first; MCP and API surfaces stay

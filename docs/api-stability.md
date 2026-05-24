@@ -13,6 +13,7 @@ For `0.7.x`, the supported product surface is:
 - Versioned hardening report schemas.
 - Versioned behavior eval report and project policy schemas.
 - Versioned evidence run schemas.
+- Versioned agent contract schemas.
 - Versioned refactor plan schemas.
 - Versioned refactor apply-run schemas.
 - Versioned codebase map schemas.
@@ -48,6 +49,7 @@ Automation should prefer:
 - Files written under `.mdx-rust/hardening/`.
 - Files written under `.mdx-rust/evidence/`.
 - Files written under `.mdx-rust/plans/`.
+- `mdx-rust agent-contract --json`.
 - Versioned audit packet JSON.
 - Versioned hardening report JSON.
 - Versioned evidence run JSON.
@@ -65,10 +67,12 @@ Refactor planning and autonomous orchestration records are stable enough for CLI
 `mdx-rust plan --json`, `mdx-rust apply-plan --json`,
 `mdx-rust evidence --json`, `mdx-rust map --json`,
 `mdx-rust autopilot --json`, `mdx-rust evolve --json`,
+`mdx-rust agent-contract --json`,
 `mdx-rust schema refactor-plan --json`, and
 `mdx-rust schema refactor-apply-run --json`, and
 `mdx-rust schema refactor-batch-apply-run --json`,
 `mdx-rust schema evidence-run --json`,
+`mdx-rust schema agent-contract --json`,
 `mdx-rust schema codebase-map --json`, and
 `mdx-rust schema autopilot-run --json`. The Rust types and module paths that
 produce those records remain unstable before `1.0`.

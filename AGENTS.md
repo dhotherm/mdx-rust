@@ -18,6 +18,12 @@ This document exists because `mdx-rust` is itself a tool designed to be used by 
    - CLI output must be beautiful for humans by default.
    - Every command must support `--json` for reliable parsing by other agents.
    - Structured data (serde) everywhere it makes sense.
+   - Agents should call `mdx-rust --json agent-contract` before deciding which
+     command to run. The contract is the machine-readable source for read-only
+     commands, mutation-capable commands, schemas, artifact globs, and safety
+     rules.
+   - Agents must not add `--apply` unless the human explicitly asked for
+     mutation.
 
 4. **Policy as truth**
    - When generating or evaluating changes, the contents of `policies.md` (or equivalent) are the source of truth for what "good" looks like.
@@ -55,6 +61,7 @@ cargo run -- init
 cargo run -- register my-test-agent ../path/to/small-agent
 cargo run -- doctor my-test-agent
 cargo run -- map src --json
+cargo run -- agent-contract --json
 cargo run -- autopilot src --json
 cargo run -- evolve src --budget 60s --json
 ```

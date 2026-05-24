@@ -41,11 +41,21 @@ pub struct EvidenceRun {
     pub target: Option<String>,
     pub grade: EvidenceGrade,
     pub analysis_depth: EvidenceAnalysisDepth,
+    pub metrics: Vec<EvidenceMetric>,
     pub commands: Vec<EvidenceCommandRecord>,
     pub unlocked_recipe_tiers: Vec<String>,
     pub unlock_suggestions: Vec<String>,
     pub note: String,
     pub artifact_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvidenceMetric {
+    pub id: String,
+    pub label: String,
+    pub value: f64,
+    pub unit: String,
+    pub source_command: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -157,6 +167,7 @@ pub fn run_evidence(
 
     let grade = grade_from_commands(&commands);
     let analysis_depth = analysis_depth_for_grade(grade);
+    let metrics = evidence_metrics(&commands);
     let mut run = EvidenceRun {
         schema_version: "0.7".to_string(),
         run_id: evidence_run_id(&root, target.as_deref(), &commands),
@@ -164,6 +175,7 @@ pub fn run_evidence(
         target: target.as_ref().map(|path| path.display().to_string()),
         grade,
         analysis_depth,
+        metrics,
         commands,
         unlocked_recipe_tiers: unlocked_recipe_tiers(grade),
         unlock_suggestions: unlock_suggestions(grade, config),
@@ -380,6 +392,40 @@ fn skipped_command(id: &str, command: &str, reason: &str) -> EvidenceCommandReco
     }
 }
 
+fn evidence_metrics(commands: &[EvidenceCommandRecord]) -> Vec<EvidenceMetric> {
+    let mut metrics = Vec::new();
+    if let Some(command) = commands.iter().find(|command| command.id == "coverage") {
+        if let Some(percent) = last_percent(&format!("{}\n{}", command.stdout, command.stderr)) {
+            metrics.push(EvidenceMetric {
+                id: "coverage-percent".to_string(),
+                label: "Line coverage".to_string(),
+                value: percent,
+                unit: "percent".to_string(),
+                source_command: command.id.clone(),
+            });
+        }
+    }
+    if let Some(command) = commands.iter().find(|command| command.id == "mutation") {
+        if let Some(percent) = last_percent(&format!("{}\n{}", command.stdout, command.stderr)) {
+            metrics.push(EvidenceMetric {
+                id: "mutation-score-percent".to_string(),
+                label: "Mutation score".to_string(),
+                value: percent,
+                unit: "percent".to_string(),
+                source_command: command.id.clone(),
+            });
+        }
+    }
+    metrics
+}
+
+fn last_percent(output: &str) -> Option<f64> {
+    output
+        .split_whitespace()
+        .filter_map(|token| token.trim_end_matches('%').parse::<f64>().ok())
+        .next_back()
+}
+
 fn grade_from_commands(commands: &[EvidenceCommandRecord]) -> EvidenceGrade {
     let metadata_ok = command_success(commands, "cargo-metadata");
     if !metadata_ok {
@@ -515,4 +561,50 @@ fn executable_exists(name: &str) -> bool {
         return false;
     };
     std::env::split_paths(&path_var).any(|dir| dir.join(name).is_file())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evidence_metrics_parse_percentages_from_tool_output() {
+        let commands = vec![
+            EvidenceCommandRecord {
+                id: "coverage".to_string(),
+                command: "cargo llvm-cov --workspace --summary-only".to_string(),
+                skipped: false,
+                skip_reason: None,
+                success: true,
+                timed_out: false,
+                status_code: Some(0),
+                duration_ms: 12,
+                stdout: "total 91.7%".to_string(),
+                stderr: String::new(),
+            },
+            EvidenceCommandRecord {
+                id: "mutation".to_string(),
+                command: "cargo mutants --no-shuffle --timeout 60".to_string(),
+                skipped: false,
+                skip_reason: None,
+                success: true,
+                timed_out: false,
+                status_code: Some(0),
+                duration_ms: 12,
+                stdout: String::new(),
+                stderr: "mutation score 82.5%".to_string(),
+            },
+        ];
+
+        let metrics = evidence_metrics(&commands);
+
+        assert!(metrics
+            .iter()
+            .any(|metric| metric.id == "coverage-percent"
+                && (metric.value - 91.7).abs() < f64::EPSILON));
+        assert!(metrics
+            .iter()
+            .any(|metric| metric.id == "mutation-score-percent"
+                && (metric.value - 82.5).abs() < f64::EPSILON));
+    }
 }
