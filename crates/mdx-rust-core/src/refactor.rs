@@ -1,7 +1,7 @@
 //! Plan-first guardrailed refactoring.
 //!
-//! v0.7 keeps auditable plans as the mutation boundary and adds measured
-//! evidence gates over the safe executable subset.
+//! v0.8 keeps auditable plans as the mutation boundary and adds file/function
+//! evidence plus security posture to the safe executable subset.
 
 use crate::eval::stable_hash_hex;
 use crate::evidence::{load_latest_evidence_for_root, EvidenceArtifactRef, EvidenceRun};
@@ -9,6 +9,7 @@ use crate::hardening::{
     run_hardening, workspace_summary, HardeningConfig, HardeningRun, WorkspaceSummary,
 };
 use crate::policy::{load_project_policy, ProjectPolicy};
+use crate::security::{audit_agent, AuditFinding, AuditSeverity};
 use mdx_rust_analysis::{
     analyze_hardening, analyze_refactor, HardeningAnalyzeConfig, HardeningEvidenceDepth,
     HardeningFinding, ModuleEdge, RefactorAnalyzeConfig, RefactorFileSummary,
@@ -123,6 +124,8 @@ pub struct RefactorPlan {
     pub behavior_spec: Option<String>,
     pub evidence: EvidenceSummary,
     pub measured_evidence: Option<EvidenceArtifactRef>,
+    #[serde(default)]
+    pub security: SecurityPostureSummary,
     pub impact: RefactorImpactSummary,
     pub source_snapshots: Vec<SourceSnapshot>,
     pub files: Vec<RefactorFileSummary>,
@@ -145,6 +148,8 @@ pub struct CodebaseMap {
     pub behavior_spec: Option<String>,
     pub evidence: EvidenceSummary,
     pub measured_evidence: Option<EvidenceArtifactRef>,
+    #[serde(default)]
+    pub security: SecurityPostureSummary,
     pub quality: CodebaseQualitySummary,
     pub capability_gates: Vec<CapabilityGate>,
     pub impact: RefactorImpactSummary,
@@ -159,6 +164,8 @@ pub struct CodebaseMap {
 pub struct CodebaseQualitySummary {
     pub grade: CodebaseQualityGrade,
     pub debt_score: u8,
+    #[serde(default)]
+    pub security_score: u8,
     pub patchable_findings: usize,
     pub review_only_findings: usize,
     pub public_api_pressure: usize,
@@ -173,6 +180,8 @@ pub struct EvidenceSummary {
     pub max_autonomous_tier: u8,
     pub analysis_depth: EvidenceAnalysisDepth,
     pub signals: Vec<EvidenceSignal>,
+    #[serde(default)]
+    pub profiled_files: usize,
     pub unlocked_recipe_tiers: Vec<String>,
     pub unlock_suggestions: Vec<String>,
 }
@@ -227,6 +236,48 @@ pub struct CapabilityGate {
     pub available: bool,
     pub command: String,
     pub purpose: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CandidateEvidenceContext {
+    pub grade: EvidenceGrade,
+    pub source: String,
+    pub profiled_file: Option<String>,
+    pub signals: Vec<String>,
+}
+
+impl Default for CandidateEvidenceContext {
+    fn default() -> Self {
+        Self {
+            grade: EvidenceGrade::None,
+            source: "legacy artifact without candidate evidence context".to_string(),
+            profiled_file: None,
+            signals: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SecurityPostureSummary {
+    pub score: u8,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+    pub info: usize,
+    pub top_findings: Vec<String>,
+}
+
+impl Default for SecurityPostureSummary {
+    fn default() -> Self {
+        Self {
+            score: 100,
+            high: 0,
+            medium: 0,
+            low: 0,
+            info: 0,
+            top_findings: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -337,6 +388,8 @@ pub struct RefactorCandidate {
     pub tier: RecipeTier,
     pub required_evidence: EvidenceGrade,
     pub evidence_satisfied: bool,
+    #[serde(default)]
+    pub evidence_context: CandidateEvidenceContext,
     pub public_api_impact: bool,
     pub apply_command: Option<String>,
     pub required_gates: Vec<String>,
@@ -374,6 +427,156 @@ pub enum RefactorRecipe {
     SplitModuleCandidate,
     BoundaryValidationReview,
     PublicApiReview,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecipeCatalog {
+    pub schema_version: String,
+    pub recipes: Vec<RecipeSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecipeSpec {
+    pub id: String,
+    pub recipe: RefactorRecipe,
+    pub tier: RecipeTier,
+    pub required_evidence: EvidenceGrade,
+    pub executable: bool,
+    pub risk: RefactorRiskLevel,
+    pub mutation_path: String,
+    pub description: String,
+}
+
+pub fn recipe_catalog() -> RecipeCatalog {
+    macro_rules! spec {
+        (
+            $id:expr,
+            $recipe:expr,
+            $tier:expr,
+            $required_evidence:expr,
+            $executable:expr,
+            $risk:expr,
+            $mutation_path:expr,
+            $description:expr $(,)?
+        ) => {
+            RecipeSpec {
+                id: $id.to_string(),
+                recipe: $recipe,
+                tier: $tier,
+                required_evidence: $required_evidence,
+                executable: $executable,
+                risk: $risk,
+                mutation_path: $mutation_path.to_string(),
+                description: $description.to_string(),
+            }
+        };
+    }
+
+    RecipeCatalog {
+        schema_version: "0.8".to_string(),
+        recipes: vec![
+            spec!(
+                "contextual-error-hardening",
+                RefactorRecipe::ContextualErrorHardening,
+                RecipeTier::Tier1,
+                EvidenceGrade::Compiled,
+                true,
+                RefactorRiskLevel::Low,
+                "hardening transaction",
+                "Replace panic-prone Result unwraps with contextual errors.",
+            ),
+            spec!(
+                "error-context-propagation",
+                RefactorRecipe::ErrorContextPropagation,
+                RecipeTier::Tier1,
+                EvidenceGrade::Compiled,
+                true,
+                RefactorRiskLevel::Low,
+                "hardening transaction",
+                "Add context to boundary errors without changing public behavior.",
+            ),
+            spec!(
+                "borrow-parameter-tightening",
+                RefactorRecipe::BorrowParameterTightening,
+                RecipeTier::Tier1,
+                EvidenceGrade::Compiled,
+                true,
+                RefactorRiskLevel::Low,
+                "hardening transaction",
+                "Prefer borrowed slice/string parameters in private functions.",
+            ),
+            spec!(
+                "iterator-cloned-cleanup",
+                RefactorRecipe::IteratorCloned,
+                RecipeTier::Tier1,
+                EvidenceGrade::Compiled,
+                true,
+                RefactorRiskLevel::Low,
+                "hardening transaction",
+                "Move cloned calls to the narrower iterator position when mechanical.",
+            ),
+            spec!(
+                "len-check-is-empty",
+                RefactorRecipe::LenCheckIsEmpty,
+                RecipeTier::Tier2,
+                EvidenceGrade::Covered,
+                true,
+                RefactorRiskLevel::Low,
+                "hardening transaction with covered evidence",
+                "Convert zero-length comparisons to is_empty for clarity.",
+            ),
+            spec!(
+                "repeated-string-literal-const",
+                RefactorRecipe::RepeatedStringLiteralConst,
+                RecipeTier::Tier2,
+                EvidenceGrade::Covered,
+                true,
+                RefactorRiskLevel::Low,
+                "hardening transaction with covered evidence",
+                "Extract repeated local string literals into a constant.",
+            ),
+            spec!(
+                "clone-pressure-review",
+                RefactorRecipe::ClonePressureReview,
+                RecipeTier::Tier3,
+                EvidenceGrade::Hardened,
+                false,
+                RefactorRiskLevel::Medium,
+                "plan only",
+                "Identify clone-heavy code that needs semantic review before rewriting.",
+            ),
+            spec!(
+                "extract-function",
+                RefactorRecipe::ExtractFunctionCandidate,
+                RecipeTier::Tier2,
+                EvidenceGrade::Covered,
+                false,
+                RefactorRiskLevel::Medium,
+                "plan only",
+                "Stage long functions for behavior-gated extraction.",
+            ),
+            spec!(
+                "split-module",
+                RefactorRecipe::SplitModuleCandidate,
+                RecipeTier::Tier2,
+                EvidenceGrade::Covered,
+                false,
+                RefactorRiskLevel::Medium,
+                "plan only",
+                "Stage oversized modules for human-reviewed decomposition.",
+            ),
+            spec!(
+                "security-boundary-review",
+                RefactorRecipe::SecurityBoundaryReview,
+                RecipeTier::Tier2,
+                EvidenceGrade::Tested,
+                false,
+                RefactorRiskLevel::High,
+                "plan only",
+                "Surface process, unsafe, and boundary risks before autonomous work expands.",
+            ),
+        ],
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -480,6 +683,7 @@ pub fn build_refactor_plan(
         },
     )?;
     let policy = load_project_policy(&root, config.policy_path.as_deref())?;
+    let security = security_posture_summary(&audit_agent(&root)?.findings);
     let workspace = workspace_summary(&root);
     let behavior_spec = config
         .behavior_spec_path
@@ -500,8 +704,17 @@ pub fn build_refactor_plan(
         hardening.changes.len(),
     );
     let mut candidates = Vec::new();
-    candidates.extend(hardening_candidates(&hardening.findings, config, &evidence));
-    candidates.extend(structural_candidates(&refactor.files, &evidence));
+    candidates.extend(hardening_candidates(
+        &hardening.findings,
+        config,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
+    candidates.extend(structural_candidates(
+        &refactor.files,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
     for candidate in &mut candidates {
         candidate.candidate_hash = candidate_hash(candidate);
     }
@@ -517,7 +730,7 @@ pub fn build_refactor_plan(
 
     let plan_id = plan_id(&root, config, &impact, &candidates);
     let mut plan = RefactorPlan {
-        schema_version: "0.7".to_string(),
+        schema_version: "0.8".to_string(),
         plan_id,
         plan_hash: String::new(),
         root: root.display().to_string(),
@@ -530,6 +743,7 @@ pub fn build_refactor_plan(
         behavior_spec,
         evidence,
         measured_evidence: measured_evidence.as_ref().map(EvidenceArtifactRef::from),
+        security,
         impact,
         source_snapshots,
         files: refactor.files,
@@ -574,6 +788,7 @@ pub fn build_codebase_map(
         },
     )?;
     let policy = load_project_policy(&root, config.policy_path.as_deref())?;
+    let security = security_posture_summary(&audit_agent(&root)?.findings);
     let workspace = workspace_summary(&root);
     let behavior_spec = config
         .behavior_spec_path
@@ -593,11 +808,12 @@ pub fn build_codebase_map(
         &hardening.findings,
         hardening.changes.len(),
     );
-    let quality = summarize_quality(&refactor.files, &hardening.findings, &impact);
-    let recommended_actions = recommended_actions(&quality, &impact, &capability_gates, &evidence);
+    let quality = summarize_quality(&refactor.files, &hardening.findings, &impact, &security);
+    let recommended_actions =
+        recommended_actions(&quality, &impact, &capability_gates, &evidence, &security);
     let map_id = codebase_map_id(&root, config, &quality, &impact);
     let mut map = CodebaseMap {
-        schema_version: "0.7".to_string(),
+        schema_version: "0.8".to_string(),
         map_id,
         map_hash: String::new(),
         root: root.display().to_string(),
@@ -610,6 +826,7 @@ pub fn build_codebase_map(
         behavior_spec,
         evidence,
         measured_evidence: measured_evidence.as_ref().map(EvidenceArtifactRef::from),
+        security,
         quality,
         capability_gates,
         impact,
@@ -651,7 +868,7 @@ pub fn run_autopilot(
         RefactorApplyMode::Review
     };
     let mut run = AutopilotRun {
-        schema_version: "0.7".to_string(),
+        schema_version: "0.8".to_string(),
         run_id: autopilot_run_id(&root, config, &before_map),
         root: root.display().to_string(),
         target: config
@@ -824,7 +1041,7 @@ pub fn apply_refactor_plan_candidate(
         RefactorApplyMode::Review
     };
     let mut run = RefactorApplyRun {
-        schema_version: "0.7".to_string(),
+        schema_version: "0.8".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -954,7 +1171,7 @@ pub fn apply_refactor_plan_batch(
         RefactorApplyMode::Review
     };
     let mut run = RefactorBatchApplyRun {
-        schema_version: "0.7".to_string(),
+        schema_version: "0.8".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -1152,6 +1369,7 @@ fn summarize_quality(
     files: &[RefactorFileSummary],
     findings: &[HardeningFinding],
     impact: &RefactorImpactSummary,
+    security: &SecurityPostureSummary,
 ) -> CodebaseQualitySummary {
     let patchable_findings = findings.iter().filter(|finding| finding.patchable).count();
     let review_only_findings = findings.len().saturating_sub(patchable_findings);
@@ -1170,6 +1388,7 @@ fn summarize_quality(
     score += impact.oversized_files.saturating_mul(10);
     score += impact.oversized_functions.saturating_mul(7);
     score += impact.public_files.saturating_mul(2);
+    score += (100usize.saturating_sub(security.score as usize)) / 2;
     if test_coverage_signal == TestCoverageSignal::Sparse {
         score += 12;
     }
@@ -1187,6 +1406,7 @@ fn summarize_quality(
     CodebaseQualitySummary {
         grade,
         debt_score,
+        security_score: security.score,
         patchable_findings,
         review_only_findings,
         public_api_pressure: impact.public_item_count,
@@ -1309,9 +1529,43 @@ fn summarize_evidence(
         max_autonomous_tier,
         analysis_depth,
         signals,
+        profiled_files: measured.map(|run| run.file_profiles.len()).unwrap_or(0),
         unlocked_recipe_tiers: unlocked_recipe_tiers(grade),
         unlock_suggestions,
     }
+}
+
+fn security_posture_summary(findings: &[AuditFinding]) -> SecurityPostureSummary {
+    let mut summary = SecurityPostureSummary::default();
+    for finding in findings {
+        match finding.severity {
+            AuditSeverity::High => summary.high += 1,
+            AuditSeverity::Medium => summary.medium += 1,
+            AuditSeverity::Low => summary.low += 1,
+            AuditSeverity::Info => summary.info += 1,
+        }
+    }
+    let penalty = summary.high.saturating_mul(25)
+        + summary.medium.saturating_mul(12)
+        + summary.low.saturating_mul(5);
+    summary.score = 100usize.saturating_sub(penalty).min(100) as u8;
+    summary.top_findings = findings
+        .iter()
+        .filter(|finding| finding.severity != AuditSeverity::Info)
+        .take(5)
+        .map(|finding| {
+            let file = finding.file.as_deref().unwrap_or("<workspace>");
+            let line = finding
+                .line
+                .map(|line| line.to_string())
+                .unwrap_or_else(|| "?".to_string());
+            format!(
+                "{:?}: {} ({}:{})",
+                finding.severity, finding.title, file, line
+            )
+        })
+        .collect();
+    summary
 }
 
 fn analysis_depth_for_evidence(grade: EvidenceGrade) -> EvidenceAnalysisDepth {
@@ -1417,8 +1671,15 @@ fn recommended_actions(
     impact: &RefactorImpactSummary,
     gates: &[CapabilityGate],
     evidence: &EvidenceSummary,
+    security: &SecurityPostureSummary,
 ) -> Vec<String> {
     let mut actions = Vec::new();
+    if security.high > 0 || security.medium > 0 {
+        actions.push(
+            "Run mdx-rust audit and inspect security posture before broad autonomous apply."
+                .to_string(),
+        );
+    }
     if quality.patchable_findings > 0 && evidence.grade >= EvidenceGrade::Compiled {
         actions.push(
             "Run mdx-rust autopilot --apply to execute low-risk Tier 1 mechanical hardening passes."
@@ -1479,6 +1740,7 @@ fn hardening_candidates(
     findings: &[HardeningFinding],
     config: &RefactorPlanConfig,
     evidence: &EvidenceSummary,
+    measured: Option<&EvidenceRun>,
 ) -> Vec<RefactorCandidate> {
     findings
         .iter()
@@ -1533,6 +1795,7 @@ fn hardening_candidates(
                 },
                 required_evidence,
                 evidence_satisfied,
+                evidence_context: candidate_evidence_context(&file, evidence, measured),
                 public_api_impact: false,
                 apply_command: (finding.patchable && evidence_satisfied)
                     .then(|| apply_command(&file, config, required_evidence)),
@@ -1627,6 +1890,7 @@ fn risk_for_hardening_strategy(
 fn structural_candidates(
     files: &[RefactorFileSummary],
     evidence: &EvidenceSummary,
+    measured: Option<&EvidenceRun>,
 ) -> Vec<RefactorCandidate> {
     let mut candidates = Vec::new();
     let split_threshold = if evidence.grade >= EvidenceGrade::Hardened {
@@ -1663,6 +1927,7 @@ fn structural_candidates(
                 tier: RecipeTier::Tier2,
                 required_evidence,
                 evidence_satisfied: evidence.grade >= required_evidence,
+                evidence_context: candidate_evidence_context(&file_path, evidence, measured),
                 public_api_impact: file.public_item_count > 0,
                 apply_command: None,
                 required_gates: vec![
@@ -1692,6 +1957,7 @@ fn structural_candidates(
                 tier: RecipeTier::Tier2,
                 required_evidence,
                 evidence_satisfied: evidence.grade >= required_evidence,
+                evidence_context: candidate_evidence_context(&file_path, evidence, measured),
                 public_api_impact: file.public_item_count > 0,
                 apply_command: None,
                 required_gates: vec![
@@ -1713,13 +1979,14 @@ fn structural_candidates(
                     "{} exposes {} public item(s). Treat signature changes as semver-impacting.",
                     file_path, file.public_item_count
                 ),
-                file: file_path,
+                file: file_path.clone(),
                 line: 1,
                 risk: RefactorRiskLevel::Medium,
                 status: RefactorCandidateStatus::PlanOnly,
                 tier: RecipeTier::Tier1,
                 required_evidence,
                 evidence_satisfied: evidence.grade >= required_evidence,
+                evidence_context: candidate_evidence_context(&file_path, evidence, measured),
                 public_api_impact: true,
                 apply_command: None,
                 required_gates: vec![
@@ -1731,6 +1998,40 @@ fn structural_candidates(
     }
 
     candidates
+}
+
+fn candidate_evidence_context(
+    file: &str,
+    evidence: &EvidenceSummary,
+    measured: Option<&EvidenceRun>,
+) -> CandidateEvidenceContext {
+    if let Some(profile) = measured
+        .iter()
+        .flat_map(|run| run.file_profiles.iter())
+        .find(|profile| profile.file == file)
+    {
+        return CandidateEvidenceContext {
+            grade: profile.grade,
+            source: "measured file evidence profile".to_string(),
+            profiled_file: Some(profile.file.clone()),
+            signals: profile.signals.clone(),
+        };
+    }
+    CandidateEvidenceContext {
+        grade: evidence.grade,
+        source: if measured.is_some() {
+            "measured run did not include this file; using run-level evidence".to_string()
+        } else {
+            "inferred evidence summary".to_string()
+        },
+        profiled_file: None,
+        signals: evidence
+            .signals
+            .iter()
+            .filter(|signal| signal.present)
+            .map(|signal| signal.label.clone())
+            .collect(),
+    }
 }
 
 fn required_gates(has_behavior_spec: bool) -> Vec<String> {
@@ -1811,6 +2112,7 @@ fn codebase_map_hash(map: &CodebaseMap) -> String {
     bytes.extend_from_slice(map.root.as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.target).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.quality).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.security).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.measured_evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.impact).as_bytes());
@@ -1841,6 +2143,7 @@ fn refactor_plan_hash(plan: &RefactorPlan) -> String {
     bytes.extend_from_slice(format!("{:?}", plan.target).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.measured_evidence).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", plan.security).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.impact).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.source_snapshots).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.module_edges).as_bytes());
@@ -1861,6 +2164,7 @@ fn candidate_hash(candidate: &RefactorCandidate) -> String {
     bytes.extend_from_slice(format!("{:?}", candidate.tier).as_bytes());
     bytes.extend_from_slice(format!("{:?}", candidate.required_evidence).as_bytes());
     bytes.extend_from_slice(candidate.evidence_satisfied.to_string().as_bytes());
+    bytes.extend_from_slice(format!("{:?}", candidate.evidence_context).as_bytes());
     bytes.extend_from_slice(candidate.public_api_impact.to_string().as_bytes());
     bytes.extend_from_slice(format!("{:?}", candidate.apply_command).as_bytes());
     stable_hash_hex(&bytes)
@@ -2288,7 +2592,7 @@ anyhow = "1"
         )
         .unwrap();
 
-        assert_eq!(plan.schema_version, "0.7");
+        assert_eq!(plan.schema_version, "0.8");
         assert!(plan.candidates.iter().any(|candidate| candidate.status
             == RefactorCandidateStatus::ApplyViaImprove
             && candidate
@@ -2379,13 +2683,14 @@ edition = "2021"
         let artifact_root = dir.path().join(".mdx-rust");
         std::fs::create_dir_all(artifact_root.join("evidence")).unwrap();
         let evidence = crate::evidence::EvidenceRun {
-            schema_version: "0.7".to_string(),
+            schema_version: "0.8".to_string(),
             run_id: "covered-fixture".to_string(),
             root: dir.path().canonicalize().unwrap().display().to_string(),
             target: Some("src/lib.rs".to_string()),
             grade: EvidenceGrade::Covered,
             analysis_depth: EvidenceAnalysisDepth::Structural,
             metrics: Vec::new(),
+            file_profiles: Vec::new(),
             commands: Vec::new(),
             unlocked_recipe_tiers: vec!["Tier 2 structural mechanical recipes".to_string()],
             unlock_suggestions: Vec::new(),

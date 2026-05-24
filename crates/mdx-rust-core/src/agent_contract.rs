@@ -37,7 +37,7 @@ pub struct AgentWorkflow {
 
 pub fn agent_contract() -> MdxAgentContract {
     MdxAgentContract {
-        schema_version: "0.7".to_string(),
+        schema_version: "0.8".to_string(),
         product_version: env!("CARGO_PKG_VERSION").to_string(),
         json_mode_contract:
             "Pass --json for machine-pure stdout. Errors are emitted as structured JSON when --json is set."
@@ -47,9 +47,20 @@ pub fn agent_contract() -> MdxAgentContract {
                 .to_string(),
         commands: vec![
             AgentCommandSpec {
+                name: "recipes".to_string(),
+                purpose:
+                    "List recipe tiers, required evidence, and executable mutation paths."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "recipe-catalog".to_string(),
+                example: "mdx-rust --json recipes".to_string(),
+            },
+            AgentCommandSpec {
                 name: "evidence".to_string(),
                 purpose:
-                    "Collect measured evidence that controls autonomous recipe depth.".to_string(),
+                    "Collect measured evidence profiles that control autonomous recipe depth."
+                        .to_string(),
                 mutates_source: false,
                 required_flags_for_mutation: Vec::new(),
                 primary_schema: "evidence-run".to_string(),
@@ -97,6 +108,17 @@ pub fn agent_contract() -> MdxAgentContract {
                 example: "mdx-rust --json apply-plan .mdx-rust/plans/plan.json --all".to_string(),
             },
             AgentCommandSpec {
+                name: "explain".to_string(),
+                purpose:
+                    "Summarize an mdx-rust artifact and recommend safe next actions."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "artifact-explanation".to_string(),
+                example: "mdx-rust --json explain .mdx-rust/plans/refactor-plan.json"
+                    .to_string(),
+            },
+            AgentCommandSpec {
                 name: "schema".to_string(),
                 purpose: "Emit JSON Schema for agent-facing artifacts.".to_string(),
                 mutates_source: false,
@@ -111,6 +133,7 @@ pub fn agent_contract() -> MdxAgentContract {
                 goal: "Understand a Rust target before proposing code changes.".to_string(),
                 steps: vec![
                     "mdx-rust --json agent-contract".to_string(),
+                    "mdx-rust --json recipes".to_string(),
                     "mdx-rust --json evidence <target>".to_string(),
                     "mdx-rust --json map <target>".to_string(),
                     "mdx-rust --json plan <target>".to_string(),

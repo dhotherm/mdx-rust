@@ -48,7 +48,7 @@ The hardening path is separate from the agent optimizer.
   from the transaction snapshot.
 - A hardening transaction must reject absolute paths, parent-directory escapes,
   and any path outside the workspace root.
-- The `0.7` hardening report schema records findings, change summaries,
+- The `0.8` hardening report schema records findings, change summaries,
   validation command records, final validation command records, policy hash,
   policy-to-finding matches, behavior eval records when supplied, workspace
   metadata, transaction status, and rollback status.
@@ -102,18 +102,27 @@ allowed to move quickly, but it must not create a second mutation path.
 - Each executed candidate must route through `apply-plan --all` and the
   hardening transaction path. Autopilot must not write Rust source files
   directly.
-- v0.7 executable Tier 1 recipes are contextual error hardening, boundary error
+- v0.8 executable Tier 1 recipes are contextual error hardening, boundary error
   context propagation, private borrow parameter tightening, iterator clone
   cleanup, and `#[must_use]` annotation. They are allowed to execute only
   through the same hardening transaction path.
-- v0.7 executable Tier 2 recipes require measured `Covered` evidence, an
+- v0.8 executable Tier 2 recipes require measured `Covered` evidence, an
   explicit Tier 2 request, and the same hardening transaction path. The
   supported Tier 2 recipes are repeated private string literal extraction into a
   file-local constant and `len() == 0` to `is_empty()` cleanup.
-- v0.7 `Hardened` and `Proven` evidence may unlock deeper analysis findings,
+- v0.8 `Hardened` and `Proven` evidence may unlock deeper analysis findings,
   such as clone-pressure review and long-function review. These findings are
   planning evidence only unless a dedicated executable recipe marks them
   executable and routes them through the same hardening transaction path.
+- v0.8 evidence artifacts may include file/function profiles. Candidate
+  evidence context is explanatory and may only narrow or justify a queue; it
+  must not override the plan evidence grade or required recipe evidence.
+- v0.8 security posture in maps and plans is advisory prioritization evidence.
+  It can raise risk, add recommendations, or keep candidates plan-only, but it
+  must not bypass validation, evidence, stale snapshot, behavior eval, or
+  rollback gates.
+- `mdx-rust recipes` and `mdx-rust explain` are read-only agent surfaces. They
+  must never mutate source files or approve mutation by themselves.
 - `Tested` evidence may surface additional boundary-aware Tier 2 review
   candidates, but those candidates remain plan-only until a dedicated
   executable recipe and validation contract exists.

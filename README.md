@@ -11,7 +11,7 @@
 `mdx-rust` points at Rust code, finds scoped hardening opportunities, validates
 changes in isolation, checks project policy and behavior evals when supplied,
 and only lands edits that pass Rust gates. It still supports agent optimization,
-but `v0.7` is aimed at evidence-gated autonomous improvement loops for ordinary
+but `v0.8` is aimed at evidence-gated autonomous improvement loops for ordinary
 Rust crates and service backends too.
 
 The CLI is the supported product surface. The library crates are published for
@@ -21,7 +21,7 @@ installation and inspection, but their APIs remain unstable before `1.0`.
 
 `mdx-rust` is an early public beta. It is useful for experimentation and
 dogfooding on Rust agent crates, and it can now run guarded autonomous passes
-against ordinary Rust modules. In plain terms: `v0.7` can measure repo
+against ordinary Rust modules. In plain terms: `v0.8` can measure repo
 evidence, tell you where a Rust repo looks strong or weak, plan refactor work,
 execute the safe subset in multiple passes, replan after each applied pass, and
 preserve audit evidence. It is not a broad semantic rewrite engine yet, but it
@@ -54,6 +54,14 @@ Today it supports:
 - `agent-contract` machine-readable command guidance so external coding agents
   can discover safe commands, mutation requirements, schemas, and artifact
   locations before acting.
+- `recipes` machine-readable recipe catalog with tier, evidence, execution, and
+  mutation-path contracts.
+- `explain` artifact summaries so coding agents can inspect saved JSON reports
+  and choose safe next actions.
+- File/function evidence profiles that attach evidence context to plan
+  candidates instead of relying only on repo-level grades.
+- Security posture summaries in maps and plans, with high/medium/low finding
+  counts and a security score that affects prioritization.
 - Five executable Tier 1 mechanical recipes: contextual error hardening,
   boundary error context propagation, private borrow parameter tightening,
   iterator clone cleanup, and
@@ -75,10 +83,12 @@ Today it supports:
 - Human CLI output plus machine-parseable `--json` output.
 - Deterministic static audit checks for risky agent surfaces.
 
-## What v0.7 Adds
+## What v0.8 Adds
 
-`v0.7` is the release where mdx-rust starts using measured evidence to decide
-how aggressive it may be.
+`v0.8` makes mdx-rust more agent-first and more evidence-aware. Evidence is no
+longer only a repo-level grade: it now profiles files and functions, plans
+carry candidate evidence context, maps and plans include security posture, and
+agents can ask the CLI which recipes exist and what an artifact means.
 
 - Run `mdx-rust evidence` to persist measured test evidence under
   `.mdx-rust/evidence/`.
@@ -87,8 +97,13 @@ how aggressive it may be.
 - Run `mdx-rust agent-contract --json` before handing control to another
   coding agent. It tells the agent which commands are read-only, which require
   `--apply`, which schemas to expect, and which artifacts to inspect.
+- Run `mdx-rust recipes --json` to inspect every recipe, required evidence
+  grade, tier, execution status, risk level, and mutation path.
+- Run `mdx-rust explain <artifact> --json` to summarize evidence, plan, map,
+  hardening, apply, or autopilot artifacts and get safe next actions.
 - Run `mdx-rust map <target>` to get a repo quality profile, debt score,
-  measured evidence reference, capability gates, findings, and next actions.
+  security score, measured evidence reference, capability gates, findings, and
+  next actions.
 - Run `mdx-rust plan <target>` to produce a non-mutating refactor plan.
 - Review impact before editing: public items, module edges, file size, long
   functions, policy references, behavior eval references, source snapshots, and
@@ -175,7 +190,7 @@ rejected candidates.
 
 The hardening path for ordinary Rust modules is review-first by default:
 `mdx-rust improve` validates candidate changes in an isolated workspace and
-requires `--apply` before touching the real tree. In `v0.7`, passing
+requires `--apply` before touching the real tree. In `v0.8`, passing
 `--eval-spec` also requires the behavior commands in that spec to pass in the
 isolated workspace and again after final application.
 
@@ -361,22 +376,24 @@ See [docs/provenance.md](./docs/provenance.md) for the schema contract.
 transaction status, rollback status, policy matches, behavior eval outcomes,
 and workspace metadata.
 
-`v0.7` evidence runs are written under `.mdx-rust/evidence/` with command
+`v0.8` evidence runs are written under `.mdx-rust/evidence/` with command
 records, timeout flags, stdout/stderr captures, evidence grade, analysis depth,
-and unlocked recipe tiers.
+file/function profiles, and unlocked recipe tiers.
 
-`v0.7` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
+`v0.8` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
 with impact summaries, source snapshot hashes, public API pressure, module
-edges, required gates, policy/eval references, and candidate actions. Plan
+edges, security posture, required gates, policy/eval references, candidate
+evidence context, and candidate actions. Plan
 artifacts are evidence for review and orchestration; they are not proof that a
 change has been applied. `apply-plan` reports are also written under
 `.mdx-rust/plans/` and record whether a candidate or execution queue was
 reviewed, applied, rejected, stale, partially applied, or unsupported.
 
-`v0.7` codebase maps are written under `.mdx-rust/maps/` with quality grades,
-debt scores, capability gates, findings, and recommended actions. Autopilot
-runs are written under `.mdx-rust/autopilot/` with the quality before/after,
-per-pass plan hashes, apply reports, skipped counts, and final status.
+`v0.8` codebase maps are written under `.mdx-rust/maps/` with quality grades,
+debt scores, security posture, capability gates, findings, and recommended
+actions. Autopilot runs are written under `.mdx-rust/autopilot/` with the
+quality before/after, per-pass plan hashes, apply reports, skipped counts, and
+final status.
 
 Print the current JSON Schemas with:
 
@@ -385,6 +402,8 @@ mdx-rust schema audit-packet --json
 mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
 mdx-rust schema evidence-run --json
+mdx-rust schema recipe-catalog --json
+mdx-rust schema artifact-explanation --json
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
 mdx-rust schema refactor-batch-apply-run --json
@@ -397,7 +416,7 @@ mdx-rust schema autopilot-run --json
 `mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis` are all published so the
 CLI can be installed from crates.io.
 
-For `0.7.x`:
+For `0.8.x`:
 
 - The `mdx-rust` CLI is supported.
 - The `mdx-rust-core` and `mdx-rust-analysis` APIs are unstable.
@@ -432,10 +451,10 @@ guessing which checks matter.
 
 ## Status
 
-`v0.7.0` is in development as the first measured-evidence autonomy release. It
-adds evidence artifacts, evidence-fed maps and plans, coverage-gated Tier 2
-execution, and keeps broad semantic refactors behind explicit review and future
-verification work.
+`v0.8.0` is the current evidence-driven, agent-first evolution target. It adds
+file/function evidence profiles, recipe catalog export, artifact explanations,
+security posture in maps/plans, and keeps broad semantic refactors behind
+explicit review and future verification work.
 
 ## License
 

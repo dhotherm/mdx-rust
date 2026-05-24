@@ -2,6 +2,53 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.8.0 - 2026-05-23
+
+Agent-first evidence-driven Rust evolution.
+
+This release makes mdx-rust easier for coding agents to drive safely and gives
+evidence more teeth. Evidence runs now profile files and functions, plans carry
+candidate evidence context, maps and plans include security posture, and the CLI
+can explain saved artifacts plus expose a typed recipe catalog.
+
+### Added
+
+- File/function evidence profiles in `mdx-rust evidence` artifacts.
+- Candidate evidence context on refactor plan candidates.
+- Security posture summaries on maps and plans, including score and severity
+  counts.
+- `mdx-rust recipes` for a machine-readable recipe catalog with tier, required
+  evidence, risk, execution status, and mutation path.
+- `mdx-rust explain <artifact>` for agent-readable artifact summaries and safe
+  next actions.
+- JSON Schema export for `recipe-catalog` and `artifact-explanation`.
+- Agent contract entries for `recipes` and `explain`.
+- Tests proving recipe catalog, artifact explanation, evidence profiles, and
+  security posture remain machine-parseable.
+
+### Changed
+
+- Refactor plan, apply-plan, batch apply, codebase map, autopilot, hardening,
+  evidence, recipe catalog, artifact explanation, and agent contract artifacts
+  now use schema version `0.8`.
+- Codebase quality scoring now includes security posture as an advisory
+  prioritization signal.
+- README, safety invariants, API stability docs, architecture docs, provenance
+  docs, release readiness, and the local mdx-rust hardening skill were refreshed
+  for the v0.8 agent-first contract.
+- Workspace package version is now `0.8.0`.
+
+### Known Limitations
+
+- Security posture influences prioritization but does not weaken validation,
+  evidence, stale-plan, rollback, or behavior eval gates.
+- File/function evidence profiles are intentionally conservative and mostly
+  syntactic until deeper coverage mapping lands.
+- Broad semantic refactors, public API rewrites, and MIR-backed analysis remain
+  future work.
+- The Rust library APIs remain unstable before `1.0`; automate through CLI JSON
+  and versioned artifacts.
+
 ## 0.7.0 - 2026-05-23
 
 Measured evidence-gated autonomy for deeper Rust evolution.

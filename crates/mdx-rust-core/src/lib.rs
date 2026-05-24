@@ -6,7 +6,7 @@
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.7.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `0.8.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io and so advanced
 //! users can inspect the internal data structures, but the library API is not
 //! yet stable. Public items may change before `1.0`.
@@ -17,6 +17,8 @@
 
 #[doc(hidden)]
 pub mod agent_contract;
+#[doc(hidden)]
+pub mod artifact;
 #[doc(hidden)]
 pub mod config;
 #[doc(hidden)]
@@ -50,6 +52,8 @@ pub mod trace;
 
 /// Agent-facing command contract for safe automation.
 pub use agent_contract::{agent_contract, AgentCommandSpec, AgentWorkflow, MdxAgentContract};
+/// Agent-facing artifact explanation helpers.
+pub use artifact::{explain_artifact, ArtifactExplanation, ArtifactKind};
 /// Configuration loading and defaults used by the CLI.
 pub use config::Config;
 /// Dataset and scorer metadata used by optimizer reports.
@@ -60,7 +64,8 @@ pub use eval::{
 /// Measured evidence artifacts used to gate autonomy. Unstable before `1.0`.
 pub use evidence::{
     load_latest_evidence, load_latest_evidence_for_root, run_evidence, EvidenceArtifactRef,
-    EvidenceCommandRecord, EvidenceMetric, EvidenceRun, EvidenceRunConfig,
+    EvidenceCommandRecord, EvidenceFileProfile, EvidenceFunctionProfile, EvidenceMetric,
+    EvidenceRun, EvidenceRunConfig,
 };
 /// Scoped Rust hardening engine for ordinary Rust modules. Unstable before `1.0`.
 pub use hardening::{
@@ -86,14 +91,15 @@ pub use policy::{load_project_policy, PolicyCategory, PolicyRule, PolicySeverity
 /// Plan-first refactor and autonomous orchestration records. Unstable before `1.0`.
 pub use refactor::{
     apply_refactor_plan_batch, apply_refactor_plan_candidate, build_codebase_map,
-    build_refactor_plan, run_autopilot, AutopilotConfig, AutopilotPass, AutopilotPassStatus,
-    AutopilotRun, AutopilotStatus, CapabilityGate, CodebaseMap, CodebaseMapConfig,
-    CodebaseQualityGrade, CodebaseQualitySummary, EvidenceGrade, EvidenceSignal, EvidenceSummary,
-    RecipeTier, RefactorApplyConfig, RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus,
-    RefactorBatchApplyConfig, RefactorBatchApplyRun, RefactorBatchApplyStatus,
-    RefactorBatchCandidateRun, RefactorCandidate, RefactorCandidateStatus, RefactorImpactSummary,
-    RefactorPlan, RefactorPlanConfig, RefactorRecipe, RefactorRiskLevel, SourceSnapshot,
-    StaleSourceFile, TestCoverageSignal,
+    build_refactor_plan, recipe_catalog, run_autopilot, AutopilotConfig, AutopilotPass,
+    AutopilotPassStatus, AutopilotRun, AutopilotStatus, CandidateEvidenceContext, CapabilityGate,
+    CodebaseMap, CodebaseMapConfig, CodebaseQualityGrade, CodebaseQualitySummary, EvidenceGrade,
+    EvidenceSignal, EvidenceSummary, RecipeCatalog, RecipeSpec, RecipeTier, RefactorApplyConfig,
+    RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus, RefactorBatchApplyConfig,
+    RefactorBatchApplyRun, RefactorBatchApplyStatus, RefactorBatchCandidateRun, RefactorCandidate,
+    RefactorCandidateStatus, RefactorImpactSummary, RefactorPlan, RefactorPlanConfig,
+    RefactorRecipe, RefactorRiskLevel, SecurityPostureSummary, SourceSnapshot, StaleSourceFile,
+    TestCoverageSignal,
 };
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};

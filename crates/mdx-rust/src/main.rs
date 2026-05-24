@@ -63,6 +63,15 @@ enum Commands {
     /// Print the machine-readable command contract for coding agents
     AgentContract,
 
+    /// List recipe tiers, evidence requirements, and executable mutation paths
+    Recipes,
+
+    /// Explain a saved mdx-rust artifact for human or agent follow-up
+    Explain {
+        /// Path to a JSON artifact produced by mdx-rust
+        artifact: String,
+    },
+
     /// Collect measured evidence that controls autonomous recipe depth
     Evidence {
         /// File or directory to associate with the evidence run
@@ -309,8 +318,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: agent-contract, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["agent-contract", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: agent-contract, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["agent-contract", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -363,6 +372,18 @@ fn main() {
         Commands::AgentContract => {
             if let Err(e) = cmd_agent_contract(cli.json) {
                 emit_error(cli.json, "agent-contract", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Recipes => {
+            if let Err(e) = cmd_recipes(cli.json) {
+                emit_error(cli.json, "recipes", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Explain { artifact } => {
+            if let Err(e) = cmd_explain(&artifact, cli.json) {
+                emit_error(cli.json, "explain", &e);
                 std::process::exit(1);
             }
         }
@@ -797,6 +818,50 @@ fn cmd_agent_contract(json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cmd_recipes(json: bool) -> anyhow::Result<()> {
+    let catalog = mdx_rust_core::recipe_catalog();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&catalog)?);
+        return Ok(());
+    }
+
+    println!("🧪 mdx-rust recipes");
+    println!("   Schema: {}", catalog.schema_version);
+    for recipe in &catalog.recipes {
+        println!(
+            "   - {} [{:?}] requires {:?} ({})",
+            recipe.id,
+            recipe.tier,
+            recipe.required_evidence,
+            if recipe.executable {
+                "executable"
+            } else {
+                "plan-only"
+            }
+        );
+        println!("     {}", recipe.description);
+    }
+    Ok(())
+}
+
+fn cmd_explain(artifact: &str, json: bool) -> anyhow::Result<()> {
+    let explanation = mdx_rust_core::explain_artifact(std::path::Path::new(artifact))?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&explanation)?);
+        return Ok(());
+    }
+
+    println!("🧾 mdx-rust explain");
+    println!("   Artifact: {}", explanation.artifact_path);
+    println!("   Kind: {:?}", explanation.artifact_kind);
+    println!("   Summary: {}", explanation.summary);
+    println!("   Next actions:");
+    for action in &explanation.recommended_next_actions {
+        println!("   - {}", action);
+    }
+    Ok(())
+}
+
 fn cmd_evidence(args: EvidenceCommand<'_>) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let config = Config::load_from_project(&cwd).unwrap_or_default();
@@ -825,6 +890,7 @@ fn cmd_evidence(args: EvidenceCommand<'_>) -> anyhow::Result<()> {
     }
     println!("   Grade: {:?}", run.grade);
     println!("   Analysis depth: {:?}", run.analysis_depth);
+    println!("   Profiled files: {}", run.file_profiles.len());
     println!("   Note: {}", run.note);
     for command in &run.commands {
         let status = if command.skipped {
@@ -1446,6 +1512,10 @@ fn cmd_plan(
         plan.impact.public_files,
         plan.impact.patchable_hardening_changes
     );
+    println!(
+        "   Security: score={}, high={}, medium={}",
+        plan.security.score, plan.security.high, plan.security.medium
+    );
     println!("   Candidates: {}", plan.candidates.len());
     if let Some(path) = &plan.artifact_path {
         println!("   Artifact: {}", path);
@@ -1507,8 +1577,8 @@ fn cmd_map(
         println!("   Target: {}", target);
     }
     println!(
-        "   Quality: {:?} (debt score {})",
-        map.quality.grade, map.quality.debt_score
+        "   Quality: {:?} (debt score {}, security score {})",
+        map.quality.grade, map.quality.debt_score, map.quality.security_score
     );
     println!(
         "   Evidence: {:?} (max autonomous tier {})",
@@ -1900,6 +1970,9 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         "agent-contract" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::MdxAgentContract))?
         }
+        "artifact-explanation" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::ArtifactExplanation))?
+        }
         "audit-packet" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::AuditPacket))?,
         "candidate" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::Candidate))?,
         "optimization-run" => {
@@ -1922,6 +1995,9 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::ProjectPolicy))?
         }
         "evidence-run" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::EvidenceRun))?,
+        "recipe-catalog" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::RecipeCatalog))?
+        }
         "refactor-plan" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorPlan))?
         }

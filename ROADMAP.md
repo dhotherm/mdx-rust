@@ -101,30 +101,21 @@ Autonomous Rust evolution for safe executable work.
   or API surfaces.
 - Optional gate detection for nextest, llvm-cov, mutants, and semver checks.
 
-## v0.7.0 Focus
+## v0.8.0 Focus
 
-Measured evidence-gated autonomy with executable Tier 2 recipes and an
-agent-first command contract.
+Agent-first evidence-driven evolution.
 
-- `mdx-rust evidence` persists measured command evidence under
-  `.mdx-rust/evidence/`.
-- Measured evidence feeds `map`, `plan`, `autopilot`, and `evolve` instead of
-  remaining only an inferred signal.
-- Coverage evidence can unlock Tier 2 executable structural mechanical recipes
-  when the caller explicitly requests Tier 2 and the minimum evidence grade is
-  satisfied.
-- First executable Tier 2 recipe: repeated private string literal extraction
-  into file-local constants.
-- Second executable Tier 2 recipe: zero-length checks from `len() == 0` to
-  `is_empty()`.
-- Hardened and Proven evidence unlock deeper clone-pressure and long-function
-  review findings and lower structural planning thresholds.
-- `mdx-rust agent-contract --json` gives coding agents a machine-readable
-  command, schema, artifact, and mutation contract.
-- Mutation and semver checks are collected as evidence when requested, but broad
-  Tier 3 semantic refactors remain future work.
-- Agent distribution remains CLI and JSON first; MCP and API surfaces stay
-  future work until the artifact contract has more field time.
+- Evidence artifacts include file/function profiles so plans can explain the
+  evidence context behind each candidate.
+- `mdx-rust recipes --json` exposes the typed recipe catalog, evidence
+  thresholds, risk, executable status, and mutation path for external agents.
+- `mdx-rust explain <artifact> --json` lets agents summarize evidence, map,
+  plan, hardening, apply, and autopilot reports before choosing the next step.
+- Maps and plans include security posture scores and severity counts to
+  prioritize risky modules without weakening safety gates.
+- The agent contract advertises the new agent-facing commands and schema names.
+- Mutation remains CLI/JSON-first. MCP and API surfaces stay future work until
+  the artifact contract has more field time.
 
 ## Current Non-Goals
 

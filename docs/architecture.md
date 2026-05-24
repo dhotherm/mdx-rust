@@ -145,10 +145,15 @@ Plan-only candidates such as extracting a function, splitting a module, or
 reviewing public API pressure are still human-reviewed design work in `v0.5`.
 Public API-impacting candidates require explicit allowance before execution.
 
-## v0.7 Evidence-Gated Autonomous Evolution
+## v0.8 Evidence-Gated Autonomous Evolution
 
-`v0.7` uses measured evidence to decide how much autonomous work is allowed
+`v0.8` uses measured evidence to decide how much autonomous work is allowed
 without creating a second mutation engine.
+
+The agent-facing contract is explicit: `agent-contract` tells agents which
+commands mutate, `recipes` tells them which recipe tiers and evidence gates
+exist, and `explain` lets them summarize saved artifacts before choosing a next
+step. These commands are read-only and do not approve mutation.
 
 `mdx-rust evidence` runs bounded local commands, persists command records under
 `.mdx-rust/evidence/`, assigns an evidence grade, and records parsed metrics
@@ -157,10 +162,14 @@ default it measures Cargo metadata and `cargo test`. Optional flags can request
 coverage, mutation, and semver checks when the corresponding Cargo tools are
 installed.
 
+Evidence runs also produce file/function profiles. Refactor candidates carry an
+evidence context so a human or agent can see whether the candidate was justified
+by a measured file profile or a broader evidence summary.
+
 `mdx-rust map` scans the requested workspace, file, or directory and writes a
 codebase map under `.mdx-rust/maps/`. The map includes workspace metadata,
-quality grade, debt score, inferred or measured evidence grade, hardening
-findings, public API pressure, module edges, available optional gates such as
+quality grade, debt score, security posture, inferred or measured evidence
+grade, hardening findings, public API pressure, module edges, available optional gates such as
 `cargo-nextest`, `cargo-llvm-cov`, `cargo-mutants`, and
 `cargo-semver-checks`, and recommended next actions.
 
@@ -199,7 +208,7 @@ Evidence grades control proportional aggression:
   for future Tier 3 semantic recipes once those recipes have dedicated
   validation contracts.
 
-The v0.7 executable Tier 1 recipe set is intentionally mechanical:
+The v0.8 executable Tier 1 recipe set is intentionally mechanical:
 
 - contextual error hardening in `anyhow::Result` functions
 - boundary error context propagation for filesystem and environment calls that
@@ -210,7 +219,7 @@ The v0.7 executable Tier 1 recipe set is intentionally mechanical:
   form such as `to_vec()`
 - `#[must_use]` annotations for public value-returning functions
 
-The v0.7 executable Tier 2 recipes are deliberately narrow:
+The v0.8 executable Tier 2 recipes are deliberately narrow:
 
 - repeated private string literal extraction into a file-local constant
 - zero-length checks from `len() == 0` to `is_empty()`

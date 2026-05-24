@@ -123,6 +123,13 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     assert_eq!(agent_contract["title"], "MdxAgentContract");
     assert!(agent_contract["properties"]["commands"].is_object());
 
+    let artifact_explanation =
+        assert_machine_pure_json(&["schema", "artifact-explanation", "--json"]);
+    assert_eq!(artifact_explanation["title"], "ArtifactExplanation");
+
+    let recipe_catalog = assert_machine_pure_json(&["schema", "recipe-catalog", "--json"]);
+    assert_eq!(recipe_catalog["title"], "RecipeCatalog");
+
     let value = assert_machine_pure_json(&["schema", "audit-packet", "--json"]);
 
     assert_eq!(value["title"], "AuditPacket");
@@ -165,7 +172,7 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
 fn agent_contract_json_mode_is_machine_parseable() {
     let value = assert_machine_pure_json(&["agent-contract", "--json"]);
 
-    assert_eq!(value["schema_version"], "0.7");
+    assert_eq!(value["schema_version"], "0.8");
     assert_eq!(
         value["json_mode_contract"],
         "Pass --json for machine-pure stdout. Errors are emitted as structured JSON when --json is set."
@@ -176,6 +183,19 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .iter()
         .any(|command| command["name"] == "evolve"
             && command["mutates_source"] == serde_json::Value::Bool(true)));
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
+        .any(
+            |command| command["name"] == "recipes" && command["primary_schema"] == "recipe-catalog"
+        ));
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
+        .any(|command| command["name"] == "explain"
+            && command["primary_schema"] == "artifact-explanation"));
     assert!(value["safety_rules"]
         .as_array()
         .expect("safety rules")
@@ -183,6 +203,67 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .any(|rule| rule
             .as_str()
             .is_some_and(|rule| rule.contains("Never add --apply"))));
+}
+
+#[test]
+fn recipes_json_mode_lists_evidence_gated_recipes() {
+    let value = assert_machine_pure_json(&["recipes", "--json"]);
+
+    assert_eq!(value["schema_version"], "0.8");
+    let recipes = value["recipes"].as_array().expect("recipes array");
+    assert!(recipes
+        .iter()
+        .any(|recipe| recipe["id"] == "contextual-error-hardening"
+            && recipe["required_evidence"] == "Compiled"
+            && recipe["executable"] == true));
+    assert!(recipes
+        .iter()
+        .any(|recipe| recipe["id"] == "security-boundary-review" && recipe["executable"] == false));
+}
+
+#[test]
+fn evidence_json_mode_profiles_files_for_agents() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-evidence-profile-fixture"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("lib.rs"),
+        r#"pub fn answer() -> usize {
+    42
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn smoke() {
+        assert_eq!(super::answer(), 42);
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let value = assert_machine_pure_json_in(&["evidence", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(value["schema_version"], "0.8");
+    assert_eq!(value["grade"], "Tested");
+    let profiles = value["file_profiles"].as_array().expect("file profiles");
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0]["file"], "src/lib.rs");
+    assert!(profiles[0]["function_profiles"]
+        .as_array()
+        .expect("function profiles")
+        .iter()
+        .any(|function| function["name"] == "answer"));
 }
 
 #[test]
@@ -245,7 +326,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["improve", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.7");
+    assert_eq!(value["schema_version"], "0.8");
     assert_eq!(value["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
 }
@@ -290,7 +371,7 @@ anyhow = "1"
         dir.path(),
     );
 
-    assert_eq!(value["schema_version"], "0.7");
+    assert_eq!(value["schema_version"], "0.8");
     assert_eq!(value["outcome"]["status"], "Applied");
     assert_eq!(value["outcome"]["isolated_validation_passed"], true);
     assert_eq!(value["outcome"]["final_validation_passed"], true);
@@ -332,14 +413,31 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.7");
+    assert_eq!(value["schema_version"], "0.8");
     assert!(value["plan_id"].as_str().is_some());
     assert_eq!(value["impact"]["patchable_hardening_changes"], 1);
+    assert!(value["security"]["score"].as_u64().is_some());
+    assert!(value["candidates"]
+        .as_array()
+        .expect("candidates")
+        .iter()
+        .any(|candidate| candidate["evidence_context"]["grade"] == "Compiled"));
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
     let artifact_path = value["artifact_path"]
         .as_str()
         .expect("plan should persist artifact");
     assert!(std::path::Path::new(artifact_path).exists());
+    let explanation =
+        assert_machine_pure_json_in(&["explain", artifact_path, "--json"], dir.path());
+    assert_eq!(explanation["schema_version"], "0.8");
+    assert_eq!(explanation["artifact_kind"], "RefactorPlan");
+    assert!(explanation["recommended_next_actions"]
+        .as_array()
+        .expect("next actions")
+        .iter()
+        .any(|action| action
+            .as_str()
+            .is_some_and(|action| action.contains("apply-plan"))));
 }
 
 #[test]
@@ -373,9 +471,11 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["map", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.7");
+    assert_eq!(value["schema_version"], "0.8");
     assert_eq!(value["evidence"]["grade"], "Compiled");
     assert_eq!(value["evidence"]["max_autonomous_tier"], 1);
+    assert!(value["security"]["score"].as_u64().is_some());
+    assert!(value["quality"]["security_score"].as_u64().is_some());
     assert_eq!(value["quality"]["patchable_findings"], 1);
     assert!(value["capability_gates"].as_array().unwrap().len() >= 4);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
@@ -439,7 +539,7 @@ pub fn load_root() -> anyhow::Result<String> {
         ],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.7");
+    assert_eq!(reviewed["schema_version"], "0.8");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["budget_exhausted"], false);
     assert_eq!(reviewed["total_executed_candidates"], 2);
@@ -594,7 +694,7 @@ anyhow = "1"
         ],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.7");
+    assert_eq!(reviewed["schema_version"], "0.8");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["hardening_run"]["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
@@ -815,7 +915,7 @@ pub fn load_root() -> anyhow::Result<String> {
         &["apply-plan", artifact_path, "--all", "--json"],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.7");
+    assert_eq!(reviewed["schema_version"], "0.8");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["executed_candidates"], 2);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before_lib);

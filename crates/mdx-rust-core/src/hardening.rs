@@ -181,7 +181,7 @@ pub fn run_hardening(
     };
 
     let mut run = HardeningRun {
-        schema_version: "0.7".to_string(),
+        schema_version: "0.8".to_string(),
         root: root.display().to_string(),
         target: config
             .target
@@ -221,7 +221,7 @@ fn execute_hardening_changes(
         .as_deref()
         .map(|path| resolve_behavior_spec_path(root, path));
 
-    let isolated = create_isolated_workspace(root, "hardening-v0-7")?;
+    let isolated = create_isolated_workspace(root, "hardening-v0-8")?;
     write_changes(&isolated, changes)?;
     let validation = validate_build_detailed_with_budget(&isolated, config.validation_timeout);
     let behavior_evaluation = if validation.passed {
@@ -692,7 +692,7 @@ anyhow = "1"
         let after = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
         assert_eq!(before, after);
         assert_eq!(run.outcome.status, HardeningStatus::Reviewed);
-        assert_eq!(run.schema_version, "0.7");
+        assert_eq!(run.schema_version, "0.8");
         assert!(run.outcome.isolated_validation_passed);
         assert!(!run.changes.is_empty());
     }

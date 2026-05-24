@@ -87,13 +87,13 @@ and external compliance integrations are future work.
 
 ## Hardening Reports
 
-`v0.7` hardening runs produce separate reports:
+`v0.8` hardening runs produce separate reports:
 
 ```text
 .mdx-rust/hardening/hardening-<mode>-<timestamp>.json
 ```
 
-The hardening report schema version is `"0.7"`.
+The hardening report schema version is `"0.8"`.
 
 Hardening reports record:
 
@@ -127,13 +127,13 @@ mdx-rust schema project-policy --json
 
 ## Evidence Runs
 
-`v0.7` evidence runs produce separate reports:
+`v0.8` evidence runs produce separate reports:
 
 ```text
 .mdx-rust/evidence/evidence-<timestamp>-<run-id>.json
 ```
 
-The evidence run schema version is `"0.7"`.
+The evidence run schema version is `"0.8"`.
 
 Evidence runs record:
 
@@ -143,6 +143,8 @@ Evidence runs record:
   tool output
 - command records for cargo metadata, cargo test, coverage, mutation, and
   semver checks
+- file/function evidence profiles used by maps and plans to explain candidate
+  eligibility
 - skipped command reasons when heavier evidence was not requested or the tool
   was unavailable
 - timeout flags, status code, duration, stdout, and stderr for executed
@@ -161,7 +163,7 @@ mdx-rust schema evidence-run --json
 
 ## Agent Contract
 
-`v0.7` also exposes an agent-facing command contract:
+`v0.8` also exposes an agent-facing command contract:
 
 ```bash
 mdx-rust agent-contract --json
@@ -183,15 +185,31 @@ The contract records:
 The agent contract is guidance for safe automation. It is not itself validation
 or permission to mutate source files.
 
+## Recipe Catalog And Artifact Explanation
+
+`v0.8` exposes two read-only agent surfaces:
+
+```bash
+mdx-rust recipes --json
+mdx-rust explain <artifact> --json
+mdx-rust schema recipe-catalog --json
+mdx-rust schema artifact-explanation --json
+```
+
+The recipe catalog records recipe id, tier, required evidence, executable
+status, risk, mutation path, and description. Artifact explanations summarize a
+saved mdx-rust JSON artifact and provide recommended next actions. Neither
+surface mutates source files or grants permission to mutate source files.
+
 ## Refactor Plans
 
-`v0.7` refactor plans produce separate reports:
+`v0.8` refactor plans produce separate reports:
 
 ```text
 .mdx-rust/plans/refactor-plan-<timestamp>-<plan-id>.json
 ```
 
-The refactor plan schema version is `"0.7"`.
+The refactor plan schema version is `"0.8"`.
 
 Refactor plans record:
 
@@ -199,6 +217,7 @@ Refactor plans record:
 - optional policy path and content hash
 - optional behavior eval spec path
 - measured evidence artifact reference when available
+- security posture summary
 - plan hash and source snapshot hashes
 - file and module scan counts
 - public API pressure
@@ -207,6 +226,8 @@ Refactor plans record:
 - explicit non-goals
 - candidate recipe, risk, status, rationale, touched files, and optional apply
   command
+- candidate evidence context explaining whether eligibility came from a
+  measured file profile or a broader evidence summary
 
 A refactor plan is not acceptance evidence. It is a review artifact.
 `mdx-rust apply-plan` must verify source snapshot hashes before it can execute
@@ -242,13 +263,13 @@ mdx-rust schema refactor-batch-apply-run --json
 
 ## Codebase Maps And Autopilot Runs
 
-`v0.7` codebase maps produce separate reports:
+`v0.8` codebase maps produce separate reports:
 
 ```text
 .mdx-rust/maps/codebase-map-<timestamp>-<map-id>.json
 ```
 
-The codebase map schema version is `"0.7"`.
+The codebase map schema version is `"0.8"`.
 
 Codebase maps record:
 
@@ -258,7 +279,8 @@ Codebase maps record:
 - measured evidence artifact reference when available
 - evidence grade, analysis depth, evidence signals, unlocked recipe tiers, max
   autonomous tier, and unlock suggestions
-- quality grade and debt score
+- quality grade, debt score, and security score
+- security posture severity counts and top findings
 - patchable and review-only finding counts
 - public API pressure
 - oversized file and function counts
@@ -273,7 +295,7 @@ Autopilot runs produce separate reports:
 .mdx-rust/autopilot/autopilot-<timestamp>-<run-id>.json
 ```
 
-The autopilot run schema version is `"0.7"`.
+The autopilot run schema version is `"0.8"`.
 
 Autopilot runs record:
 

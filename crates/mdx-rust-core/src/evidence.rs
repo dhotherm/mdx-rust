@@ -1,8 +1,8 @@
 //! Measured behavioral evidence for autonomous Rust evolution.
 //!
-//! v0.7 makes evidence a persisted artifact instead of an inferred hint. The
-//! refactor planner and autopilot can consume the latest evidence run to decide
-//! how much autonomy is allowed.
+//! v0.8 makes evidence more granular than a repo-level hint. The refactor
+//! planner and autopilot can consume file/function evidence profiles to decide
+//! how much autonomy is allowed on a target.
 
 use crate::eval::stable_hash_hex;
 use crate::refactor::{EvidenceAnalysisDepth, EvidenceGrade};
@@ -42,11 +42,30 @@ pub struct EvidenceRun {
     pub grade: EvidenceGrade,
     pub analysis_depth: EvidenceAnalysisDepth,
     pub metrics: Vec<EvidenceMetric>,
+    #[serde(default)]
+    pub file_profiles: Vec<EvidenceFileProfile>,
     pub commands: Vec<EvidenceCommandRecord>,
     pub unlocked_recipe_tiers: Vec<String>,
     pub unlock_suggestions: Vec<String>,
     pub note: String,
     pub artifact_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvidenceFileProfile {
+    pub file: String,
+    pub grade: EvidenceGrade,
+    pub analysis_depth: EvidenceAnalysisDepth,
+    pub signals: Vec<String>,
+    pub function_profiles: Vec<EvidenceFunctionProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvidenceFunctionProfile {
+    pub name: String,
+    pub line: usize,
+    pub grade: EvidenceGrade,
+    pub signals: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -77,6 +96,8 @@ pub struct EvidenceArtifactRef {
     pub run_id: String,
     pub grade: EvidenceGrade,
     pub analysis_depth: EvidenceAnalysisDepth,
+    #[serde(default)]
+    pub profiled_files: usize,
     pub artifact_path: Option<String>,
 }
 
@@ -86,6 +107,7 @@ impl From<&EvidenceRun> for EvidenceArtifactRef {
             run_id: run.run_id.clone(),
             grade: run.grade,
             analysis_depth: run.analysis_depth.clone(),
+            profiled_files: run.file_profiles.len(),
             artifact_path: run.artifact_path.clone(),
         }
     }
@@ -168,14 +190,16 @@ pub fn run_evidence(
     let grade = grade_from_commands(&commands);
     let analysis_depth = analysis_depth_for_grade(grade);
     let metrics = evidence_metrics(&commands);
+    let file_profiles = evidence_file_profiles(&root, target.as_deref(), grade)?;
     let mut run = EvidenceRun {
-        schema_version: "0.7".to_string(),
+        schema_version: "0.8".to_string(),
         run_id: evidence_run_id(&root, target.as_deref(), &commands),
         root: root.display().to_string(),
         target: target.as_ref().map(|path| path.display().to_string()),
         grade,
         analysis_depth,
         metrics,
+        file_profiles,
         commands,
         unlocked_recipe_tiers: unlocked_recipe_tiers(grade),
         unlock_suggestions: unlock_suggestions(grade, config),
@@ -266,6 +290,117 @@ fn resolve_target(root: &Path, target: &Path) -> anyhow::Result<PathBuf> {
         .strip_prefix(root)
         .unwrap_or(&resolved)
         .to_path_buf())
+}
+
+fn evidence_file_profiles(
+    root: &Path,
+    target: Option<&Path>,
+    run_grade: EvidenceGrade,
+) -> anyhow::Result<Vec<EvidenceFileProfile>> {
+    let scan_root = target.map_or_else(|| root.to_path_buf(), |target| root.join(target));
+    let mut files = Vec::new();
+    collect_rust_files(&scan_root, &mut files)?;
+    files.sort();
+
+    let mut profiles = Vec::new();
+    for file in files.into_iter().take(250) {
+        let Ok(content) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let relative = file
+            .strip_prefix(root)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
+        let has_test_markers = content.contains("#[test]")
+            || content.contains("#[tokio::test]")
+            || content.contains("mod tests")
+            || content.contains("#[cfg(test)]");
+        let mut signals = vec!["cargo metadata collected for workspace".to_string()];
+        if command_grade_implies_tests(run_grade) {
+            signals.push("workspace cargo test passed during evidence run".to_string());
+        }
+        if has_test_markers {
+            signals.push("file contains Rust test markers".to_string());
+        }
+        let file_grade = if run_grade >= EvidenceGrade::Covered {
+            run_grade
+        } else if has_test_markers && run_grade >= EvidenceGrade::Tested {
+            EvidenceGrade::Tested
+        } else {
+            run_grade.min(EvidenceGrade::Compiled)
+        };
+        profiles.push(EvidenceFileProfile {
+            file: relative,
+            grade: file_grade,
+            analysis_depth: analysis_depth_for_grade(file_grade),
+            signals: signals.clone(),
+            function_profiles: function_profiles(&content, file_grade, &signals),
+        });
+    }
+
+    Ok(profiles)
+}
+
+fn collect_rust_files(path: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    if path.is_file() {
+        if path.extension().is_some_and(|extension| extension == "rs") {
+            files.push(path.to_path_buf());
+        }
+        return Ok(());
+    }
+    if !path.is_dir() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            if matches!(name, ".git" | ".mdx-rust" | "target") {
+                continue;
+            }
+            collect_rust_files(&path, files)?;
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn function_profiles(
+    content: &str,
+    file_grade: EvidenceGrade,
+    file_signals: &[String],
+) -> Vec<EvidenceFunctionProfile> {
+    content
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let trimmed = line.trim_start();
+            let name = trimmed
+                .strip_prefix("pub fn ")
+                .or_else(|| trimmed.strip_prefix("pub(crate) fn "))
+                .or_else(|| trimmed.strip_prefix("fn "))?;
+            let name = name
+                .split(['(', '<', ' '])
+                .next()
+                .filter(|name| !name.is_empty())?;
+            Some(EvidenceFunctionProfile {
+                name: name.to_string(),
+                line: index + 1,
+                grade: file_grade,
+                signals: file_signals.to_vec(),
+            })
+        })
+        .collect()
+}
+
+fn command_grade_implies_tests(grade: EvidenceGrade) -> bool {
+    grade >= EvidenceGrade::Tested
 }
 
 fn run_optional_cargo_subcommand(
