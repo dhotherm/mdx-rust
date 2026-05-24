@@ -12,7 +12,7 @@ the relevant policy or behavior signal, landed deliberately, and audited.
 First serious safety-first release.
 
 - CLI-first API stability contract.
-- Explicitly unstable library APIs before `1.0`.
+- Explicitly unstable library APIs during the v1 beta.
 - Versioned audit packets for accepted optimizer changes.
 - Single-file edit scope hard-enforced for agent optimization.
 - First narrow parser-validated Rust fallback edit strategy.
@@ -123,7 +123,7 @@ Agent-first evidence-driven evolution.
 - Mutation remains CLI/JSON-first. Runtime surfaces stay future work until the
   artifact contract has more field time.
 
-## v0.9.0 Focus
+## v1.0 beta Focus
 
 Local agent runtime and candidate-evidence autonomy.
 

@@ -1,6 +1,6 @@
 //! Measured behavioral evidence for autonomous Rust evolution.
 //!
-//! v0.9 makes evidence more granular than a repo-level hint. The refactor
+//! v1.0 beta makes evidence more granular than a repo-level hint. The refactor
 //! planner and autopilot can consume file/function evidence profiles to decide
 //! how much autonomy is allowed on a target.
 
@@ -206,7 +206,7 @@ pub fn run_evidence(
         mutation_score_percent,
     )?;
     let mut run = EvidenceRun {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         run_id: evidence_run_id(&root, target.as_deref(), &commands),
         root: root.display().to_string(),
         target: target.as_ref().map(|path| path.display().to_string()),

@@ -1,6 +1,6 @@
 //! Plan-first guardrailed refactoring.
 //!
-//! v0.9 keeps auditable plans as the mutation boundary and adds file/function
+//! v1.0 beta keeps auditable plans as the mutation boundary and adds file/function
 //! evidence plus security posture to the safe executable subset.
 
 use crate::eval::stable_hash_hex;
@@ -557,6 +557,33 @@ pub struct EvolutionScorecard {
     pub artifact_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentReadyReport {
+    pub schema_version: String,
+    pub product_version: String,
+    pub status: AgentReadyStatus,
+    pub target: Option<String>,
+    pub readiness: AutonomyReadiness,
+    pub evidence: EvidenceSummary,
+    pub quality: CodebaseQualitySummary,
+    pub security: SecurityPostureSummary,
+    pub agent_contract: AgentReadyContractRefs,
+    pub next_commands: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum AgentReadyStatus {
+    Ready,
+    Review,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentReadyContractRefs {
+    pub discovery: String,
+    pub runtime: String,
+    pub scorecard_artifact: Option<String>,
+}
+
 pub fn recipe_catalog() -> RecipeCatalog {
     macro_rules! spec {
         (
@@ -583,7 +610,7 @@ pub fn recipe_catalog() -> RecipeCatalog {
     }
 
     RecipeCatalog {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         recipes: vec![
             spec!(
                 "contextual-error-hardening",
@@ -859,7 +886,7 @@ pub fn build_refactor_plan(
 
     let plan_id = plan_id(&root, config, &impact, &candidates);
     let mut plan = RefactorPlan {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         plan_id,
         plan_hash: String::new(),
         root: root.display().to_string(),
@@ -969,7 +996,7 @@ pub fn build_codebase_map(
         recommended_actions(&quality, &impact, &capability_gates, &evidence, &security);
     let map_id = codebase_map_id(&root, config, &quality, &impact);
     let mut map = CodebaseMap {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         map_id,
         map_hash: String::new(),
         root: root.display().to_string(),
@@ -1035,7 +1062,7 @@ pub fn build_evolution_scorecard(
     let next_commands = scorecard_next_commands(&readiness, &plan);
     let scorecard_id = evolution_scorecard_id(&root, config, &map, &plan);
     let mut scorecard = EvolutionScorecard {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         scorecard_id,
         root: root.display().to_string(),
         target: config
@@ -1080,7 +1107,7 @@ pub fn run_autopilot(
         RefactorApplyMode::Review
     };
     let mut run = AutopilotRun {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         run_id: autopilot_run_id(&root, config, &before_map),
         root: root.display().to_string(),
         target: config
@@ -1253,7 +1280,7 @@ pub fn apply_refactor_plan_candidate(
         RefactorApplyMode::Review
     };
     let mut run = RefactorApplyRun {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -1393,7 +1420,7 @@ pub fn apply_refactor_plan_batch(
         RefactorApplyMode::Review
     };
     let mut run = RefactorBatchApplyRun {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -3140,7 +3167,7 @@ anyhow = "1"
         )
         .unwrap();
 
-        assert_eq!(plan.schema_version, "0.9");
+        assert_eq!(plan.schema_version, "1.0");
         assert!(plan.candidates.iter().any(|candidate| candidate.status
             == RefactorCandidateStatus::ApplyViaImprove
             && candidate
@@ -3231,7 +3258,7 @@ edition = "2021"
         let artifact_root = dir.path().join(".mdx-rust");
         std::fs::create_dir_all(artifact_root.join("evidence")).unwrap();
         let evidence = crate::evidence::EvidenceRun {
-            schema_version: "0.9".to_string(),
+            schema_version: "1.0".to_string(),
             run_id: "covered-fixture".to_string(),
             root: dir.path().canonicalize().unwrap().display().to_string(),
             target: Some("src/lib.rs".to_string()),

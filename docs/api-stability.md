@@ -2,9 +2,9 @@
 
 `mdx-rust` is a CLI-first project.
 
-## v0.9 Stability Contract
+## v1.0 beta Stability Contract
 
-For `0.9.x`, the supported product surface is:
+For `1.0.x`, the supported product surface is:
 
 - The `mdx-rust` binary.
 - Command names, flags, exit behavior, and documented `--json` outputs.
@@ -33,9 +33,9 @@ They are published because crates.io requires versioned dependencies for the
 CLI package, and because advanced users may want to inspect the implementation.
 They are not yet a stable SDK.
 
-## What May Change Before 1.0
+## What May Change During The v1 Beta
 
-The following may change in minor releases before `1.0`:
+The following may change in minor releases during the v1 beta:
 
 - Module paths.
 - Public structs and enum variants.
@@ -67,13 +67,14 @@ Automation should prefer:
 - Versioned evidence run JSON.
 - Versioned agent runtime manifest JSON.
 - Versioned agent pack JSON.
+- Versioned agent-ready report JSON.
 - Versioned evolution scorecard JSON.
 - Versioned refactor plan JSON.
 - Versioned refactor apply-run JSON.
 
 ## Strategy Interfaces
 
-Strategy traits and planners are not stable in `0.9.x`. The agent optimizer
+Strategy traits and planners are not stable in `1.0.x`. The agent optimizer
 still keeps accepted edits single-file. The hardening engine has a separate
 bounded transaction path for scoped module hardening and requires validation,
 optional behavior evals, and final validation before reporting applied success.
@@ -94,6 +95,7 @@ schema commands:
 - `mdx-rust schema agent-contract --json`
 - `mdx-rust schema agent-runtime-manifest --json`
 - `mdx-rust schema agent-pack --json`
+- `mdx-rust schema agent-ready-report --json`
 - `mdx-rust schema recipe-catalog --json`
 - `mdx-rust schema artifact-explanation --json`
 - `mdx-rust schema evolution-scorecard --json`
@@ -101,4 +103,4 @@ schema commands:
 - `mdx-rust schema autopilot-run --json`
 
 The Rust types and module paths that produce those records remain unstable
-before `1.0`.
+during the v1 beta.

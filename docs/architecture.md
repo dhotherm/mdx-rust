@@ -67,7 +67,7 @@ names, artifact globs, and recommended workflows. Agents should consume that
 contract before calling `map`, `plan`, `evidence`, `autopilot`, `evolve`, or
 `apply-plan`.
 
-`mdx-rust scorecard` is the preferred intake surface for agents in `v0.9`.
+`mdx-rust scorecard` is the preferred intake surface for agents in `v1.0 beta`.
 It builds a codebase map, refactor plan, recipe catalog, autonomy readiness
 summary, and suggested next commands into one read-only artifact. The scorecard
 does not approve mutation; it gives agents enough structured context to choose
@@ -151,9 +151,9 @@ Plan-only candidates such as extracting a function, splitting a module, or
 reviewing public API pressure are still human-reviewed design work in `v0.5`.
 Public API-impacting candidates require explicit allowance before execution.
 
-## v0.9 Evidence-Gated Autonomous Evolution
+## v1.0 beta Evidence-Gated Autonomous Evolution
 
-`v0.9` uses measured evidence to decide how much autonomous work is allowed
+`v1.0 beta` uses measured evidence to decide how much autonomous work is allowed
 without creating a second mutation engine.
 
 The agent-facing contract is explicit: `agent-contract` tells agents which
@@ -164,11 +164,11 @@ These read-only discovery commands do not approve mutation.
 
 `mdx-rust mcp --stdio` exposes the same local tools through a line-delimited
 JSON protocol for coding agents that prefer a stdio tool runtime.
-`mdx-rust serve --bind 127.0.0.1:3799` exposes the same runtime over localhost
-HTTP. Runtime mutation is intentionally narrow: an `evolve` tool call with
-`apply=true` must also pass an explicit mutation confirmation and then routes
-through the same autopilot, apply-plan, hardening transaction, validation, and
-rollback path as the CLI.
+`mdx-rust serve --bind 127.0.0.1:3799 --token <token>` exposes the same runtime
+over localhost HTTP with optional bearer-token protection. Runtime mutation is
+intentionally narrow: an `evolve` tool call with `apply=true` must also pass an
+explicit mutation confirmation and then routes through the same autopilot,
+apply-plan, hardening transaction, validation, and rollback path as the CLI.
 
 Runtime surfaces are adapters, not new engines. They may discover tools,
 normalize arguments, dispatch to existing command handlers, and serialize JSON
@@ -183,8 +183,8 @@ The recommended external-agent loop is:
 1. `agent-contract` and `runtime` for command and transport discovery.
 2. `recipes` to learn recipe tiers and required evidence.
 3. `evidence` to collect or refresh the target's measured grade.
-4. `scorecard` or `map` for the current quality, security, and capability
-   briefing.
+4. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
+   security, and capability briefing.
 5. `plan` for a non-mutating candidate queue.
 6. `evolve` in review mode, or `evolve` with explicit mutation confirmation
    after a human approves autonomous execution.
@@ -269,7 +269,7 @@ Evidence grades control proportional aggression:
   for future Tier 3 semantic recipes once those recipes have dedicated
   validation contracts.
 
-The v0.9 executable Tier 1 recipe set is intentionally mechanical:
+The v1.0 beta executable Tier 1 recipe set is intentionally mechanical:
 
 - contextual error hardening in `anyhow::Result` functions
 - boundary error context propagation for filesystem and environment calls that
@@ -280,7 +280,7 @@ The v0.9 executable Tier 1 recipe set is intentionally mechanical:
   form such as `to_vec()`
 - `#[must_use]` annotations for public value-returning functions
 
-The v0.9 executable Tier 2 recipes are deliberately narrow:
+The v1.0 beta executable Tier 2 recipes are deliberately narrow:
 
 - repeated private string literal extraction into a file-local constant
 - zero-length checks from `len() == 0` to `is_empty()`

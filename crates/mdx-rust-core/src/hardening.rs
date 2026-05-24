@@ -181,7 +181,7 @@ pub fn run_hardening(
     };
 
     let mut run = HardeningRun {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         root: root.display().to_string(),
         target: config
             .target
@@ -694,7 +694,7 @@ anyhow = "1"
         let after = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
         assert_eq!(before, after);
         assert_eq!(run.outcome.status, HardeningStatus::Reviewed);
-        assert_eq!(run.schema_version, "0.9");
+        assert_eq!(run.schema_version, "1.0");
         assert!(run.outcome.isolated_validation_passed);
         assert!(!run.changes.is_empty());
     }

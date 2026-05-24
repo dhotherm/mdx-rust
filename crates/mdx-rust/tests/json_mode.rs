@@ -130,6 +130,9 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     let agent_pack = assert_machine_pure_json(&["schema", "agent-pack", "--json"]);
     assert_eq!(agent_pack["title"], "AgentPack");
 
+    let agent_ready = assert_machine_pure_json(&["schema", "agent-ready-report", "--json"]);
+    assert_eq!(agent_ready["title"], "AgentReadyReport");
+
     let artifact_explanation =
         assert_machine_pure_json(&["schema", "artifact-explanation", "--json"]);
     assert_eq!(artifact_explanation["title"], "ArtifactExplanation");
@@ -182,7 +185,7 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
 fn agent_contract_json_mode_is_machine_parseable() {
     let value = assert_machine_pure_json(&["agent-contract", "--json"]);
 
-    assert_eq!(value["schema_version"], "0.9");
+    assert_eq!(value["schema_version"], "1.0");
     assert_eq!(
         value["json_mode_contract"],
         "Pass --json for machine-pure stdout. Errors are emitted as structured JSON when --json is set."
@@ -206,6 +209,12 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .iter()
         .any(|command| command["name"] == "scorecard"
             && command["primary_schema"] == "evolution-scorecard"));
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
+        .any(|command| command["name"] == "agent-ready"
+            && command["primary_schema"] == "agent-ready-report"));
     assert!(value["artifact_globs"]
         .as_array()
         .expect("artifact globs")
@@ -260,7 +269,9 @@ fn agent_contract_json_mode_is_machine_parseable() {
 #[test]
 fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
     let runtime = assert_machine_pure_json(&["runtime", "--json"]);
-    assert_eq!(runtime["schema_version"], "0.9");
+    assert_eq!(runtime["schema_version"], "1.0");
+    assert_eq!(runtime["protocol_version"], "mdx-runtime/1.0");
+    assert_eq!(runtime["http_auth"]["env_var"], "MDX_RUST_RUNTIME_TOKEN");
     assert!(runtime["transports"]
         .as_array()
         .expect("transports")
@@ -284,7 +295,7 @@ fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
         .any(|flag| flag == "confirm_mutation=true"));
 
     let pack = assert_machine_pure_json(&["agent-pack", "codex", "--json"]);
-    assert_eq!(pack["schema_version"], "0.9");
+    assert_eq!(pack["schema_version"], "1.0");
     assert_eq!(pack["target_agent"], "codex");
     assert!(pack["files"]
         .as_array()
@@ -300,6 +311,16 @@ fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
             .len(),
         0
     );
+
+    let cursor_pack = assert_machine_pure_json(&["agent-pack", "cursor", "--json"]);
+    assert_eq!(cursor_pack["target_agent"], "cursor");
+    assert!(cursor_pack["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .any(|file| file["path"]
+            .as_str()
+            .is_some_and(|path| path.contains(".cursor/rules"))));
 }
 
 #[test]
@@ -417,12 +438,115 @@ fn serve_localhost_runtime_endpoint_and_rejects_remote_bind() {
     }
     let response = response.expect("runtime server should respond");
     assert!(response.contains("HTTP/1.1 200 OK"));
-    assert!(response.contains("\"schema_version\": \"0.9\""));
+    assert!(response.contains("\"schema_version\": \"1.0\""));
     assert!(response.contains("\"mcp-stdio\""));
 
     let output = child.wait_with_output().expect("server output");
     let stderr = str::from_utf8(&output.stderr).expect("stderr utf8");
     assert!(stderr.trim().is_empty(), "stderr must be empty: {stderr}");
+}
+
+#[test]
+fn serve_runtime_token_rejects_missing_auth_and_accepts_bearer_auth() {
+    let dir = tempdir().expect("temp dir");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("free port");
+    let port = listener.local_addr().expect("local addr").port();
+    drop(listener);
+    let bind = format!("127.0.0.1:{port}");
+    let mut child = mdx_command_in(
+        &[
+            "serve",
+            "--bind",
+            &bind,
+            "--token",
+            "secret-token",
+            "--once",
+            "--json",
+        ],
+        dir.path(),
+    )
+    .stdin(std::process::Stdio::null())
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped())
+    .spawn()
+    .expect("spawn runtime server");
+
+    let mut response = None;
+    for _ in 0..60 {
+        match std::net::TcpStream::connect(&bind) {
+            Ok(mut stream) => {
+                use std::io::{Read, Write};
+                stream
+                    .write_all(b"GET /runtime HTTP/1.1\r\nhost: localhost\r\n\r\n")
+                    .expect("write request");
+                let mut body = String::new();
+                stream.read_to_string(&mut body).expect("read response");
+                response = Some(body);
+                break;
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    if response.is_none() {
+        let _ = child.kill();
+    }
+    let response = response.expect("runtime server should respond");
+    assert!(response.contains("HTTP/1.1 401 Unauthorized"));
+    assert!(response.contains("bearer token"));
+    let output = child.wait_with_output().expect("server output");
+    assert!(
+        output.status.success(),
+        "unauthorized request should be a structured runtime response"
+    );
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("free port");
+    let port = listener.local_addr().expect("local addr").port();
+    drop(listener);
+    let bind = format!("127.0.0.1:{port}");
+    let mut child = mdx_command_in(
+        &[
+            "serve",
+            "--bind",
+            &bind,
+            "--token",
+            "secret-token",
+            "--once",
+            "--json",
+        ],
+        dir.path(),
+    )
+    .stdin(std::process::Stdio::null())
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::piped())
+    .spawn()
+    .expect("spawn runtime server");
+
+    let mut response = None;
+    for _ in 0..60 {
+        match std::net::TcpStream::connect(&bind) {
+            Ok(mut stream) => {
+                use std::io::{Read, Write};
+                stream
+                    .write_all(
+                        b"GET /runtime HTTP/1.1\r\nhost: localhost\r\nauthorization: Bearer secret-token\r\n\r\n",
+                    )
+                    .expect("write request");
+                let mut body = String::new();
+                stream.read_to_string(&mut body).expect("read response");
+                response = Some(body);
+                break;
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    if response.is_none() {
+        let _ = child.kill();
+    }
+    let response = response.expect("runtime server should respond");
+    assert!(response.contains("HTTP/1.1 200 OK"));
+    assert!(response.contains("\"protocol_version\": \"mdx-runtime/1.0\""));
+    let output = child.wait_with_output().expect("server output");
+    assert!(output.status.success());
 }
 
 #[test]
@@ -456,7 +580,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["scorecard", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.9");
+    assert_eq!(value["schema_version"], "1.0");
     assert!(value["scorecard_id"].as_str().is_some());
     assert_eq!(value["readiness"]["grade"], "Tier1Ready");
     assert_eq!(value["readiness"]["executable_candidates"], 1);
@@ -606,7 +730,7 @@ edition = "2021"
 fn recipes_json_mode_lists_evidence_gated_recipes() {
     let value = assert_machine_pure_json(&["recipes", "--json"]);
 
-    assert_eq!(value["schema_version"], "0.9");
+    assert_eq!(value["schema_version"], "1.0");
     let recipes = value["recipes"].as_array().expect("recipes array");
     assert!(recipes
         .iter()
@@ -616,6 +740,57 @@ fn recipes_json_mode_lists_evidence_gated_recipes() {
     assert!(recipes
         .iter()
         .any(|recipe| recipe["id"] == "security-boundary-review" && recipe["executable"] == false));
+}
+
+#[test]
+fn agent_ready_json_mode_is_compact_and_non_mutating() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-agent-ready-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load() -> anyhow::Result<String> {
+    let content = std::fs::read_to_string("missing.toml").unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+    let value = assert_machine_pure_json_in(&["agent-ready", "src", "--json"], dir.path());
+    assert_eq!(value["schema_version"], "1.0");
+    assert_eq!(value["product_version"], env!("CARGO_PKG_VERSION"));
+    assert!(matches!(
+        value["status"].as_str(),
+        Some("Ready") | Some("Review")
+    ));
+    assert!(value["agent_contract"]["discovery"]
+        .as_str()
+        .is_some_and(|command| command.contains("agent-contract")));
+    assert!(value["next_commands"]
+        .as_array()
+        .expect("next commands")
+        .iter()
+        .any(|command| command
+            .as_str()
+            .is_some_and(|command| command.contains("evolve"))));
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+
+    let schema = assert_machine_pure_json(&["schema", "agent-ready-report", "--json"]);
+    assert_eq!(schema["title"], "AgentReadyReport");
 }
 
 #[test]
@@ -651,7 +826,7 @@ mod tests {
 
     let value = assert_machine_pure_json_in(&["evidence", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.9");
+    assert_eq!(value["schema_version"], "1.0");
     assert_eq!(value["grade"], "Tested");
     let profiles = value["file_profiles"].as_array().expect("file profiles");
     assert_eq!(profiles.len(), 1);
@@ -723,7 +898,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["improve", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.9");
+    assert_eq!(value["schema_version"], "1.0");
     assert_eq!(value["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
 }
@@ -768,7 +943,7 @@ anyhow = "1"
         dir.path(),
     );
 
-    assert_eq!(value["schema_version"], "0.9");
+    assert_eq!(value["schema_version"], "1.0");
     assert_eq!(value["outcome"]["status"], "Applied");
     assert_eq!(value["outcome"]["isolated_validation_passed"], true);
     assert_eq!(value["outcome"]["final_validation_passed"], true);
@@ -810,7 +985,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.9");
+    assert_eq!(value["schema_version"], "1.0");
     assert!(value["plan_id"].as_str().is_some());
     assert_eq!(value["impact"]["patchable_hardening_changes"], 1);
     assert!(value["security"]["score"].as_u64().is_some());
@@ -832,7 +1007,7 @@ anyhow = "1"
     assert!(std::path::Path::new(artifact_path).exists());
     let explanation =
         assert_machine_pure_json_in(&["explain", artifact_path, "--json"], dir.path());
-    assert_eq!(explanation["schema_version"], "0.9");
+    assert_eq!(explanation["schema_version"], "1.0");
     assert_eq!(explanation["artifact_kind"], "RefactorPlan");
     assert!(explanation["recommended_next_actions"]
         .as_array()
@@ -874,7 +1049,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["map", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.9");
+    assert_eq!(value["schema_version"], "1.0");
     assert_eq!(value["evidence"]["grade"], "Compiled");
     assert_eq!(value["evidence"]["max_autonomous_tier"], 1);
     assert!(value["security"]["score"].as_u64().is_some());
@@ -943,7 +1118,7 @@ pub fn load_root() -> anyhow::Result<String> {
         ],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.9");
+    assert_eq!(reviewed["schema_version"], "1.0");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["budget_exhausted"], false);
     assert_eq!(reviewed["total_executed_candidates"], 2);
@@ -1098,7 +1273,7 @@ anyhow = "1"
         ],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.9");
+    assert_eq!(reviewed["schema_version"], "1.0");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["hardening_run"]["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
@@ -1319,7 +1494,7 @@ pub fn load_root() -> anyhow::Result<String> {
         &["apply-plan", artifact_path, "--all", "--json"],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.9");
+    assert_eq!(reviewed["schema_version"], "1.0");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["executed_candidates"], 2);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before_lib);

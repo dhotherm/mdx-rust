@@ -37,7 +37,7 @@ pub struct AgentWorkflow {
 
 pub fn agent_contract() -> MdxAgentContract {
     MdxAgentContract {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         product_version: env!("CARGO_PKG_VERSION").to_string(),
         json_mode_contract:
             "Pass --json for machine-pure stdout. Errors are emitted as structured JSON when --json is set."
@@ -111,6 +111,16 @@ pub fn agent_contract() -> MdxAgentContract {
                 required_flags_for_mutation: Vec::new(),
                 primary_schema: "evolution-scorecard".to_string(),
                 example: "mdx-rust --json scorecard src/service".to_string(),
+            },
+            AgentCommandSpec {
+                name: "agent-ready".to_string(),
+                purpose:
+                    "Return a compact readiness report for safe external-agent autonomy."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "agent-ready-report".to_string(),
+                example: "mdx-rust --json agent-ready src/service".to_string(),
             },
             AgentCommandSpec {
                 name: "evidence".to_string(),
@@ -191,6 +201,7 @@ pub fn agent_contract() -> MdxAgentContract {
                     "mdx-rust --json agent-contract".to_string(),
                     "mdx-rust --json runtime".to_string(),
                     "mdx-rust --json recipes".to_string(),
+                    "mdx-rust --json agent-ready <target>".to_string(),
                     "mdx-rust --json scorecard <target>".to_string(),
                     "mdx-rust --json evidence <target>".to_string(),
                     "mdx-rust --json map <target>".to_string(),

@@ -10,9 +10,19 @@ use serde::{Deserialize, Serialize};
 pub struct AgentRuntimeManifest {
     pub schema_version: String,
     pub product_version: String,
+    pub protocol_version: String,
+    pub http_auth: AgentRuntimeAuth,
     pub transports: Vec<AgentRuntimeTransport>,
     pub tools: Vec<AgentRuntimeTool>,
     pub mutation_rules: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AgentRuntimeAuth {
+    pub mode: String,
+    pub header: String,
+    pub env_var: String,
+    pub required_when_token_configured: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -50,8 +60,15 @@ pub struct AgentPackFile {
 
 pub fn agent_runtime_manifest() -> AgentRuntimeManifest {
     AgentRuntimeManifest {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         product_version: env!("CARGO_PKG_VERSION").to_string(),
+        protocol_version: "mdx-runtime/1.0".to_string(),
+        http_auth: AgentRuntimeAuth {
+            mode: "optional-local-bearer-token".to_string(),
+            header: "authorization: Bearer <token>".to_string(),
+            env_var: "MDX_RUST_RUNTIME_TOKEN".to_string(),
+            required_when_token_configured: true,
+        },
         transports: vec![
             AgentRuntimeTransport {
                 id: "cli-json".to_string(),
@@ -65,8 +82,8 @@ pub fn agent_runtime_manifest() -> AgentRuntimeManifest {
             },
             AgentRuntimeTransport {
                 id: "local-http".to_string(),
-                command: "mdx-rust serve --bind 127.0.0.1:3799".to_string(),
-                description: "Localhost-only HTTP surface for read-only tool calls and explicit mutation-gated evolution calls.".to_string(),
+                command: "mdx-rust serve --bind 127.0.0.1:3799 --token <token>".to_string(),
+                description: "Localhost-only HTTP surface for read-only tool calls and explicit mutation-gated evolution calls. A bearer token is required when configured.".to_string(),
             },
         ],
         tools: runtime_tools(),
@@ -74,6 +91,7 @@ pub fn agent_runtime_manifest() -> AgentRuntimeManifest {
             "Read-only tools must never mutate source files.".to_string(),
             "Mutation-capable tools require explicit apply=true and the same CLI safety gates.".to_string(),
             "Runtime callers cannot bypass evidence, stale-plan, validation, behavior eval, or rollback gates.".to_string(),
+            "HTTP runtime callers must pass the configured bearer token when MDX_RUST_RUNTIME_TOKEN or --token is set.".to_string(),
             "Runtime callers should inspect artifact_path fields instead of scraping human output.".to_string(),
         ],
     }
@@ -83,10 +101,13 @@ pub fn agent_pack(target_agent: &str) -> AgentPack {
     let file_path = match target_agent {
         "codex" => ".codex/skills/mdx-rust-evolution/SKILL.md",
         "claude" => ".claude/skills/mdx-rust-evolution/SKILL.md",
+        "cursor" => ".cursor/rules/mdx-rust-evolution.mdc",
+        "aider" => ".mdx-rust/agent-pack/aider-conventions.md",
+        "goose" => ".mdx-rust/agent-pack/goosehints.md",
         _ => ".mdx-rust/agent-pack/mdx-rust-evolution.md",
     };
     AgentPack {
-        schema_version: "0.9".to_string(),
+        schema_version: "1.0".to_string(),
         target_agent: target_agent.to_string(),
         files: vec![AgentPackFile {
             path: file_path.to_string(),
@@ -124,6 +145,14 @@ fn runtime_tools() -> Vec<AgentRuntimeTool> {
             false,
             "scorecard-request",
             "evolution-scorecard",
+        ),
+        runtime_tool(
+            "agent-ready",
+            "Return a compact readiness report for safe external-agent autonomy.",
+            true,
+            false,
+            "agent-ready-request",
+            "agent-ready-report",
         ),
         runtime_tool(
             "evidence",

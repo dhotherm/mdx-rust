@@ -2,6 +2,45 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 1.0.0 - 2026-05-24
+
+v1 beta trust-contract release.
+
+This release keeps the project in beta while establishing the v1 agent-facing
+contract: stable CLI-first workflows, versioned 1.0 schemas for agent-facing
+artifacts, stronger local runtime security, and a compact readiness command for
+external coding agents.
+
+### Added
+
+- `mdx-rust agent-ready` for a compact non-mutating readiness report that
+  external agents can call before deciding whether to run `evolve`.
+- JSON Schema export for `agent-ready-report`.
+- `mdx-rust serve --token <token>` and `MDX_RUST_RUNTIME_TOKEN` support for
+  localhost HTTP bearer-token protection.
+- Runtime manifest `protocol_version` and `http_auth` fields.
+- Agent pack targets for Cursor, Aider, and Goose-style workflows in addition
+  to Codex, Claude, and generic agents.
+- Regression coverage for HTTP runtime auth and MCP malformed-input recovery.
+
+### Changed
+
+- Workspace package version is now `1.0.0`.
+- Agent-facing map, plan, scorecard, hardening, evidence, autopilot, recipe,
+  artifact explanation, agent contract, runtime, agent-pack, and agent-ready
+  artifacts now use schema version `1.0`.
+- The API stability docs now describe the v1 beta contract: the CLI and
+  versioned JSON artifacts are the supported automation surface; library APIs
+  remain unstable during beta.
+
+### Known Limitations
+
+- v1.0.0 is intentionally still labeled beta in the docs and positioning.
+- Broad semantic refactors, public API rewrites, and MIR-backed analysis remain
+  future work.
+- Runtime HTTP auth is local bearer-token protection, not a remote
+  multi-tenant service security model.
+
 ## 0.9.0 - 2026-05-24
 
 Agent runtime and candidate-evidence release.

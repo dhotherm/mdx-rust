@@ -66,10 +66,10 @@ enum Commands {
     /// Print the local agent runtime manifest
     Runtime,
 
-    /// Generate agent instructions for Codex, Claude, or generic coding agents
+    /// Generate agent instructions for Codex, Claude, Cursor, Aider, Goose, or generic coding agents
     AgentPack {
-        /// Agent target: codex, claude, or generic
-        #[arg(default_value = "generic", value_parser = ["codex", "claude", "generic"])]
+        /// Agent target: codex, claude, cursor, aider, goose, or generic
+        #[arg(default_value = "generic", value_parser = ["codex", "claude", "cursor", "aider", "goose", "generic"])]
         target: String,
 
         /// Write the pack files into the current workspace
@@ -94,9 +94,31 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1:3799")]
         bind: String,
 
+        /// Optional bearer token for HTTP runtime calls, also read from MDX_RUST_RUNTIME_TOKEN
+        #[arg(long, env = "MDX_RUST_RUNTIME_TOKEN")]
+        token: Option<String>,
+
         /// Handle one request and exit, useful for smoke tests
         #[arg(long)]
         once: bool,
+    },
+
+    /// Report whether this workspace is ready for safe coding-agent autonomy
+    AgentReady {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Optional policy file to hash and attach to the readiness report
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Optional behavior eval spec that future apply commands should pass
+        #[arg(long)]
+        eval_spec: Option<String>,
+
+        /// Maximum Rust files to scan
+        #[arg(long, default_value = "250")]
+        max_files: usize,
     },
 
     /// List recipe tiers, evidence requirements, and executable mutation paths
@@ -372,8 +394,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, agent-ready-report, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -447,9 +469,26 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Serve { bind, once } => {
-            if let Err(e) = cmd_serve(&bind, once, cli.json) {
+        Commands::Serve { bind, token, once } => {
+            if let Err(e) = cmd_serve(&bind, token.as_deref(), once, cli.json) {
                 emit_error(cli.json, "serve", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::AgentReady {
+            target,
+            policy,
+            eval_spec,
+            max_files,
+        } => {
+            if let Err(e) = cmd_agent_ready(
+                target.as_deref(),
+                policy.as_deref(),
+                eval_spec.as_deref(),
+                max_files,
+                cli.json,
+            ) {
+                emit_error(cli.json, "agent-ready", &e);
                 std::process::exit(1);
             }
         }
@@ -1009,7 +1048,7 @@ fn cmd_mcp(stdio: bool, describe: bool, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_serve(bind: &str, once: bool, json: bool) -> anyhow::Result<()> {
+fn cmd_serve(bind: &str, token: Option<&str>, once: bool, json: bool) -> anyhow::Result<()> {
     if !(bind.starts_with("127.0.0.1:") || bind.starts_with("localhost:")) {
         anyhow::bail!("serve is localhost-only; bind to 127.0.0.1 or localhost");
     }
@@ -1020,17 +1059,21 @@ fn cmd_serve(bind: &str, once: bool, json: bool) -> anyhow::Result<()> {
             serde_json::json!({
                 "status": "listening",
                 "bind": bind,
-                "schema_version": "0.9",
+                "schema_version": "1.0",
+                "auth_required": token.is_some(),
                 "once": once
             })
         );
     } else {
         println!("mdx-rust runtime listening on http://{bind}");
+        if token.is_some() {
+            println!("auth: bearer token required");
+        }
     }
 
     for stream in listener.incoming() {
         let mut stream = stream?;
-        let response = handle_http_runtime_request(&mut stream)?;
+        let response = handle_http_runtime_request(&mut stream, token)?;
         use std::io::Write;
         stream.write_all(response.as_bytes())?;
         if once {
@@ -1102,6 +1145,21 @@ fn runtime_tool_call(params: &serde_json::Value) -> anyhow::Result<serde_json::V
                 },
             )?,
         )?),
+        "agent-ready" => {
+            let scorecard = mdx_rust_core::build_evolution_scorecard(
+                &cwd,
+                Some(&artifact_root),
+                &mdx_rust_core::EvolutionScorecardConfig {
+                    target: json_path_arg(&args, "target"),
+                    policy_path: json_path_arg(&args, "policy"),
+                    behavior_spec_path: json_path_arg(&args, "eval_spec"),
+                    max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
+                },
+            )?;
+            Ok(serde_json::to_value(agent_ready_report_from_scorecard(
+                scorecard,
+            ))?)
+        }
         "evidence" => Ok(serde_json::to_value(mdx_rust_core::run_evidence(
             &cwd,
             Some(&artifact_root),
@@ -1179,7 +1237,10 @@ fn runtime_tool_call(params: &serde_json::Value) -> anyhow::Result<serde_json::V
     }
 }
 
-fn handle_http_runtime_request(stream: &mut std::net::TcpStream) -> anyhow::Result<String> {
+fn handle_http_runtime_request(
+    stream: &mut std::net::TcpStream,
+    token: Option<&str>,
+) -> anyhow::Result<String> {
     use std::io::Read;
 
     let mut buffer = [0u8; 64 * 1024];
@@ -1189,6 +1250,17 @@ fn handle_http_runtime_request(stream: &mut std::net::TcpStream) -> anyhow::Resu
         .split_once("\r\n\r\n")
         .unwrap_or((request.as_ref(), ""));
     let first_line = head.lines().next().unwrap_or_default();
+    if let Some(token) = token {
+        if !http_request_has_bearer_token(head, token) {
+            return http_json_response(
+                "401 Unauthorized",
+                &serde_json::json!({
+                    "status": "error",
+                    "error": "missing or invalid bearer token"
+                }),
+            );
+        }
+    }
     let value = if first_line.starts_with("GET /runtime ") {
         serde_json::to_value(mdx_rust_core::agent_runtime_manifest())?
     } else if first_line.starts_with("POST /tools/call ") {
@@ -1200,9 +1272,23 @@ fn handle_http_runtime_request(stream: &mut std::net::TcpStream) -> anyhow::Resu
     } else {
         serde_json::json!({"status": "error", "error": "unknown route"})
     };
-    let body = serde_json::to_string_pretty(&value)?;
+    http_json_response("200 OK", &value)
+}
+
+fn http_request_has_bearer_token(head: &str, expected: &str) -> bool {
+    head.lines().skip(1).any(|line| {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        name.trim().eq_ignore_ascii_case("authorization")
+            && value.trim() == format!("Bearer {expected}")
+    })
+}
+
+fn http_json_response(status: &str, value: &serde_json::Value) -> anyhow::Result<String> {
+    let body = serde_json::to_string_pretty(value)?;
     Ok(format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
         body.len(),
         body
     ))
@@ -1329,6 +1415,83 @@ fn cmd_scorecard(
         println!("   Artifact: {}", path);
     }
     Ok(())
+}
+
+fn cmd_agent_ready(
+    target: Option<&str>,
+    policy: Option<&str>,
+    eval_spec: Option<&str>,
+    max_files: usize,
+    json: bool,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let scorecard = mdx_rust_core::build_evolution_scorecard(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::EvolutionScorecardConfig {
+            target: target.map(std::path::PathBuf::from),
+            policy_path: policy.map(std::path::PathBuf::from),
+            behavior_spec_path: eval_spec.map(std::path::PathBuf::from),
+            max_files,
+        },
+    )?;
+
+    let report = agent_ready_report_from_scorecard(scorecard);
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+
+    println!("🤖 mdx-rust agent-ready");
+    println!("   Status: {:?}", report.status);
+    println!("   Readiness: {:?}", report.readiness.grade);
+    println!("   Evidence: {:?}", report.evidence.grade);
+    println!(
+        "   Candidates: {} executable, {} review-only, {} blocked",
+        report.readiness.executable_candidates,
+        report.readiness.review_only_candidates,
+        report.readiness.blocked_candidates
+    );
+    println!("   Next commands:");
+    for command in &report.next_commands {
+        println!("   - {command}");
+    }
+    Ok(())
+}
+
+fn agent_ready_report_from_scorecard(
+    scorecard: mdx_rust_core::EvolutionScorecard,
+) -> mdx_rust_core::AgentReadyReport {
+    let ready_for_apply = scorecard.readiness.executable_candidates > 0
+        && matches!(
+            scorecard.readiness.grade,
+            mdx_rust_core::AutonomyReadinessGrade::Tier1Ready
+                | mdx_rust_core::AutonomyReadinessGrade::Tier2Ready
+                | mdx_rust_core::AutonomyReadinessGrade::Tier3Planning
+        );
+    mdx_rust_core::AgentReadyReport {
+        schema_version: "1.0".to_string(),
+        product_version: env!("CARGO_PKG_VERSION").to_string(),
+        status: if ready_for_apply {
+            mdx_rust_core::AgentReadyStatus::Ready
+        } else {
+            mdx_rust_core::AgentReadyStatus::Review
+        },
+        target: scorecard.target.clone(),
+        readiness: scorecard.readiness.clone(),
+        evidence: scorecard.map.evidence.clone(),
+        quality: scorecard.map.quality.clone(),
+        security: scorecard.map.security.clone(),
+        agent_contract: mdx_rust_core::AgentReadyContractRefs {
+            discovery: "mdx-rust --json agent-contract".to_string(),
+            runtime: "mdx-rust --json runtime".to_string(),
+            scorecard_artifact: scorecard.artifact_path.clone(),
+        },
+        next_commands: scorecard.next_commands.clone(),
+    }
 }
 
 fn cmd_evidence(args: EvidenceCommand<'_>) -> anyhow::Result<()> {
@@ -2443,6 +2606,9 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentRuntimeManifest))?
         }
         "agent-pack" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentPack))?,
+        "agent-ready-report" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentReadyReport))?
+        }
         "artifact-explanation" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::ArtifactExplanation))?
         }

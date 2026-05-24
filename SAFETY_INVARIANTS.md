@@ -48,7 +48,7 @@ The hardening path is separate from the agent optimizer.
   from the transaction snapshot.
 - A hardening transaction must reject absolute paths, parent-directory escapes,
   and any path outside the workspace root.
-- The `0.9` hardening report schema records findings, change summaries,
+- The `1.0` hardening report schema records findings, change summaries,
   validation command records, final validation command records, policy hash,
   policy-to-finding matches, behavior eval records when supplied, workspace
   metadata, transaction status, and rollback status.
@@ -102,35 +102,35 @@ allowed to move quickly, but it must not create a second mutation path.
 - Each executed candidate must route through `apply-plan --all` and the
   hardening transaction path. Autopilot must not write Rust source files
   directly.
-- v0.9 executable Tier 1 recipes are contextual error hardening, boundary error
+- v1.0 beta executable Tier 1 recipes are contextual error hardening, boundary error
   context propagation, private borrow parameter tightening, iterator clone
   cleanup, and `#[must_use]` annotation. They are allowed to execute only
   through the same hardening transaction path.
-- v0.9 executable Tier 2 recipes require measured `Covered` evidence, an
+- v1.0 beta executable Tier 2 recipes require measured `Covered` evidence, an
   explicit Tier 2 request, and the same hardening transaction path. The
   supported Tier 2 recipes are repeated private string literal extraction into a
   file-local constant, `len() == 0` to `is_empty()` cleanup, and simple
   Option boundary context propagation inside `anyhow::Result` functions.
-- v0.9 `Hardened` and `Proven` evidence may unlock deeper analysis findings,
+- v1.0 beta `Hardened` and `Proven` evidence may unlock deeper analysis findings,
   such as clone-pressure review and long-function review. These findings are
   planning evidence only unless a dedicated executable recipe marks them
   executable and routes them through the same hardening transaction path.
-- v0.9 evidence artifacts may include file/function profiles. Candidate
+- v1.0 beta evidence artifacts may include file/function profiles. Candidate
   evidence context is explanatory and may only narrow or justify a queue; it
   must not override the plan evidence grade or required recipe evidence.
-- v0.9 security posture in maps and plans is advisory prioritization evidence.
+- v1.0 beta security posture in maps and plans is advisory prioritization evidence.
   It can raise risk, add recommendations, or keep candidates plan-only, but it
   must not bypass validation, evidence, stale snapshot, behavior eval, or
   rollback gates.
-- v0.9 candidate autonomy decisions are queue gates. `Allowed` candidates may
+- v1.0 beta candidate autonomy decisions are queue gates. `Allowed` candidates may
   enter autonomous queues only when all existing evidence, risk, status, public
   API, recipe support, and security checks pass. `ReviewOnly` and `Blocked`
   candidates must not be queued by `apply-plan --all`, `autopilot`, or
   `evolve`.
-- `mdx-rust scorecard`, `mdx-rust recipes`, `mdx-rust runtime`,
-  `mdx-rust agent-pack` without `--write`, and `mdx-rust explain` are
-  read-only agent surfaces. They must never mutate source files or approve
-  mutation by themselves.
+- `mdx-rust scorecard`, `mdx-rust agent-ready`, `mdx-rust recipes`,
+  `mdx-rust runtime`, `mdx-rust agent-pack` without `--write`, and
+  `mdx-rust explain` are read-only agent surfaces. They must never mutate
+  source files or approve mutation by themselves.
 - `mdx-rust mcp --stdio` and `mdx-rust serve` are local runtime wrappers over
   the same command contracts. Runtime mutation-capable tool calls must require
   explicit mutation confirmation and must route through `evolve`, autopilot,
@@ -141,7 +141,7 @@ allowed to move quickly, but it must not create a second mutation path.
   own planning, evidence checks, file writes, validation, rollback, or
   acceptance logic.
 - Any runtime tool marked mutation-capable must require the same human intent
-  as the equivalent CLI path. For v0.9, an `evolve` runtime call must include
+  as the equivalent CLI path. For v1.0 beta, an `evolve` runtime call must include
   both `apply=true` and `confirm_mutation=true`; otherwise it must be rejected
   before any planning or source mutation can occur.
 - Runtime wrappers must not weaken evidence grade checks, requested tier
@@ -151,6 +151,8 @@ allowed to move quickly, but it must not create a second mutation path.
 - Runtime wrappers must preserve JSON purity. Machine callers should receive
   structured success or error responses, not human progress logs mixed into the
   payload.
+- HTTP runtime wrappers must reject requests with missing or invalid bearer
+  tokens whenever `--token` or `MDX_RUST_RUNTIME_TOKEN` is configured.
 - `mdx-rust agent-pack --write` may write instruction files only. It must not
   write Rust source files, plans, evidence, or approval artifacts.
 - `mdx-rust scorecard` may embed maps, plans, recipe catalogs, autonomy

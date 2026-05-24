@@ -1,6 +1,6 @@
 # Release Readiness
 
-This document is the release checklist for `v0.9.0`.
+This document is the release checklist for `v1.0.0 beta`.
 
 ## Required Automated Gates
 
@@ -18,15 +18,15 @@ whose required sibling versions are not indexed on crates.io yet. During the
 actual publish sequence, run full dry-runs in dependency order after each
 dependency is indexed.
 
-The public crate line is expected to move from `0.8.0` to `0.9.0`. Release
-notes should frame this as the next public minor release, not as a hidden jump
-from older internal checkpoints.
+The public crate line is expected to move from `0.9.0` to `1.0.0`. Release
+notes should frame this as the v1 beta contract, not as a claim that the
+library crates are a stable SDK.
 
 ## Dependency Posture
 
 `mdx-rust` intentionally uses a moderate dependency tree because it needs Rust
 parsing, CLI ergonomics, async process execution, and optional model-provider
-support. Before `v0.9.0` is published:
+support. Before `v1.0.0 beta` is published:
 
 - No yanked crates should be present.
 - Known RustSec advisories must be fixed or documented with a dated
@@ -59,6 +59,7 @@ mdx-rust schema evidence-run --json >/tmp/mdx-rust-evidence-schema.json
 mdx-rust schema agent-contract --json >/tmp/mdx-rust-agent-contract-schema.json
 mdx-rust schema agent-runtime-manifest --json >/tmp/mdx-rust-runtime-schema.json
 mdx-rust schema agent-pack --json >/tmp/mdx-rust-agent-pack-schema.json
+mdx-rust schema agent-ready-report --json >/tmp/mdx-rust-agent-ready-schema.json
 mdx-rust schema recipe-catalog --json >/tmp/mdx-rust-recipe-catalog-schema.json
 mdx-rust schema artifact-explanation --json >/tmp/mdx-rust-artifact-explanation-schema.json
 mdx-rust schema evolution-scorecard --json >/tmp/mdx-rust-evolution-scorecard-schema.json
@@ -71,6 +72,7 @@ mdx-rust eval --json >/tmp/mdx-rust-eval.json
 mdx-rust agent-contract --json >/tmp/mdx-rust-agent-contract.json
 mdx-rust runtime --json >/tmp/mdx-rust-runtime.json
 mdx-rust agent-pack codex --json >/tmp/mdx-rust-agent-pack.json
+mdx-rust agent-ready --json >/tmp/mdx-rust-agent-ready.json
 mdx-rust recipes --json >/tmp/mdx-rust-recipes.json
 mdx-rust scorecard --json >/tmp/mdx-rust-scorecard.json
 mdx-rust evidence --json >/tmp/mdx-rust-evidence.json
@@ -167,7 +169,7 @@ the fixture has only compiled evidence, and it must leave source files
 unchanged. The evolve apply run should then execute Tier 1 candidates with the
 compiled evidence default.
 
-The v0.9 recipe smoke should include at least contextual error hardening,
+The v1.0 beta recipe smoke should include at least contextual error hardening,
 boundary error context propagation, private borrow parameter tightening,
 iterator clone cleanup, `#[must_use]` annotation, and the covered Tier 2
 Option context propagation recipe in a throwaway crate. The apply run must show
@@ -216,7 +218,7 @@ does not hang or produce confusing output.
 
 ## Publish Order
 
-Do not publish `v0.9.0` until the candidate commit has passed external pressure
+Do not publish `v1.0.0 beta` until the candidate commit has passed external pressure
 testing.
 
 When approved, publish in dependency order:

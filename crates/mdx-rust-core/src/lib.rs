@@ -6,10 +6,10 @@
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.9.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `1.0.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io and so advanced
 //! users can inspect the internal data structures, but the library API is not
-//! yet stable. Public items may change before `1.0`.
+//! yet stable. Public items may change during the v1 beta.
 //!
 //! The intentionally documented facade is the set of `pub use` exports below.
 //! Module paths are left public for the CLI and tests, but most modules are
@@ -68,53 +68,54 @@ pub use eval::{
     run_behavior_evals, BehaviorCommand, BehaviorCommandRecord, BehaviorEvalReport,
     BehaviorEvalSpec, EvaluationDataset, EvaluationSample, ScorerMetadata,
 };
-/// Measured evidence artifacts used to gate autonomy. Unstable before `1.0`.
+/// Measured evidence artifacts used to gate autonomy. Unstable during the v1 beta.
 pub use evidence::{
     load_latest_evidence, load_latest_evidence_for_root, run_evidence, EvidenceArtifactRef,
     EvidenceCommandRecord, EvidenceFileProfile, EvidenceFunctionProfile, EvidenceMetric,
     EvidenceRun, EvidenceRunConfig,
 };
-/// Scoped Rust hardening engine for ordinary Rust modules. Unstable before `1.0`.
+/// Scoped Rust hardening engine for ordinary Rust modules. Unstable during the v1 beta.
 pub use hardening::{
     run_hardening, HardeningChangeSummary, HardeningConfig, HardeningEvidenceDepth, HardeningMode,
     HardeningOutcome, HardeningPolicyRecord, HardeningRiskSummary, HardeningRun, HardeningStatus,
     PolicyFindingMatch, WorkspaceSummary,
 };
-/// Built-in lifecycle hook primitives. These are unstable before `1.0`.
+/// Built-in lifecycle hook primitives. These are unstable during the v1 beta.
 pub use hooks::{
     evaluate_builtin_hook, HookAction, HookContext, HookDecision, HookPolicy, HookStage,
 };
-/// Experiment budget and ledger records. These are unstable before `1.0`.
+/// Experiment budget and ledger records. These are unstable during the v1 beta.
 pub use ledger::{
     split_dataset, DatasetSplit, ExperimentLedger, OptimizationBudget, PromptVariantRecord,
 };
-/// Optimizer entrypoint and run records. These are unstable before `1.0`.
+/// Optimizer entrypoint and run records. These are unstable during the v1 beta.
 pub use optimizer::{
     mechanical_score, run_optimization, AcceptedEditSummary, AuditPacket, AuditProvenance,
     Candidate, EditStrategy, ModelProvenance, OptimizationRun, OptimizeConfig, ScoreProvenance,
 };
 /// Structured project policy records used by v0.4 hardening reports.
 pub use policy::{load_project_policy, PolicyCategory, PolicyRule, PolicySeverity, ProjectPolicy};
-/// Plan-first refactor and autonomous orchestration records. Unstable before `1.0`.
+/// Plan-first refactor and autonomous orchestration records. Unstable during the v1 beta.
 pub use refactor::{
     apply_refactor_plan_batch, apply_refactor_plan_candidate, build_codebase_map,
     build_evolution_scorecard, build_refactor_plan, recipe_catalog, run_autopilot,
-    AutonomyDecision, AutonomyReadiness, AutonomyReadinessGrade, AutopilotConfig, AutopilotPass,
-    AutopilotPassStatus, AutopilotRun, AutopilotStatus, CandidateAutonomyDecision,
-    CandidateEvidenceContext, CandidateEvidenceStatus, CapabilityGate, CodebaseMap,
-    CodebaseMapConfig, CodebaseQualityGrade, CodebaseQualitySummary, EvidenceGrade, EvidenceSignal,
-    EvidenceSummary, EvolutionScorecard, EvolutionScorecardConfig, RecipeCatalog, RecipeSpec,
-    RecipeTier, RefactorApplyConfig, RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus,
-    RefactorBatchApplyConfig, RefactorBatchApplyRun, RefactorBatchApplyStatus,
-    RefactorBatchCandidateRun, RefactorCandidate, RefactorCandidateStatus, RefactorImpactSummary,
-    RefactorPlan, RefactorPlanConfig, RefactorRecipe, RefactorRiskLevel, SecurityPostureSummary,
-    SourceSnapshot, StaleSourceFile, TestCoverageSignal,
+    AgentReadyContractRefs, AgentReadyReport, AgentReadyStatus, AutonomyDecision,
+    AutonomyReadiness, AutonomyReadinessGrade, AutopilotConfig, AutopilotPass, AutopilotPassStatus,
+    AutopilotRun, AutopilotStatus, CandidateAutonomyDecision, CandidateEvidenceContext,
+    CandidateEvidenceStatus, CapabilityGate, CodebaseMap, CodebaseMapConfig, CodebaseQualityGrade,
+    CodebaseQualitySummary, EvidenceGrade, EvidenceSignal, EvidenceSummary, EvolutionScorecard,
+    EvolutionScorecardConfig, RecipeCatalog, RecipeSpec, RecipeTier, RefactorApplyConfig,
+    RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus, RefactorBatchApplyConfig,
+    RefactorBatchApplyRun, RefactorBatchApplyStatus, RefactorBatchCandidateRun, RefactorCandidate,
+    RefactorCandidateStatus, RefactorImpactSummary, RefactorPlan, RefactorPlanConfig,
+    RefactorRecipe, RefactorRiskLevel, SecurityPostureSummary, SourceSnapshot, StaleSourceFile,
+    TestCoverageSignal,
 };
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};
-/// Agent runner result and trace events. These are unstable before `1.0`.
+/// Agent runner result and trace events. These are unstable during the v1 beta.
 pub use runner::{run_agent, AgentRunResult, TraceEvent};
-/// Candidate safety pipeline. Direct use is unstable before `1.0`.
+/// Candidate safety pipeline. Direct use is unstable during the v1 beta.
 pub use safety_pipeline::{
     execute_candidate_edit, CandidateExecutionConfig, CandidateExecutionContext,
     CandidateExecutionOutcome, SafetyRejection, SafetyRejectionKind,
