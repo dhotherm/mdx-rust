@@ -339,6 +339,43 @@ fn mcp_stdio_lists_tools_and_blocks_unconfirmed_mutation() {
 }
 
 #[test]
+fn mcp_stdio_returns_structured_error_for_malformed_json_and_continues() {
+    let mut child = mdx_command(&["mcp", "--stdio"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn mcp");
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().expect("stdin");
+        writeln!(stdin, "{{bad json").unwrap();
+        writeln!(stdin, r#"{{"id":2,"method":"tools/list"}}"#).unwrap();
+    }
+    let output = child.wait_with_output().expect("mcp output");
+    assert!(
+        output.status.success(),
+        "mcp should keep serving after malformed input"
+    );
+    let stderr = str::from_utf8(&output.stderr).expect("stderr utf8");
+    assert!(stderr.trim().is_empty(), "stderr must be empty: {stderr}");
+    let stdout = str::from_utf8(&output.stdout).expect("stdout utf8");
+    let lines: Vec<_> = stdout.lines().collect();
+    assert_eq!(lines.len(), 2, "{stdout}");
+    let first: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert!(first["error"]["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("invalid JSON request")));
+    let second: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(second["id"], 2);
+    assert!(second["result"]
+        .as_array()
+        .expect("tool list")
+        .iter()
+        .any(|tool| tool["name"] == "scorecard"));
+}
+
+#[test]
 fn serve_localhost_runtime_endpoint_and_rejects_remote_bind() {
     let remote = assert_machine_pure_json(&["serve", "--bind", "0.0.0.0:3799", "--once", "--json"]);
     assert_eq!(remote["status"], "error");

@@ -990,7 +990,18 @@ fn cmd_mcp(stdio: bool, describe: bool, json: bool) -> anyhow::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let request: serde_json::Value = serde_json::from_str(&line)?;
+        let request: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(request) => request,
+            Err(error) => {
+                let response = serde_json::json!({
+                    "id": serde_json::Value::Null,
+                    "error": {"message": format!("invalid JSON request: {error}")}
+                });
+                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+                stdout.flush()?;
+                continue;
+            }
+        };
         let response = handle_runtime_request(&request);
         writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
         stdout.flush()?;
