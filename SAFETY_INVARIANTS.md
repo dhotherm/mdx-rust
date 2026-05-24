@@ -136,6 +136,21 @@ allowed to move quickly, but it must not create a second mutation path.
   explicit mutation confirmation and must route through `evolve`, autopilot,
   apply-plan, and hardening transactions. They must not write source files
   directly.
+- Runtime surfaces are thin adapters only. They may parse requests, dispatch to
+  existing commands, and serialize responses, but they must not implement their
+  own planning, evidence checks, file writes, validation, rollback, or
+  acceptance logic.
+- Any runtime tool marked mutation-capable must require the same human intent
+  as the equivalent CLI path. For v0.9, an `evolve` runtime call must include
+  both `apply=true` and `confirm_mutation=true`; otherwise it must be rejected
+  before any planning or source mutation can occur.
+- Runtime wrappers must not weaken evidence grade checks, requested tier
+  checks, stale-plan detection, public API gates, behavior eval gates, final
+  validation, rollback, or provenance recording. If a runtime call cannot
+  satisfy those gates, it must fail closed.
+- Runtime wrappers must preserve JSON purity. Machine callers should receive
+  structured success or error responses, not human progress logs mixed into the
+  payload.
 - `mdx-rust agent-pack --write` may write instruction files only. It must not
   write Rust source files, plans, evidence, or approval artifacts.
 - `mdx-rust scorecard` may embed maps, plans, recipe catalogs, autonomy

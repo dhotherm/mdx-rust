@@ -195,6 +195,13 @@ names, response schema names, and mutation rules. The MCP and HTTP runtime
 surfaces produce the same underlying artifacts as CLI commands. They do not
 create a separate provenance path.
 
+Runtime provenance follows the underlying tool. A read-only runtime call
+returns the same artifact references as the matching CLI command. A
+mutation-capable runtime call must produce the same autopilot, apply-plan,
+hardening, validation, rollback, and behavior-eval records that a CLI
+`evolve --apply` call would produce. The runtime response is only an envelope;
+the saved artifacts remain the source of truth.
+
 Agent packs are instruction artifacts. They can be written into a repo for
 Codex, Claude, or generic agents, but they are not approval artifacts and they
 do not validate or apply source changes.

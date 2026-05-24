@@ -280,6 +280,28 @@ Runtime mutation is not a shortcut. `evolve` calls with `apply=true` require
 explicit mutation confirmation and still route through the same evidence,
 freshness, validation, behavior eval, and rollback gates.
 
+For runtime callers, the safe integration pattern is:
+
+1. Discover: call `agent-contract`, `runtime`, and `recipes`.
+2. Measure: call `evidence` for the target, adding coverage or mutation flags
+   only when those tools are installed and the budget allows it.
+3. Brief: call `scorecard` or `map` to understand quality, security, evidence,
+   and capability gates.
+4. Plan: call `plan` to inspect executable, review-only, and blocked
+   candidates.
+5. Review: explain the plan and artifact paths to the human.
+6. Mutate only after approval: call CLI `evolve --apply`, or runtime `evolve`
+   with both `apply=true` and `confirm_mutation=true`.
+
+The concrete Tier 2 behavior in v0.9 is intentionally visible. On a target with
+a measured `Covered` evidence artifact, `mdx-rust evolve <target> --tier 2
+--min-evidence covered` can queue and validate these supported structural
+mechanical recipes: repeated private string literal extraction, `len() == 0`
+to `is_empty()`, and simple `Option::ok_or("message")?` to
+`anyhow::Context`. On a `Compiled` or `Tested` target, those same candidates
+remain blocked or review-only. Higher evidence changes what the analyzer looks
+for, but it never bypasses validation.
+
 ## Quick Start
 
 Install the CLI:

@@ -170,6 +170,25 @@ HTTP. Runtime mutation is intentionally narrow: an `evolve` tool call with
 through the same autopilot, apply-plan, hardening transaction, validation, and
 rollback path as the CLI.
 
+Runtime surfaces are adapters, not new engines. They may discover tools,
+normalize arguments, dispatch to existing command handlers, and serialize JSON
+responses. They must not implement their own file writes, evidence grade
+checks, plan execution, validation, rollback, or acceptance rules. If a runtime
+call asks for mutation without the required confirmation, or asks for a recipe
+tier that the measured evidence does not allow, the runtime must fail closed
+before source files are touched.
+
+The recommended external-agent loop is:
+
+1. `agent-contract` and `runtime` for command and transport discovery.
+2. `recipes` to learn recipe tiers and required evidence.
+3. `evidence` to collect or refresh the target's measured grade.
+4. `scorecard` or `map` for the current quality, security, and capability
+   briefing.
+5. `plan` for a non-mutating candidate queue.
+6. `evolve` in review mode, or `evolve` with explicit mutation confirmation
+   after a human approves autonomous execution.
+
 `mdx-rust agent-pack codex|claude|generic` generates instruction files that
 teach external agents how to use the command contract. These files are guidance
 only and do not grant permission to mutate source files.

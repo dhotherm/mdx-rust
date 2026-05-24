@@ -12,6 +12,8 @@ call mdx-rust tools over a stdio protocol or localhost HTTP, generate local
 agent instruction packs, and inspect candidate-level evidence status before
 choosing whether to run autonomous evolution.
 
+This is the next public minor release after `0.8.0` on crates.io.
+
 ### Added
 
 - `mdx-rust runtime` for the typed local agent runtime manifest.
@@ -49,6 +51,9 @@ choosing whether to run autonomous evolution.
   are designed for local coding agents, not remote multi-tenant services.
 - Runtime mutation still routes through the existing autopilot and hardening
   gates. There is no separate runtime mutation path.
+- Tier 2 autonomy is real but narrow: the executable set is repeated private
+  string literal extraction, zero-length cleanup, and simple Option boundary
+  context propagation under measured `Covered` evidence.
 - Candidate-level coverage is currently propagated from measured workspace
   evidence when per-function coverage mapping is not available.
 - Broad semantic refactors, public API rewrites, and MIR-backed analysis remain

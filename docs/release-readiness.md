@@ -18,6 +18,10 @@ whose required sibling versions are not indexed on crates.io yet. During the
 actual publish sequence, run full dry-runs in dependency order after each
 dependency is indexed.
 
+The public crate line is expected to move from `0.8.0` to `0.9.0`. Release
+notes should frame this as the next public minor release, not as a hidden jump
+from older internal checkpoints.
+
 ## Dependency Posture
 
 `mdx-rust` intentionally uses a moderate dependency tree because it needs Rust
@@ -182,6 +186,12 @@ The runtime smoke should prove `mdx-rust mcp --stdio` can list tools, can run a
 read-only tool, and rejects mutation-capable `evolve` calls with `apply=true`
 unless mutation confirmation is present. `mdx-rust serve` must refuse non-local
 bind addresses.
+
+Runtime pressure testing must also verify that MCP and HTTP calls expose only
+the wrapper contract: read-only tools do not mutate, mutation-capable tools
+require explicit confirmation, and successful mutation calls produce the same
+saved autopilot, apply-plan, hardening, validation, and rollback artifacts as
+the equivalent CLI path.
 
 The hardened evidence smoke should include a measured `Hardened` fixture and
 prove that clone-pressure and long-function review findings appear where a
