@@ -59,19 +59,20 @@ pub fn analyze_refactor(
     root: &Path,
     config: RefactorAnalyzeConfig<'_>,
 ) -> anyhow::Result<RefactorAnalysis> {
-    let files = collect_rust_files(root, config.target)?;
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let files = collect_rust_files(&root, config.target)?;
     let mut summaries = Vec::new();
     let mut module_edges = Vec::new();
 
     for file in files.iter().take(config.max_files) {
         let content = std::fs::read_to_string(file)?;
-        let rel = relative_path(root, file);
+        let rel = relative_path(&root, file);
         module_edges.extend(find_module_edges(&rel, &content));
         summaries.push(summarize_file(&rel, &content));
     }
 
     Ok(RefactorAnalysis {
-        root: root.to_path_buf(),
+        root,
         target: config.target.map(Path::to_path_buf),
         files_scanned: summaries.len(),
         files: summaries,
@@ -292,7 +293,7 @@ fn line_without_strings(line: &str) -> String {
 }
 
 fn collect_rust_files(root: &Path, target: Option<&Path>) -> anyhow::Result<Vec<PathBuf>> {
-    let scan_root = target
+    let requested_scan_root = target
         .map(|path| {
             if path.is_absolute() {
                 path.to_path_buf()
@@ -301,6 +302,15 @@ fn collect_rust_files(root: &Path, target: Option<&Path>) -> anyhow::Result<Vec<
             }
         })
         .unwrap_or_else(|| root.to_path_buf());
+    if target.is_some() && !requested_scan_root.exists() {
+        anyhow::bail!(
+            "refactor target does not exist: {}",
+            requested_scan_root.display()
+        );
+    }
+    let scan_root = requested_scan_root
+        .canonicalize()
+        .unwrap_or(requested_scan_root);
     if !scan_root.starts_with(root) {
         anyhow::bail!("refactor target is outside root: {}", scan_root.display());
     }
@@ -381,5 +391,20 @@ pub fn load() -> anyhow::Result<String> {
             .iter()
             .any(|item| item.name == "load"));
         assert_eq!(analysis.module_edges.len(), 2);
+    }
+
+    #[test]
+    fn refactor_analysis_rejects_missing_target() {
+        let dir = tempdir().unwrap();
+        let err = analyze_refactor(
+            dir.path(),
+            RefactorAnalyzeConfig {
+                target: Some(Path::new("src/missing.rs")),
+                max_files: 10,
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("refactor target does not exist"));
     }
 }

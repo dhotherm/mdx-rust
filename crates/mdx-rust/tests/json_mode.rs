@@ -377,6 +377,28 @@ anyhow = "1"
 }
 
 #[test]
+fn scorecard_json_mode_rejects_missing_target() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-scorecard-missing-target-fixture"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .unwrap();
+
+    let value = assert_machine_pure_json_in(&["scorecard", "src/missing.rs", "--json"], dir.path());
+
+    assert_eq!(value["status"], "error");
+    assert_eq!(value["command"], "scorecard");
+    assert!(value["error"]
+        .as_str()
+        .is_some_and(|message| message.contains("target does not exist")));
+}
+
+#[test]
 fn recipes_json_mode_lists_evidence_gated_recipes() {
     let value = assert_machine_pure_json(&["recipes", "--json"]);
 

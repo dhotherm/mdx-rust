@@ -79,13 +79,14 @@ pub fn analyze_hardening(
     root: &Path,
     config: HardeningAnalyzeConfig<'_>,
 ) -> anyhow::Result<HardeningAnalysis> {
-    let files = collect_rust_files(root, config.target)?;
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let files = collect_rust_files(&root, config.target)?;
     let mut findings = Vec::new();
     let mut changes = Vec::new();
 
     for file in files.iter().take(config.max_files) {
         let content = std::fs::read_to_string(file)?;
-        let rel = relative_path(root, file);
+        let rel = relative_path(&root, file);
         let function_ranges = find_function_ranges(&content);
 
         for (index, line) in content.lines().enumerate() {
@@ -180,7 +181,7 @@ pub fn analyze_hardening(
         }
 
         if let Some(change) =
-            build_mechanical_change(root, file, &content, &function_ranges, &config)?
+            build_mechanical_change(&root, file, &content, &function_ranges, &config)?
         {
             findings.extend(change.findings);
             changes.push(change.change);
@@ -188,7 +189,7 @@ pub fn analyze_hardening(
     }
 
     Ok(HardeningAnalysis {
-        root: root.to_path_buf(),
+        root,
         target: config.target.map(Path::to_path_buf),
         files_scanned: files.len().min(config.max_files),
         findings,
@@ -1049,7 +1050,7 @@ fn function_name(signature: &str) -> Option<String> {
 }
 
 fn collect_rust_files(root: &Path, target: Option<&Path>) -> anyhow::Result<Vec<PathBuf>> {
-    let scan_root = target
+    let requested_scan_root = target
         .map(|path| {
             if path.is_absolute() {
                 path.to_path_buf()
@@ -1058,6 +1059,15 @@ fn collect_rust_files(root: &Path, target: Option<&Path>) -> anyhow::Result<Vec<
             }
         })
         .unwrap_or_else(|| root.to_path_buf());
+    if target.is_some() && !requested_scan_root.exists() {
+        anyhow::bail!(
+            "hardening target does not exist: {}",
+            requested_scan_root.display()
+        );
+    }
+    let scan_root = requested_scan_root
+        .canonicalize()
+        .unwrap_or(requested_scan_root);
     if !scan_root.starts_with(root) {
         anyhow::bail!("hardening target is outside root: {}", scan_root.display());
     }
@@ -1472,5 +1482,22 @@ mod tests {
         .unwrap();
 
         assert!(analysis.findings.is_empty(), "{:?}", analysis.findings);
+    }
+
+    #[test]
+    fn hardening_rejects_missing_target() {
+        let dir = tempdir().unwrap();
+        let err = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: Some(Path::new("src/missing.rs")),
+                max_files: 10,
+                max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("hardening target does not exist"));
     }
 }
