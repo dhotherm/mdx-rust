@@ -22,6 +22,11 @@ The public crate line is expected to move from `0.9.0` to `1.0.0`. Release
 notes should frame this as the v1 beta contract, not as a claim that the
 library crates are a stable SDK.
 
+The release notes should also explain the supported automation contract:
+CLI commands, versioned JSON artifacts, schemas, local MCP/HTTP runtime
+surfaces, and agent packs. They should not imply that `mdx-rust-core` or
+`mdx-rust-analysis` are stable SDKs.
+
 ## Dependency Posture
 
 `mdx-rust` intentionally uses a moderate dependency tree because it needs Rust

@@ -196,6 +196,11 @@ names, response schema names, and mutation rules. The MCP and HTTP runtime
 surfaces produce the same underlying artifacts as CLI commands. They do not
 create a separate provenance path.
 
+The HTTP runtime can require a bearer token through `--token` or
+`MDX_RUST_RUNTIME_TOKEN`. This is local bearer-token protection for a developer
+machine or local agent process. It is not a remote service security model and
+does not claim tenant isolation or rate limiting.
+
 Runtime provenance follows the underlying tool. A read-only runtime call
 returns the same artifact references as the matching CLI command. A
 mutation-capable runtime call must produce the same autopilot, apply-plan,

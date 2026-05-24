@@ -136,6 +136,9 @@ allowed to move quickly, but it must not create a second mutation path.
   explicit mutation confirmation and must route through `evolve`, autopilot,
   apply-plan, and hardening transactions. They must not write source files
   directly.
+- Runtime wrappers must never queue or apply mutation merely because a tool is
+  marked mutation-capable. Review mode remains non-mutating, and apply mode
+  requires explicit human intent plus the runtime confirmation fields.
 - Runtime surfaces are thin adapters only. They may parse requests, dispatch to
   existing commands, and serialize responses, but they must not implement their
   own planning, evidence checks, file writes, validation, rollback, or
@@ -153,6 +156,9 @@ allowed to move quickly, but it must not create a second mutation path.
   payload.
 - HTTP runtime wrappers must reject requests with missing or invalid bearer
   tokens whenever `--token` or `MDX_RUST_RUNTIME_TOKEN` is configured.
+- HTTP runtime wrappers are local developer surfaces only. They must bind only
+  to `127.0.0.1` or `localhost` in v1.0 beta, and they do not claim remote
+  service rate limiting, tenant isolation, or internet-facing abuse protection.
 - `mdx-rust agent-pack --write` may write instruction files only. It must not
   write Rust source files, plans, evidence, or approval artifacts.
 - `mdx-rust scorecard` may embed maps, plans, recipe catalogs, autonomy

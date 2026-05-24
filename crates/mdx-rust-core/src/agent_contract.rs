@@ -80,12 +80,12 @@ pub fn agent_contract() -> MdxAgentContract {
                     "confirm_mutation=true".to_string(),
                 ],
                 primary_schema: "agent-runtime-manifest".to_string(),
-                example: "mdx-rust serve --bind 127.0.0.1:3799".to_string(),
+                example: "mdx-rust serve --bind 127.0.0.1:3799 --token <token>".to_string(),
             },
             AgentCommandSpec {
                 name: "agent-pack".to_string(),
                 purpose:
-                    "Generate agent instruction files that teach Codex, Claude, or generic tools to use mdx-rust safely."
+                    "Generate agent instruction files that teach Codex, Claude, Cursor, Aider, Goose-style, or generic tools to use mdx-rust safely."
                         .to_string(),
                 mutates_source: false,
                 required_flags_for_mutation: Vec::new(),
@@ -242,8 +242,10 @@ pub fn agent_contract() -> MdxAgentContract {
         safety_rules: vec![
             "Treat plan and map commands as read-only.".to_string(),
             "Never add --apply unless the user explicitly asked for mutation.".to_string(),
+            "Runtime evolve calls with apply=true must also include confirm_mutation=true.".to_string(),
             "Do not bypass min-evidence or tier restrictions.".to_string(),
             "Re-run plan after any source file changes because stale plans are rejected.".to_string(),
+            "Treat localhost HTTP as a local developer surface, not a remote multi-tenant service.".to_string(),
             "Use artifact_path fields as the source of truth for follow-up inspection.".to_string(),
         ],
     }

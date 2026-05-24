@@ -169,6 +169,9 @@ over localhost HTTP with optional bearer-token protection. Runtime mutation is
 intentionally narrow: an `evolve` tool call with `apply=true` must also pass an
 explicit mutation confirmation and then routes through the same autopilot,
 apply-plan, hardening transaction, validation, and rollback path as the CLI.
+The HTTP runtime is a local developer surface, not a hosted service. It must
+stay bound to localhost in v1.0 beta and does not provide remote rate limiting,
+tenant isolation, or internet-facing abuse protection.
 
 Runtime surfaces are adapters, not new engines. They may discover tools,
 normalize arguments, dispatch to existing command handlers, and serialize JSON
@@ -189,9 +192,10 @@ The recommended external-agent loop is:
 6. `evolve` in review mode, or `evolve` with explicit mutation confirmation
    after a human approves autonomous execution.
 
-`mdx-rust agent-pack codex|claude|generic` generates instruction files that
-teach external agents how to use the command contract. These files are guidance
-only and do not grant permission to mutate source files.
+`mdx-rust agent-pack codex|claude|cursor|aider|goose|generic` generates
+instruction files that teach external agents how to use the command contract.
+These files are guidance only and do not grant permission to mutate source
+files.
 
 `mdx-rust evidence` runs bounded local commands, persists command records under
 `.mdx-rust/evidence/`, assigns an evidence grade, and records parsed metrics
@@ -204,6 +208,12 @@ Evidence runs also produce file/function profiles. Refactor candidates carry an
 evidence context and candidate evidence status so a human or agent can see
 whether the candidate was justified by a measured file profile or a broader
 evidence summary.
+
+Evidence depth is deliberately conservative in v1.0 beta. The grade is based
+on local command outcomes and parsed metrics that mdx-rust can record today:
+Cargo metadata, tests, optional coverage, optional mutation, optional semver
+checks, and policy or behavior eval references. Missing optional tools lower or
+cap autonomy instead of being treated as success.
 
 `mdx-rust map` scans the requested workspace, file, or directory and writes a
 codebase map under `.mdx-rust/maps/`. The map includes workspace metadata,

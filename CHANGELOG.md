@@ -32,6 +32,9 @@ external coding agents.
 - The API stability docs now describe the v1 beta contract: the CLI and
   versioned JSON artifacts are the supported automation surface; library APIs
   remain unstable during beta.
+- Runtime safety docs and machine-readable contracts now spell out local-only
+  HTTP scope, bearer-token expectations, and `confirm_mutation=true`
+  requirements for mutation-capable runtime calls.
 
 ### Known Limitations
 

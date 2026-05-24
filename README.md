@@ -255,6 +255,13 @@ structural mechanical recipes can enter the executable queue if the caller also
 requests Tier 2. When evidence reaches `Hardened` or `Proven`, mdx-rust also
 searches for deeper refactor pressure that low-evidence targets do not surface.
 
+Evidence is intentionally honest in the v1 beta. The strongest autonomy signal
+comes from commands the project actually runs or parses: `cargo test`,
+`cargo-llvm-cov`, `cargo-mutants`, `cargo-semver-checks`, and behavior eval
+specs when supplied. If those tools are missing, mdx-rust does not pretend the
+repo is safer than it is; it lowers the grade, records the missing capability,
+and keeps deeper recipes blocked or review-only.
+
 ## Agent-First Usage
 
 `mdx-rust` treats external coding agents as first-class callers. Agents should
@@ -283,12 +290,17 @@ Agents that prefer a tool runtime can use:
 
 ```bash
 mdx-rust mcp --stdio
-mdx-rust serve --bind 127.0.0.1:3799
+mdx-rust serve --bind 127.0.0.1:3799 --token <token>
 ```
 
 Runtime mutation is not a shortcut. `evolve` calls with `apply=true` require
 explicit mutation confirmation and still route through the same evidence,
 freshness, validation, behavior eval, and rollback gates.
+
+The HTTP runtime is for local developer machines and local agent processes. It
+binds only to `127.0.0.1` or `localhost`, can require a bearer token, and is not
+a remote multi-tenant service with rate limiting or internet-facing abuse
+protection.
 
 For runtime callers, the safe integration pattern is:
 
@@ -303,14 +315,20 @@ For runtime callers, the safe integration pattern is:
 6. Mutate only after approval: call CLI `evolve --apply`, or runtime `evolve`
    with both `apply=true` and `confirm_mutation=true`.
 
-The concrete Tier 2 behavior in v1.0 beta is intentionally visible. On a target with
-a measured `Covered` evidence artifact, `mdx-rust evolve <target> --tier 2
---min-evidence covered` can queue and validate these supported structural
-mechanical recipes: repeated private string literal extraction, `len() == 0`
-to `is_empty()`, and simple `Option::ok_or("message")?` to
-`anyhow::Context`. On a `Compiled` or `Tested` target, those same candidates
-remain blocked or review-only. Higher evidence changes what the analyzer looks
-for, but it never bypasses validation.
+The concrete Tier 2 behavior in v1.0 beta is intentionally visible. On a target
+with a measured `Covered` evidence artifact, this review-mode command shows the
+supported queue without touching source files:
+
+```bash
+mdx-rust --json evidence src/service --include-coverage
+mdx-rust --json evolve src/service --budget 10m --tier 2 --min-evidence covered
+```
+
+With `--apply` and human approval, Tier 2 can queue and validate repeated
+private string literal extraction, `len() == 0` to `is_empty()`, and simple
+`Option::ok_or("message")?` to `anyhow::Context`. On a `Compiled` or `Tested`
+target, those same candidates remain blocked or review-only. Higher evidence
+changes what the analyzer looks for, but it never bypasses validation.
 
 ## Quick Start
 
@@ -394,7 +412,7 @@ mdx-rust map src/lib.rs
 mdx-rust plan src/lib.rs
 mdx-rust runtime --json
 mdx-rust mcp --stdio
-mdx-rust serve --bind 127.0.0.1:3799
+mdx-rust serve --bind 127.0.0.1:3799 --token local-dev-token
 mdx-rust agent-pack codex --write
 mdx-rust plan src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
 mdx-rust autopilot src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json

@@ -89,9 +89,10 @@ pub fn agent_runtime_manifest() -> AgentRuntimeManifest {
         tools: runtime_tools(),
         mutation_rules: vec![
             "Read-only tools must never mutate source files.".to_string(),
-            "Mutation-capable tools require explicit apply=true and the same CLI safety gates.".to_string(),
+            "Mutation-capable runtime tools require apply=true and confirm_mutation=true before source files can change.".to_string(),
             "Runtime callers cannot bypass evidence, stale-plan, validation, behavior eval, or rollback gates.".to_string(),
             "HTTP runtime callers must pass the configured bearer token when MDX_RUST_RUNTIME_TOKEN or --token is set.".to_string(),
+            "The HTTP runtime is localhost-only and does not provide remote multi-tenant rate limiting or abuse protection.".to_string(),
             "Runtime callers should inspect artifact_path fields instead of scraping human output.".to_string(),
         ],
     }
@@ -245,12 +246,15 @@ refactor, improve quality, or let an agent make autonomous changes.
 
 Never add `--apply` unless the human explicitly asked for mutation. Plans,
 maps, recipes, explanations, evidence runs, and scorecards are read-only.
+Runtime `evolve` calls with `apply=true` must also include
+`confirm_mutation=true`.
 
 ## Safe Workflows
 
 - Review only: `mdx-rust --json evolve <target> --budget 10m --tier 2 --min-evidence covered`
 - Apply Tier 1: `mdx-rust --json evolve <target> --budget 10m --tier 1 --apply`
 - Apply Tier 2: `mdx-rust --json evidence <target> --include-coverage`, then `mdx-rust --json evolve <target> --budget 10m --tier 2 --min-evidence covered --apply`
+- Local HTTP: `mdx-rust serve --bind 127.0.0.1:3799 --token <token>`
 
 ## Reporting
 
