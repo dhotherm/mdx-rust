@@ -88,6 +88,10 @@ pub fn create_isolated_workspace(agent_path: &Path, name: &str) -> anyhow::Resul
             return create_temp_workspace_copy(agent_path, name);
         }
 
+        if git_working_tree_is_dirty(agent_path) {
+            return create_temp_workspace_copy(agent_path, name);
+        }
+
         let base = agent_path.join(".worktrees");
         std::fs::create_dir_all(&base)?;
         let worktree_path = base.join(name);
@@ -119,6 +123,14 @@ pub fn create_isolated_workspace(agent_path: &Path, name: &str) -> anyhow::Resul
     }
 
     create_temp_workspace_copy(agent_path, name)
+}
+
+fn git_working_tree_is_dirty(path: &Path) -> bool {
+    let mut status = Command::new("git");
+    status.current_dir(path).args(["status", "--porcelain"]);
+    run_command_with_timeout(&mut status, Duration::from_secs(10))
+        .map(|output| !output.stdout.trim().is_empty())
+        .unwrap_or(true)
 }
 
 fn create_temp_workspace_copy(agent_path: &Path, name: &str) -> anyhow::Result<PathBuf> {
@@ -739,6 +751,65 @@ mod tests {
             !src.path().join(".worktrees").exists(),
             "temp-copy fallback must not mutate the source tree"
         );
+        cleanup_isolated_workspace(src.path(), &isolated);
+    }
+
+    #[test]
+    fn dirty_git_repo_uses_temp_copy_with_working_tree_changes() {
+        let src = tempdir().unwrap();
+        fs::create_dir_all(src.path().join("src")).unwrap();
+        fs::write(src.path().join("src/lib.rs"), "pub fn committed() {}\n").unwrap();
+        fs::write(
+            src.path().join("Cargo.toml"),
+            "[package]\nname=\"dirty-copy\"\nversion=\"0.1.0\"\nedition=\"2021\"",
+        )
+        .unwrap();
+
+        Command::new("git")
+            .current_dir(src.path())
+            .arg("init")
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(src.path())
+            .args(["add", "."])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(src.path())
+            .args([
+                "-c",
+                "user.email=mdx@example.invalid",
+                "-c",
+                "user.name=mdx",
+                "commit",
+                "-m",
+                "initial",
+            ])
+            .output()
+            .unwrap();
+
+        fs::write(
+            src.path().join("src/lib.rs"),
+            "pub fn committed() {}\npub fn uncommitted() {}\n",
+        )
+        .unwrap();
+        fs::write(
+            src.path().join("src/untracked.rs"),
+            "pub fn new_file() {}\n",
+        )
+        .unwrap();
+
+        let isolated = create_isolated_workspace(src.path(), "dirty-copy").unwrap();
+        assert!(
+            !isolated.parent().is_some_and(
+                |parent| parent.file_name() == Some(std::ffi::OsStr::new(".worktrees"))
+            ),
+            "dirty repos must use a temp copy instead of a HEAD worktree"
+        );
+        let isolated_lib = fs::read_to_string(isolated.join("src/lib.rs")).unwrap();
+        assert!(isolated_lib.contains("uncommitted"));
+        assert!(isolated.join("src/untracked.rs").exists());
         cleanup_isolated_workspace(src.path(), &isolated);
     }
 

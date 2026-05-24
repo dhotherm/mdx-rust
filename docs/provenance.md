@@ -88,13 +88,13 @@ and external compliance integrations are future work.
 
 ## Hardening Reports
 
-`v0.8` hardening runs produce separate reports:
+`v0.9` hardening runs produce separate reports:
 
 ```text
 .mdx-rust/hardening/hardening-<mode>-<timestamp>.json
 ```
 
-The hardening report schema version is `"0.8"`.
+The hardening report schema version is `"0.9"`.
 
 Hardening reports record:
 
@@ -128,13 +128,13 @@ mdx-rust schema project-policy --json
 
 ## Evidence Runs
 
-`v0.8` evidence runs produce separate reports:
+`v0.9` evidence runs produce separate reports:
 
 ```text
 .mdx-rust/evidence/evidence-<timestamp>-<run-id>.json
 ```
 
-The evidence run schema version is `"0.8"`.
+The evidence run schema version is `"0.9"`.
 
 Evidence runs record:
 
@@ -164,11 +164,15 @@ mdx-rust schema evidence-run --json
 
 ## Agent Contract
 
-`v0.8` also exposes an agent-facing command contract:
+`v0.9` also exposes an agent-facing command contract and local runtime
+manifest:
 
 ```bash
 mdx-rust agent-contract --json
+mdx-rust runtime --json
 mdx-rust schema agent-contract --json
+mdx-rust schema agent-runtime-manifest --json
+mdx-rust schema agent-pack --json
 ```
 
 The contract records:
@@ -186,15 +190,24 @@ The contract records:
 The agent contract is guidance for safe automation. It is not itself validation
 or permission to mutate source files.
 
+The runtime manifest records local transports, runtime tools, request schema
+names, response schema names, and mutation rules. The MCP and HTTP runtime
+surfaces produce the same underlying artifacts as CLI commands. They do not
+create a separate provenance path.
+
+Agent packs are instruction artifacts. They can be written into a repo for
+Codex, Claude, or generic agents, but they are not approval artifacts and they
+do not validate or apply source changes.
+
 ## Evolution Scorecards
 
-`v0.8` scorecards produce separate reports:
+`v0.9` scorecards produce separate reports:
 
 ```text
 .mdx-rust/scorecards/evolution-scorecard-<timestamp>-<scorecard-id>.json
 ```
 
-The scorecard schema version is `"0.8"`.
+The scorecard schema version is `"0.9"`.
 
 Scorecards record:
 
@@ -219,11 +232,12 @@ mdx-rust schema evolution-scorecard --json
 
 ## Recipe Catalog And Artifact Explanation
 
-`v0.8` exposes two read-only agent surfaces:
+`v0.9` exposes read-only agent surfaces:
 
 ```bash
 mdx-rust recipes --json
 mdx-rust explain <artifact> --json
+mdx-rust agent-pack codex --json
 mdx-rust schema recipe-catalog --json
 mdx-rust schema artifact-explanation --json
 ```
@@ -235,13 +249,13 @@ surface mutates source files or grants permission to mutate source files.
 
 ## Refactor Plans
 
-`v0.8` refactor plans produce separate reports:
+`v0.9` refactor plans produce separate reports:
 
 ```text
 .mdx-rust/plans/refactor-plan-<timestamp>-<plan-id>.json
 ```
 
-The refactor plan schema version is `"0.8"`.
+The refactor plan schema version is `"0.9"`.
 
 Refactor plans record:
 
@@ -298,13 +312,13 @@ mdx-rust schema refactor-batch-apply-run --json
 
 ## Codebase Maps And Autopilot Runs
 
-`v0.8` codebase maps produce separate reports:
+`v0.9` codebase maps produce separate reports:
 
 ```text
 .mdx-rust/maps/codebase-map-<timestamp>-<map-id>.json
 ```
 
-The codebase map schema version is `"0.8"`.
+The codebase map schema version is `"0.9"`.
 
 Codebase maps record:
 
@@ -332,7 +346,7 @@ Autopilot runs produce separate reports:
 .mdx-rust/autopilot/autopilot-<timestamp>-<run-id>.json
 ```
 
-The autopilot run schema version is `"0.8"`.
+The autopilot run schema version is `"0.9"`.
 
 Autopilot runs record:
 

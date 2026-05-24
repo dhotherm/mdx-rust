@@ -37,15 +37,61 @@ pub struct AgentWorkflow {
 
 pub fn agent_contract() -> MdxAgentContract {
     MdxAgentContract {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         product_version: env!("CARGO_PKG_VERSION").to_string(),
         json_mode_contract:
             "Pass --json for machine-pure stdout. Errors are emitted as structured JSON when --json is set."
                 .to_string(),
         mutation_contract:
-            "Only improve --apply, apply-plan --apply, autopilot --apply, and evolve --apply may mutate source files; every mutation routes through isolated validation and rollback gates."
+            "Only improve --apply, apply-plan --apply, autopilot --apply, evolve --apply, or a runtime evolve call with apply=true and confirm_mutation=true may mutate source files; every mutation routes through isolated validation and rollback gates."
                 .to_string(),
         commands: vec![
+            AgentCommandSpec {
+                name: "runtime".to_string(),
+                purpose:
+                    "Describe local agent runtime transports, tools, and mutation rules."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "agent-runtime-manifest".to_string(),
+                example: "mdx-rust --json runtime".to_string(),
+            },
+            AgentCommandSpec {
+                name: "mcp".to_string(),
+                purpose:
+                    "Run the local stdio agent tool protocol for scorecard, evidence, map, plan, explain, recipes, and gated evolve."
+                        .to_string(),
+                mutates_source: true,
+                required_flags_for_mutation: vec![
+                    "apply=true".to_string(),
+                    "confirm_mutation=true".to_string(),
+                ],
+                primary_schema: "agent-runtime-manifest".to_string(),
+                example: "mdx-rust mcp --stdio".to_string(),
+            },
+            AgentCommandSpec {
+                name: "serve".to_string(),
+                purpose:
+                    "Expose the same local agent tools over localhost HTTP for agents that prefer a socket API."
+                        .to_string(),
+                mutates_source: true,
+                required_flags_for_mutation: vec![
+                    "apply=true".to_string(),
+                    "confirm_mutation=true".to_string(),
+                ],
+                primary_schema: "agent-runtime-manifest".to_string(),
+                example: "mdx-rust serve --bind 127.0.0.1:3799".to_string(),
+            },
+            AgentCommandSpec {
+                name: "agent-pack".to_string(),
+                purpose:
+                    "Generate agent instruction files that teach Codex, Claude, or generic tools to use mdx-rust safely."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "agent-pack".to_string(),
+                example: "mdx-rust --json agent-pack codex".to_string(),
+            },
             AgentCommandSpec {
                 name: "recipes".to_string(),
                 purpose:
@@ -143,11 +189,22 @@ pub fn agent_contract() -> MdxAgentContract {
                 goal: "Understand a Rust target before proposing code changes.".to_string(),
                 steps: vec![
                     "mdx-rust --json agent-contract".to_string(),
+                    "mdx-rust --json runtime".to_string(),
                     "mdx-rust --json recipes".to_string(),
                     "mdx-rust --json scorecard <target>".to_string(),
                     "mdx-rust --json evidence <target>".to_string(),
                     "mdx-rust --json map <target>".to_string(),
                     "mdx-rust --json plan <target>".to_string(),
+                ],
+            },
+            AgentWorkflow {
+                id: "agent-runtime".to_string(),
+                goal: "Let an external coding agent call mdx-rust through a local runtime surface.".to_string(),
+                steps: vec![
+                    "mdx-rust --json runtime".to_string(),
+                    "mdx-rust mcp --stdio".to_string(),
+                    "Call tools/list before tools/call.".to_string(),
+                    "Only call mutation-capable tools with apply=true and confirm_mutation=true after human approval.".to_string(),
                 ],
             },
             AgentWorkflow {
@@ -169,6 +226,7 @@ pub fn agent_contract() -> MdxAgentContract {
             ".mdx-rust/plans/*.json".to_string(),
             ".mdx-rust/autopilot/*.json".to_string(),
             ".mdx-rust/hardening/*.json".to_string(),
+            ".mdx-rust/agent-pack/*".to_string(),
         ],
         safety_rules: vec![
             "Treat plan and map commands as read-only.".to_string(),

@@ -1,6 +1,6 @@
 //! Measured behavioral evidence for autonomous Rust evolution.
 //!
-//! v0.8 makes evidence more granular than a repo-level hint. The refactor
+//! v0.9 makes evidence more granular than a repo-level hint. The refactor
 //! planner and autopilot can consume file/function evidence profiles to decide
 //! how much autonomy is allowed on a target.
 
@@ -57,6 +57,10 @@ pub struct EvidenceFileProfile {
     pub grade: EvidenceGrade,
     pub analysis_depth: EvidenceAnalysisDepth,
     pub signals: Vec<String>,
+    #[serde(default)]
+    pub coverage_percent: Option<f64>,
+    #[serde(default)]
+    pub mutation_score_percent: Option<f64>,
     pub function_profiles: Vec<EvidenceFunctionProfile>,
 }
 
@@ -66,6 +70,8 @@ pub struct EvidenceFunctionProfile {
     pub line: usize,
     pub grade: EvidenceGrade,
     pub signals: Vec<String>,
+    #[serde(default)]
+    pub coverage_percent: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -190,9 +196,17 @@ pub fn run_evidence(
     let grade = grade_from_commands(&commands);
     let analysis_depth = analysis_depth_for_grade(grade);
     let metrics = evidence_metrics(&commands);
-    let file_profiles = evidence_file_profiles(&root, target.as_deref(), grade)?;
+    let coverage_percent = metric_value(&metrics, "coverage-percent");
+    let mutation_score_percent = metric_value(&metrics, "mutation-score-percent");
+    let file_profiles = evidence_file_profiles(
+        &root,
+        target.as_deref(),
+        grade,
+        coverage_percent,
+        mutation_score_percent,
+    )?;
     let mut run = EvidenceRun {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         run_id: evidence_run_id(&root, target.as_deref(), &commands),
         root: root.display().to_string(),
         target: target.as_ref().map(|path| path.display().to_string()),
@@ -296,6 +310,8 @@ fn evidence_file_profiles(
     root: &Path,
     target: Option<&Path>,
     run_grade: EvidenceGrade,
+    coverage_percent: Option<f64>,
+    mutation_score_percent: Option<f64>,
 ) -> anyhow::Result<Vec<EvidenceFileProfile>> {
     let scan_root = target.map_or_else(|| root.to_path_buf(), |target| root.join(target));
     let mut files = Vec::new();
@@ -323,6 +339,14 @@ fn evidence_file_profiles(
         if has_test_markers {
             signals.push("file contains Rust test markers".to_string());
         }
+        if let Some(percent) = coverage_percent {
+            signals.push(format!("workspace coverage measured at {percent:.1}%"));
+        }
+        if let Some(percent) = mutation_score_percent {
+            signals.push(format!(
+                "workspace mutation score measured at {percent:.1}%"
+            ));
+        }
         let file_grade = if run_grade >= EvidenceGrade::Covered {
             run_grade
         } else if has_test_markers && run_grade >= EvidenceGrade::Tested {
@@ -335,7 +359,9 @@ fn evidence_file_profiles(
             grade: file_grade,
             analysis_depth: analysis_depth_for_grade(file_grade),
             signals: signals.clone(),
-            function_profiles: function_profiles(&content, file_grade, &signals),
+            coverage_percent,
+            mutation_score_percent,
+            function_profiles: function_profiles(&content, file_grade, &signals, coverage_percent),
         });
     }
 
@@ -375,6 +401,7 @@ fn function_profiles(
     content: &str,
     file_grade: EvidenceGrade,
     file_signals: &[String],
+    coverage_percent: Option<f64>,
 ) -> Vec<EvidenceFunctionProfile> {
     content
         .lines()
@@ -394,6 +421,7 @@ fn function_profiles(
                 line: index + 1,
                 grade: file_grade,
                 signals: file_signals.to_vec(),
+                coverage_percent,
             })
         })
         .collect()
@@ -552,6 +580,13 @@ fn evidence_metrics(commands: &[EvidenceCommandRecord]) -> Vec<EvidenceMetric> {
         }
     }
     metrics
+}
+
+fn metric_value(metrics: &[EvidenceMetric], id: &str) -> Option<f64> {
+    metrics
+        .iter()
+        .find(|metric| metric.id == id)
+        .map(|metric| metric.value)
 }
 
 fn last_percent(output: &str) -> Option<f64> {

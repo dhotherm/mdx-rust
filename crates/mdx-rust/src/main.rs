@@ -63,6 +63,42 @@ enum Commands {
     /// Print the machine-readable command contract for coding agents
     AgentContract,
 
+    /// Print the local agent runtime manifest
+    Runtime,
+
+    /// Generate agent instructions for Codex, Claude, or generic coding agents
+    AgentPack {
+        /// Agent target: codex, claude, or generic
+        #[arg(default_value = "generic", value_parser = ["codex", "claude", "generic"])]
+        target: String,
+
+        /// Write the pack files into the current workspace
+        #[arg(long)]
+        write: bool,
+    },
+
+    /// Run the local stdio agent tool protocol
+    Mcp {
+        /// Use stdin/stdout line-delimited JSON transport
+        #[arg(long)]
+        stdio: bool,
+
+        /// Print the runtime manifest and exit
+        #[arg(long)]
+        describe: bool,
+    },
+
+    /// Serve the local agent runtime over localhost HTTP
+    Serve {
+        /// Bind address. Use localhost only.
+        #[arg(long, default_value = "127.0.0.1:3799")]
+        bind: String,
+
+        /// Handle one request and exit, useful for smoke tests
+        #[arg(long)]
+        once: bool,
+    },
+
     /// List recipe tiers, evidence requirements, and executable mutation paths
     Recipes,
 
@@ -336,8 +372,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: agent-contract, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["agent-contract", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -390,6 +426,30 @@ fn main() {
         Commands::AgentContract => {
             if let Err(e) = cmd_agent_contract(cli.json) {
                 emit_error(cli.json, "agent-contract", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Runtime => {
+            if let Err(e) = cmd_runtime(cli.json) {
+                emit_error(cli.json, "runtime", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::AgentPack { target, write } => {
+            if let Err(e) = cmd_agent_pack(&target, write, cli.json) {
+                emit_error(cli.json, "agent-pack", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Mcp { stdio, describe } => {
+            if let Err(e) = cmd_mcp(stdio, describe, cli.json) {
+                emit_error(cli.json, "mcp", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Serve { bind, once } => {
+            if let Err(e) = cmd_serve(&bind, once, cli.json) {
+                emit_error(cli.json, "serve", &e);
                 std::process::exit(1);
             }
         }
@@ -851,6 +911,316 @@ fn cmd_agent_contract(json: bool) -> anyhow::Result<()> {
     }
     println!("   Start with: mdx-rust --json agent-contract");
     Ok(())
+}
+
+fn cmd_runtime(json: bool) -> anyhow::Result<()> {
+    let manifest = mdx_rust_core::agent_runtime_manifest();
+    if json {
+        println!("{}", serde_json::to_string_pretty(&manifest)?);
+        return Ok(());
+    }
+
+    println!("🔌 mdx-rust agent runtime");
+    println!("   Schema: {}", manifest.schema_version);
+    println!("   Version: {}", manifest.product_version);
+    println!("   Transports:");
+    for transport in &manifest.transports {
+        println!("   - {}: {}", transport.id, transport.command);
+    }
+    println!("   Tools:");
+    for tool in &manifest.tools {
+        let mode = if tool.mutation_capable {
+            "mutation-capable"
+        } else {
+            "read-only"
+        };
+        println!("   - {} ({mode}): {}", tool.name, tool.description);
+    }
+    Ok(())
+}
+
+fn cmd_agent_pack(target: &str, write: bool, json: bool) -> anyhow::Result<()> {
+    let pack = mdx_rust_core::agent_pack(target);
+    let mut written = Vec::new();
+    if write {
+        for file in &pack.files {
+            let path = std::path::Path::new(&file.path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(path, &file.content)?;
+            written.push(path.display().to_string());
+        }
+    }
+
+    if json {
+        let mut value = serde_json::to_value(&pack)?;
+        value["written_files"] = serde_json::json!(written);
+        println!("{}", serde_json::to_string_pretty(&value)?);
+        return Ok(());
+    }
+
+    println!("📦 mdx-rust agent pack for {target}");
+    println!("   {}", pack.install_note);
+    for file in &pack.files {
+        println!("   - {}: {}", file.path, file.purpose);
+    }
+    if write {
+        println!("   Written files:");
+        for path in written {
+            println!("   - {path}");
+        }
+    } else {
+        println!("   Review mode only. Re-run with --write to create files.");
+    }
+    Ok(())
+}
+
+fn cmd_mcp(stdio: bool, describe: bool, json: bool) -> anyhow::Result<()> {
+    if describe || !stdio {
+        return cmd_runtime(json);
+    }
+
+    use std::io::{BufRead, Write};
+
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    for line in stdin.lock().lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let request: serde_json::Value = serde_json::from_str(&line)?;
+        let response = handle_runtime_request(&request);
+        writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+        stdout.flush()?;
+    }
+    Ok(())
+}
+
+fn cmd_serve(bind: &str, once: bool, json: bool) -> anyhow::Result<()> {
+    if !(bind.starts_with("127.0.0.1:") || bind.starts_with("localhost:")) {
+        anyhow::bail!("serve is localhost-only; bind to 127.0.0.1 or localhost");
+    }
+    let listener = std::net::TcpListener::bind(bind)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "listening",
+                "bind": bind,
+                "schema_version": "0.9",
+                "once": once
+            })
+        );
+    } else {
+        println!("mdx-rust runtime listening on http://{bind}");
+    }
+
+    for stream in listener.incoming() {
+        let mut stream = stream?;
+        let response = handle_http_runtime_request(&mut stream)?;
+        use std::io::Write;
+        stream.write_all(response.as_bytes())?;
+        if once {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn handle_runtime_request(request: &serde_json::Value) -> serde_json::Value {
+    let id = request
+        .get("id")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let method = request
+        .get("method")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let result = match method {
+        "initialize" | "runtime/manifest" => {
+            serde_json::to_value(mdx_rust_core::agent_runtime_manifest())
+                .map_err(anyhow::Error::from)
+        }
+        "tools/list" => serde_json::to_value(mdx_rust_core::agent_runtime_manifest().tools)
+            .map_err(anyhow::Error::from),
+        "tools/call" => {
+            runtime_tool_call(request.get("params").unwrap_or(&serde_json::Value::Null))
+        }
+        other => Err(anyhow::anyhow!("unknown runtime method: {other}")),
+    };
+
+    match result {
+        Ok(value) => serde_json::json!({"id": id, "result": value}),
+        Err(error) => serde_json::json!({
+            "id": id,
+            "error": {"message": error.to_string()}
+        }),
+    }
+}
+
+fn runtime_tool_call(params: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    let name = params
+        .get("name")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| anyhow::anyhow!("tools/call requires params.name"))?;
+    let args = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+
+    match name {
+        "agent-contract" => Ok(serde_json::to_value(mdx_rust_core::agent_contract())?),
+        "runtime" => Ok(serde_json::to_value(
+            mdx_rust_core::agent_runtime_manifest(),
+        )?),
+        "recipes" => Ok(serde_json::to_value(mdx_rust_core::recipe_catalog())?),
+        "scorecard" => Ok(serde_json::to_value(
+            mdx_rust_core::build_evolution_scorecard(
+                &cwd,
+                Some(&artifact_root),
+                &mdx_rust_core::EvolutionScorecardConfig {
+                    target: json_path_arg(&args, "target"),
+                    policy_path: json_path_arg(&args, "policy"),
+                    behavior_spec_path: json_path_arg(&args, "eval_spec"),
+                    max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
+                },
+            )?,
+        )?),
+        "evidence" => Ok(serde_json::to_value(mdx_rust_core::run_evidence(
+            &cwd,
+            Some(&artifact_root),
+            &mdx_rust_core::EvidenceRunConfig {
+                target: json_path_arg(&args, "target"),
+                include_coverage: json_bool_arg(&args, "include_coverage"),
+                include_mutation: json_bool_arg(&args, "include_mutation"),
+                include_semver: json_bool_arg(&args, "include_semver"),
+                command_timeout: std::time::Duration::from_secs(
+                    json_u64_arg(&args, "timeout_seconds").unwrap_or(180),
+                ),
+            },
+        )?)?),
+        "map" => Ok(serde_json::to_value(mdx_rust_core::build_codebase_map(
+            &cwd,
+            Some(&artifact_root),
+            &mdx_rust_core::CodebaseMapConfig {
+                target: json_path_arg(&args, "target"),
+                policy_path: json_path_arg(&args, "policy"),
+                behavior_spec_path: json_path_arg(&args, "eval_spec"),
+                max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
+            },
+        )?)?),
+        "plan" => Ok(serde_json::to_value(mdx_rust_core::build_refactor_plan(
+            &cwd,
+            Some(&artifact_root),
+            &mdx_rust_core::RefactorPlanConfig {
+                target: json_path_arg(&args, "target"),
+                policy_path: json_path_arg(&args, "policy"),
+                behavior_spec_path: json_path_arg(&args, "eval_spec"),
+                max_files: json_usize_arg(&args, "max_files").unwrap_or(100),
+            },
+        )?)?),
+        "explain" => {
+            let artifact = json_str_arg(&args, "artifact")
+                .ok_or_else(|| anyhow::anyhow!("explain requires artifact"))?;
+            Ok(serde_json::to_value(mdx_rust_core::explain_artifact(
+                std::path::Path::new(&artifact),
+            )?)?)
+        }
+        "evolve" => {
+            let apply = json_bool_arg(&args, "apply");
+            if apply && !json_bool_arg(&args, "confirm_mutation") {
+                anyhow::bail!("runtime evolve with apply=true requires confirm_mutation=true");
+            }
+            let budget = json_str_arg(&args, "budget")
+                .map(|value| parse_budget(&value))
+                .transpose()?
+                .unwrap_or_else(|| std::time::Duration::from_secs(600));
+            let tier = json_str_arg(&args, "tier").unwrap_or_else(|| "1".to_string());
+            let min_evidence =
+                json_str_arg(&args, "min_evidence").unwrap_or_else(|| "compiled".to_string());
+            Ok(serde_json::to_value(mdx_rust_core::run_autopilot(
+                &cwd,
+                Some(&artifact_root),
+                &mdx_rust_core::AutopilotConfig {
+                    target: json_path_arg(&args, "target"),
+                    policy_path: json_path_arg(&args, "policy"),
+                    behavior_spec_path: json_path_arg(&args, "eval_spec"),
+                    apply,
+                    max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
+                    max_passes: max_passes_for_budget(budget),
+                    max_candidates: json_usize_arg(&args, "max_candidates").unwrap_or(25),
+                    validation_timeout: std::time::Duration::from_secs(
+                        json_u64_arg(&args, "timeout_seconds").unwrap_or(180),
+                    ),
+                    allow_public_api_impact: json_bool_arg(&args, "allow_public_api_impact"),
+                    max_tier: parse_recipe_tier(&tier)?,
+                    min_evidence: parse_evidence_grade(&min_evidence)?,
+                    budget: Some(budget),
+                },
+            )?)?)
+        }
+        other => anyhow::bail!("unknown runtime tool: {other}"),
+    }
+}
+
+fn handle_http_runtime_request(stream: &mut std::net::TcpStream) -> anyhow::Result<String> {
+    use std::io::Read;
+
+    let mut buffer = [0u8; 64 * 1024];
+    let bytes = stream.read(&mut buffer)?;
+    let request = String::from_utf8_lossy(&buffer[..bytes]);
+    let (head, body) = request
+        .split_once("\r\n\r\n")
+        .unwrap_or((request.as_ref(), ""));
+    let first_line = head.lines().next().unwrap_or_default();
+    let value = if first_line.starts_with("GET /runtime ") {
+        serde_json::to_value(mdx_rust_core::agent_runtime_manifest())?
+    } else if first_line.starts_with("POST /tools/call ") {
+        let params: serde_json::Value =
+            serde_json::from_str(body.trim()).unwrap_or_else(|_| serde_json::json!({}));
+        runtime_tool_call(&params).unwrap_or_else(
+            |error| serde_json::json!({"status": "error", "error": error.to_string()}),
+        )
+    } else {
+        serde_json::json!({"status": "error", "error": "unknown route"})
+    };
+    let body = serde_json::to_string_pretty(&value)?;
+    Ok(format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    ))
+}
+
+fn json_str_arg(args: &serde_json::Value, key: &str) -> Option<String> {
+    args.get(key)
+        .and_then(|value| value.as_str())
+        .map(ToString::to_string)
+}
+
+fn json_path_arg(args: &serde_json::Value, key: &str) -> Option<std::path::PathBuf> {
+    json_str_arg(args, key).map(std::path::PathBuf::from)
+}
+
+fn json_bool_arg(args: &serde_json::Value, key: &str) -> bool {
+    args.get(key)
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+fn json_usize_arg(args: &serde_json::Value, key: &str) -> Option<usize> {
+    args.get(key)
+        .and_then(|value| value.as_u64())
+        .and_then(|value| usize::try_from(value).ok())
+}
+
+fn json_u64_arg(args: &serde_json::Value, key: &str) -> Option<u64> {
+    args.get(key).and_then(|value| value.as_u64())
 }
 
 fn cmd_recipes(json: bool) -> anyhow::Result<()> {
@@ -2058,6 +2428,10 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         "agent-contract" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::MdxAgentContract))?
         }
+        "agent-runtime-manifest" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentRuntimeManifest))?
+        }
+        "agent-pack" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentPack))?,
         "artifact-explanation" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::ArtifactExplanation))?
         }

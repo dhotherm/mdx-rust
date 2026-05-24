@@ -2,9 +2,9 @@
 
 `mdx-rust` is a CLI-first project.
 
-## v0.8 Stability Contract
+## v0.9 Stability Contract
 
-For `0.8.x`, the supported product surface is:
+For `0.9.x`, the supported product surface is:
 
 - The `mdx-rust` binary.
 - Command names, flags, exit behavior, and documented `--json` outputs.
@@ -14,6 +14,8 @@ For `0.8.x`, the supported product surface is:
 - Versioned behavior eval report and project policy schemas.
 - Versioned evidence run schemas.
 - Versioned agent contract schemas.
+- Versioned agent runtime manifest schemas.
+- Versioned agent-pack schemas.
 - Versioned recipe catalog schemas.
 - Versioned artifact explanation schemas.
 - Versioned evolution scorecard schemas.
@@ -53,19 +55,25 @@ Automation should prefer:
 - Files written under `.mdx-rust/evidence/`.
 - Files written under `.mdx-rust/plans/`.
 - `mdx-rust agent-contract --json`.
+- `mdx-rust runtime --json`.
+- `mdx-rust mcp --stdio`.
+- `mdx-rust serve --bind 127.0.0.1:3799`.
+- `mdx-rust agent-pack <agent> --json`.
 - `mdx-rust recipes --json`.
 - `mdx-rust explain <artifact> --json`.
 - `mdx-rust scorecard <target> --json`.
 - Versioned audit packet JSON.
 - Versioned hardening report JSON.
 - Versioned evidence run JSON.
+- Versioned agent runtime manifest JSON.
+- Versioned agent pack JSON.
 - Versioned evolution scorecard JSON.
 - Versioned refactor plan JSON.
 - Versioned refactor apply-run JSON.
 
 ## Strategy Interfaces
 
-Strategy traits and planners are not stable in `0.8.x`. The agent optimizer
+Strategy traits and planners are not stable in `0.9.x`. The agent optimizer
 still keeps accepted edits single-file. The hardening engine has a separate
 bounded transaction path for scoped module hardening and requires validation,
 optional behavior evals, and final validation before reporting applied success.
@@ -74,8 +82,9 @@ Refactor planning and autonomous orchestration records are stable enough for
 CLI automation through `mdx-rust plan --json`, `mdx-rust apply-plan --json`,
 `mdx-rust evidence --json`, `mdx-rust map --json`,
 `mdx-rust autopilot --json`, `mdx-rust evolve --json`,
-`mdx-rust agent-contract --json`, `mdx-rust recipes --json`,
-`mdx-rust explain <artifact> --json`, `mdx-rust scorecard --json`, and their
+`mdx-rust agent-contract --json`, `mdx-rust runtime --json`,
+`mdx-rust recipes --json`, `mdx-rust explain <artifact> --json`,
+`mdx-rust scorecard --json`, `mdx-rust agent-pack <agent> --json`, and their
 schema commands:
 
 - `mdx-rust schema refactor-plan --json`
@@ -83,6 +92,8 @@ schema commands:
 - `mdx-rust schema refactor-batch-apply-run --json`
 - `mdx-rust schema evidence-run --json`
 - `mdx-rust schema agent-contract --json`
+- `mdx-rust schema agent-runtime-manifest --json`
+- `mdx-rust schema agent-pack --json`
 - `mdx-rust schema recipe-catalog --json`
 - `mdx-rust schema artifact-explanation --json`
 - `mdx-rust schema evolution-scorecard --json`

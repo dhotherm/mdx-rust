@@ -6,7 +6,7 @@
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.8.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `0.9.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io and so advanced
 //! users can inspect the internal data structures, but the library API is not
 //! yet stable. Public items may change before `1.0`.
@@ -17,6 +17,8 @@
 
 #[doc(hidden)]
 pub mod agent_contract;
+#[doc(hidden)]
+pub mod agent_runtime;
 #[doc(hidden)]
 pub mod artifact;
 #[doc(hidden)]
@@ -52,6 +54,11 @@ pub mod trace;
 
 /// Agent-facing command contract for safe automation.
 pub use agent_contract::{agent_contract, AgentCommandSpec, AgentWorkflow, MdxAgentContract};
+/// Agent runtime manifest and pack records for external coding agents.
+pub use agent_runtime::{
+    agent_pack, agent_runtime_manifest, AgentPack, AgentPackFile, AgentRuntimeManifest,
+    AgentRuntimeTool, AgentRuntimeTransport,
+};
 /// Agent-facing artifact explanation helpers.
 pub use artifact::{explain_artifact, ArtifactExplanation, ArtifactKind};
 /// Configuration loading and defaults used by the CLI.
@@ -94,14 +101,14 @@ pub use refactor::{
     build_evolution_scorecard, build_refactor_plan, recipe_catalog, run_autopilot,
     AutonomyDecision, AutonomyReadiness, AutonomyReadinessGrade, AutopilotConfig, AutopilotPass,
     AutopilotPassStatus, AutopilotRun, AutopilotStatus, CandidateAutonomyDecision,
-    CandidateEvidenceContext, CapabilityGate, CodebaseMap, CodebaseMapConfig, CodebaseQualityGrade,
-    CodebaseQualitySummary, EvidenceGrade, EvidenceSignal, EvidenceSummary, EvolutionScorecard,
-    EvolutionScorecardConfig, RecipeCatalog, RecipeSpec, RecipeTier, RefactorApplyConfig,
-    RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus, RefactorBatchApplyConfig,
-    RefactorBatchApplyRun, RefactorBatchApplyStatus, RefactorBatchCandidateRun, RefactorCandidate,
-    RefactorCandidateStatus, RefactorImpactSummary, RefactorPlan, RefactorPlanConfig,
-    RefactorRecipe, RefactorRiskLevel, SecurityPostureSummary, SourceSnapshot, StaleSourceFile,
-    TestCoverageSignal,
+    CandidateEvidenceContext, CandidateEvidenceStatus, CapabilityGate, CodebaseMap,
+    CodebaseMapConfig, CodebaseQualityGrade, CodebaseQualitySummary, EvidenceGrade, EvidenceSignal,
+    EvidenceSummary, EvolutionScorecard, EvolutionScorecardConfig, RecipeCatalog, RecipeSpec,
+    RecipeTier, RefactorApplyConfig, RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus,
+    RefactorBatchApplyConfig, RefactorBatchApplyRun, RefactorBatchApplyStatus,
+    RefactorBatchCandidateRun, RefactorCandidate, RefactorCandidateStatus, RefactorImpactSummary,
+    RefactorPlan, RefactorPlanConfig, RefactorRecipe, RefactorRiskLevel, SecurityPostureSummary,
+    SourceSnapshot, StaleSourceFile, TestCoverageSignal,
 };
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};

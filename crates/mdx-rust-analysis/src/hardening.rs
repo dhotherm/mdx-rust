@@ -37,6 +37,7 @@ pub enum HardeningStrategy {
     LongFunctionReview,
     MechanicalTier1Cleanup,
     MustUsePublicReturn,
+    OptionContextPropagation,
     RepeatedStringLiteralConst,
     ResultUnwrapContext,
     ProcessExecutionReview,
@@ -246,6 +247,13 @@ fn build_mechanical_change(
     );
     if config.max_recipe_tier >= 2 {
         apply_len_check_is_empty_recipe(&rel, &mut lines, &mut finding_ids, &mut findings);
+        apply_option_context_recipe(
+            &rel,
+            &mut lines,
+            function_ranges,
+            &mut finding_ids,
+            &mut findings,
+        );
         apply_repeated_string_literal_const_recipe(
             &rel,
             &mut lines,
@@ -265,7 +273,9 @@ fn build_mechanical_change(
     if findings.iter().any(|finding| {
         matches!(
             finding.strategy,
-            HardeningStrategy::ErrorContextPropagation | HardeningStrategy::ResultUnwrapContext
+            HardeningStrategy::ErrorContextPropagation
+                | HardeningStrategy::ResultUnwrapContext
+                | HardeningStrategy::OptionContextPropagation
         )
     }) {
         new_content = ensure_anyhow_context_import(&new_content);
@@ -644,6 +654,68 @@ fn apply_len_check_is_empty_recipe(
     }
 }
 
+fn apply_option_context_recipe(
+    rel: &Path,
+    lines: &mut [String],
+    function_ranges: &[FunctionRange],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    for range in function_ranges {
+        if !range.returns_anyhow_result {
+            continue;
+        }
+
+        for line_index in range.start_line.saturating_sub(1)..range.end_line.min(lines.len()) {
+            let original = lines[line_index].clone();
+            if original.trim_start().starts_with("//")
+                || original.contains(".context(")
+                || original.contains(".with_context(")
+            {
+                continue;
+            }
+
+            let Some(rewritten) = replace_ok_or_string_with_context(&original) else {
+                continue;
+            };
+            if rewritten == original {
+                continue;
+            }
+
+            lines[line_index] = rewritten;
+            let line = line_index + 1;
+            let id = format!("option-context-propagation:{}:{line}", rel.display());
+            finding_ids.push(id.clone());
+            findings.push(HardeningFinding {
+                id,
+                title: "Propagate Option failure with context".to_string(),
+                description: "Replace ok_or string boundaries with anyhow Context so missing values preserve useful diagnostics.".to_string(),
+                file: rel.to_path_buf(),
+                line,
+                strategy: HardeningStrategy::OptionContextPropagation,
+                patchable: true,
+            });
+        }
+    }
+}
+
+fn replace_ok_or_string_with_context(line: &str) -> Option<String> {
+    let start = line.find(".ok_or(\"")?;
+    let message_start = start + ".ok_or(\"".len();
+    let after_message = &line[message_start..];
+    let message_end = after_message.find("\")?")?;
+    let message = &after_message[..message_end];
+    if message.is_empty() || message.contains('\\') {
+        return None;
+    }
+    let suffix = &after_message[message_end + "\")?".len()..];
+    let mut output = String::new();
+    output.push_str(&line[..start]);
+    output.push_str(&format!(".context(\"{}\")?", escape_string(message)));
+    output.push_str(suffix);
+    Some(output)
+}
+
 fn apply_repeated_string_literal_const_recipe(
     rel: &Path,
     lines: &mut Vec<String>,
@@ -937,14 +1009,20 @@ fn line_without_comments_or_strings(line: &str) -> String {
 }
 
 fn ensure_anyhow_context_import(content: &str) -> String {
-    if content.contains("anyhow::Context") || content.contains("Context,") {
+    if has_anyhow_context_import(content) {
         return content.to_string();
     }
 
     let mut lines: Vec<&str> = content.lines().collect();
     let insert_at = lines
         .iter()
-        .position(|line| !line.starts_with("#![") && !line.trim().is_empty())
+        .position(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with("#![")
+                && !trimmed.starts_with("//!")
+                && !trimmed.starts_with("/*!")
+                && !trimmed.is_empty()
+        })
         .unwrap_or(0);
     lines.insert(insert_at, "use anyhow::Context;");
     let mut result = lines.join("\n");
@@ -952,6 +1030,29 @@ fn ensure_anyhow_context_import(content: &str) -> String {
         result.push('\n');
     }
     result
+}
+
+fn has_anyhow_context_import(content: &str) -> bool {
+    content.lines().any(|line| {
+        let trimmed = line.trim();
+        if !(trimmed.starts_with("use anyhow::") || trimmed.starts_with("pub use anyhow::")) {
+            return false;
+        }
+        trimmed == "use anyhow::Context;"
+            || trimmed == "pub use anyhow::Context;"
+            || trimmed.starts_with("use anyhow::{") && import_group_contains_context(trimmed)
+            || trimmed.starts_with("pub use anyhow::{") && import_group_contains_context(trimmed)
+    })
+}
+
+fn import_group_contains_context(line: &str) -> bool {
+    line.split_once('{')
+        .and_then(|(_, rest)| rest.split_once('}').map(|(inside, _)| inside))
+        .is_some_and(|inside| {
+            inside
+                .split(',')
+                .any(|item| item.trim().split(" as ").next() == Some("Context"))
+        })
 }
 
 #[derive(Debug)]
@@ -1186,6 +1287,44 @@ mod tests {
     }
 
     #[test]
+    fn hardening_context_import_ignores_context_named_types_and_preserves_inner_docs() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"//! Crate docs must stay before regular items.
+
+pub struct CandidateEvidenceContext;
+
+pub fn load(path: &str) -> anyhow::Result<String> {
+    let value = std::fs::read_to_string(path)?;
+    Ok(value)
+}
+"#,
+        )
+        .unwrap();
+
+        let analysis = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 1,
+                evidence_depth: HardeningEvidenceDepth::Basic,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(analysis.changes.len(), 1);
+        let change = &analysis.changes[0];
+        assert!(change
+            .new_content
+            .starts_with("//! Crate docs must stay before regular items.\n\nuse anyhow::Context;"));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
     fn hardening_does_not_rewrite_plain_result_without_anyhow_alias() {
         let dir = tempdir().unwrap();
         let src = dir.path().join("src");
@@ -1404,6 +1543,43 @@ mod tests {
             .finding_ids
             .iter()
             .any(|id| id.contains("len-check-is-empty")));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
+    fn tier2_rewrites_option_ok_or_to_context_when_enabled() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"pub fn load(value: Option<String>) -> anyhow::Result<String> {
+    let value = value.ok_or("missing value")?;
+    Ok(value)
+}
+"#,
+        )
+        .unwrap();
+
+        let tier2 = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 2,
+                evidence_depth: HardeningEvidenceDepth::Covered,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(tier2.changes.len(), 1);
+        let change = &tier2.changes[0];
+        assert!(change.new_content.contains("use anyhow::Context;"));
+        assert!(change.new_content.contains(".context(\"missing value\")?"));
+        assert!(change
+            .finding_ids
+            .iter()
+            .any(|id| id.contains("option-context-propagation")));
         assert!(syn::parse_file(&change.new_content).is_ok());
     }
 

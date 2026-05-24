@@ -1,6 +1,6 @@
 //! Plan-first guardrailed refactoring.
 //!
-//! v0.8 keeps auditable plans as the mutation boundary and adds file/function
+//! v0.9 keeps auditable plans as the mutation boundary and adds file/function
 //! evidence plus security posture to the safe executable subset.
 
 use crate::eval::stable_hash_hex;
@@ -245,6 +245,8 @@ pub struct CapabilityGate {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CandidateEvidenceContext {
     pub grade: EvidenceGrade,
+    #[serde(default)]
+    pub status: CandidateEvidenceStatus,
     pub source: String,
     pub profiled_file: Option<String>,
     pub signals: Vec<String>,
@@ -254,11 +256,23 @@ impl Default for CandidateEvidenceContext {
     fn default() -> Self {
         Self {
             grade: EvidenceGrade::None,
+            status: CandidateEvidenceStatus::Unmeasured,
             source: "legacy artifact without candidate evidence context".to_string(),
             profiled_file: None,
             signals: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+pub enum CandidateEvidenceStatus {
+    #[default]
+    Unmeasured,
+    Compiled,
+    Tested,
+    Covered,
+    MutationBacked,
+    Proven,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -484,6 +498,7 @@ pub enum RefactorRecipe {
     LenCheckIsEmpty,
     LongFunctionReview,
     MustUsePublicReturn,
+    OptionContextPropagation,
     RepeatedStringLiteralConst,
     SecurityBoundaryReview,
     SplitModuleCandidate,
@@ -568,7 +583,7 @@ pub fn recipe_catalog() -> RecipeCatalog {
     }
 
     RecipeCatalog {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         recipes: vec![
             spec!(
                 "contextual-error-hardening",
@@ -609,6 +624,16 @@ pub fn recipe_catalog() -> RecipeCatalog {
                 RefactorRiskLevel::Low,
                 "hardening transaction",
                 "Move cloned calls to the narrower iterator position when mechanical.",
+            ),
+            spec!(
+                "option-context-propagation",
+                RefactorRecipe::OptionContextPropagation,
+                RecipeTier::Tier2,
+                EvidenceGrade::Covered,
+                true,
+                RefactorRiskLevel::Low,
+                "hardening transaction with covered evidence",
+                "Convert Option ok_or string boundaries to anyhow Context under coverage gates.",
             ),
             spec!(
                 "len-check-is-empty",
@@ -834,7 +859,7 @@ pub fn build_refactor_plan(
 
     let plan_id = plan_id(&root, config, &impact, &candidates);
     let mut plan = RefactorPlan {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         plan_id,
         plan_hash: String::new(),
         root: root.display().to_string(),
@@ -944,7 +969,7 @@ pub fn build_codebase_map(
         recommended_actions(&quality, &impact, &capability_gates, &evidence, &security);
     let map_id = codebase_map_id(&root, config, &quality, &impact);
     let mut map = CodebaseMap {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         map_id,
         map_hash: String::new(),
         root: root.display().to_string(),
@@ -1010,7 +1035,7 @@ pub fn build_evolution_scorecard(
     let next_commands = scorecard_next_commands(&readiness, &plan);
     let scorecard_id = evolution_scorecard_id(&root, config, &map, &plan);
     let mut scorecard = EvolutionScorecard {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         scorecard_id,
         root: root.display().to_string(),
         target: config
@@ -1055,7 +1080,7 @@ pub fn run_autopilot(
         RefactorApplyMode::Review
     };
     let mut run = AutopilotRun {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         run_id: autopilot_run_id(&root, config, &before_map),
         root: root.display().to_string(),
         target: config
@@ -1228,7 +1253,7 @@ pub fn apply_refactor_plan_candidate(
         RefactorApplyMode::Review
     };
     let mut run = RefactorApplyRun {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -1368,7 +1393,7 @@ pub fn apply_refactor_plan_batch(
         RefactorApplyMode::Review
     };
     let mut run = RefactorBatchApplyRun {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -2173,6 +2198,7 @@ fn required_evidence_for_hardening_strategy(
 ) -> EvidenceGrade {
     match strategy {
         mdx_rust_analysis::HardeningStrategy::LenCheckIsEmpty
+        | mdx_rust_analysis::HardeningStrategy::OptionContextPropagation
         | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => {
             EvidenceGrade::Covered
         }
@@ -2199,6 +2225,9 @@ fn recipe_for_hardening_strategy(
         }
         mdx_rust_analysis::HardeningStrategy::IteratorCloned => RefactorRecipe::IteratorCloned,
         mdx_rust_analysis::HardeningStrategy::LenCheckIsEmpty => RefactorRecipe::LenCheckIsEmpty,
+        mdx_rust_analysis::HardeningStrategy::OptionContextPropagation => {
+            RefactorRecipe::OptionContextPropagation
+        }
         mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => {
             RefactorRecipe::MustUsePublicReturn
         }
@@ -2428,6 +2457,7 @@ fn candidate_evidence_context(
     {
         return CandidateEvidenceContext {
             grade: profile.grade,
+            status: candidate_evidence_status(profile.grade),
             source: "measured file evidence profile".to_string(),
             profiled_file: Some(profile.file.clone()),
             signals: profile.signals.clone(),
@@ -2435,6 +2465,7 @@ fn candidate_evidence_context(
     }
     CandidateEvidenceContext {
         grade: evidence.grade,
+        status: candidate_evidence_status(evidence.grade),
         source: if measured.is_some() {
             "measured run did not include this file; using run-level evidence".to_string()
         } else {
@@ -2447,6 +2478,17 @@ fn candidate_evidence_context(
             .filter(|signal| signal.present)
             .map(|signal| signal.label.clone())
             .collect(),
+    }
+}
+
+fn candidate_evidence_status(grade: EvidenceGrade) -> CandidateEvidenceStatus {
+    match grade {
+        EvidenceGrade::None => CandidateEvidenceStatus::Unmeasured,
+        EvidenceGrade::Compiled => CandidateEvidenceStatus::Compiled,
+        EvidenceGrade::Tested => CandidateEvidenceStatus::Tested,
+        EvidenceGrade::Covered => CandidateEvidenceStatus::Covered,
+        EvidenceGrade::Hardened => CandidateEvidenceStatus::MutationBacked,
+        EvidenceGrade::Proven => CandidateEvidenceStatus::Proven,
     }
 }
 
@@ -2767,6 +2809,7 @@ fn is_supported_mechanical_recipe(recipe: &RefactorRecipe) -> bool {
             | RefactorRecipe::IteratorCloned
             | RefactorRecipe::LenCheckIsEmpty
             | RefactorRecipe::MustUsePublicReturn
+            | RefactorRecipe::OptionContextPropagation
             | RefactorRecipe::RepeatedStringLiteralConst
     )
 }
@@ -3097,7 +3140,7 @@ anyhow = "1"
         )
         .unwrap();
 
-        assert_eq!(plan.schema_version, "0.8");
+        assert_eq!(plan.schema_version, "0.9");
         assert!(plan.candidates.iter().any(|candidate| candidate.status
             == RefactorCandidateStatus::ApplyViaImprove
             && candidate
@@ -3188,7 +3231,7 @@ edition = "2021"
         let artifact_root = dir.path().join(".mdx-rust");
         std::fs::create_dir_all(artifact_root.join("evidence")).unwrap();
         let evidence = crate::evidence::EvidenceRun {
-            schema_version: "0.8".to_string(),
+            schema_version: "0.9".to_string(),
             run_id: "covered-fixture".to_string(),
             root: dir.path().canonicalize().unwrap().display().to_string(),
             target: Some("src/lib.rs".to_string()),

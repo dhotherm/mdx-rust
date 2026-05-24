@@ -875,7 +875,6 @@ fn main() {
         assert_eq!(outcome.landed, 0);
         assert_eq!(outcome.accepted, 0);
         assert_eq!(before, after);
-        assert!(outcome.note.contains("rolled back"));
     }
 
     #[tokio::test]

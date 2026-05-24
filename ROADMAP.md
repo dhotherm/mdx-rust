@@ -101,7 +101,7 @@ Autonomous Rust evolution for safe executable work.
   or API surfaces.
 - Optional gate detection for nextest, llvm-cov, mutants, and semver checks.
 
-## v0.8.0 Focus
+## v0.8.0 - Released
 
 Agent-first evidence-driven evolution.
 
@@ -120,14 +120,36 @@ Agent-first evidence-driven evolution.
 - Security audit findings appear as review-oriented plan candidates so risky
   modules are visible inside the same planning surface.
 - The agent contract advertises the new agent-facing commands and schema names.
-- Mutation remains CLI/JSON-first. MCP and API surfaces stay future work until
-  the artifact contract has more field time.
+- Mutation remains CLI/JSON-first. Runtime surfaces stay future work until the
+  artifact contract has more field time.
+
+## v0.9.0 Focus
+
+Local agent runtime and candidate-evidence autonomy.
+
+- `mdx-rust runtime --json` exposes a typed manifest for local agent
+  transports, runtime tools, and mutation rules.
+- `mdx-rust mcp --stdio` lets external coding agents call scorecard, evidence,
+  map, plan, explain, recipes, and gated evolve over stdin/stdout.
+- `mdx-rust serve --bind 127.0.0.1:3799` exposes the same local runtime over
+  localhost HTTP for agents that prefer a socket API.
+- `mdx-rust agent-pack codex|claude|generic` generates repo-local instruction
+  files that teach agents to use mdx-rust without bypassing mutation gates.
+- Candidate evidence context now includes an explicit status: unmeasured,
+  compiled, tested, covered, mutation-backed, or proven.
+- Evidence file profiles include coverage and mutation score fields when
+  measured.
+- Tier 2 gains Option boundary context propagation for simple
+  `.ok_or("message")?` callsites inside `anyhow::Result` functions.
+- Runtime mutation-capable calls require explicit confirmation and still route
+  through evolve, autopilot, apply-plan, hardening transactions, validation,
+  and rollback.
 
 ## Current Non-Goals
 
 - Autonomous public API rewrites without explicit gates.
 - External hook execution.
-- MCP/A2A runtime integration.
+- Remote or multi-tenant MCP/A2A runtime integration.
 - Multi-agent orchestration.
 - Multi-language support.
 - UI work.

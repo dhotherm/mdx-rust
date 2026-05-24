@@ -1,6 +1,6 @@
 # Release Readiness
 
-This document is the release checklist for `v0.8.0`.
+This document is the release checklist for `v0.9.0`.
 
 ## Required Automated Gates
 
@@ -22,7 +22,7 @@ dependency is indexed.
 
 `mdx-rust` intentionally uses a moderate dependency tree because it needs Rust
 parsing, CLI ergonomics, async process execution, and optional model-provider
-support. Before `v0.8.0` is published:
+support. Before `v0.9.0` is published:
 
 - No yanked crates should be present.
 - Known RustSec advisories must be fixed or documented with a dated
@@ -53,6 +53,8 @@ mdx-rust schema behavior-eval-report --json >/tmp/mdx-rust-behavior-schema.json
 mdx-rust schema project-policy --json >/tmp/mdx-rust-policy-schema.json
 mdx-rust schema evidence-run --json >/tmp/mdx-rust-evidence-schema.json
 mdx-rust schema agent-contract --json >/tmp/mdx-rust-agent-contract-schema.json
+mdx-rust schema agent-runtime-manifest --json >/tmp/mdx-rust-runtime-schema.json
+mdx-rust schema agent-pack --json >/tmp/mdx-rust-agent-pack-schema.json
 mdx-rust schema recipe-catalog --json >/tmp/mdx-rust-recipe-catalog-schema.json
 mdx-rust schema artifact-explanation --json >/tmp/mdx-rust-artifact-explanation-schema.json
 mdx-rust schema evolution-scorecard --json >/tmp/mdx-rust-evolution-scorecard-schema.json
@@ -63,6 +65,8 @@ mdx-rust schema codebase-map --json >/tmp/mdx-rust-codebase-map-schema.json
 mdx-rust schema autopilot-run --json >/tmp/mdx-rust-autopilot-schema.json
 mdx-rust eval --json >/tmp/mdx-rust-eval.json
 mdx-rust agent-contract --json >/tmp/mdx-rust-agent-contract.json
+mdx-rust runtime --json >/tmp/mdx-rust-runtime.json
+mdx-rust agent-pack codex --json >/tmp/mdx-rust-agent-pack.json
 mdx-rust recipes --json >/tmp/mdx-rust-recipes.json
 mdx-rust scorecard --json >/tmp/mdx-rust-scorecard.json
 mdx-rust evidence --json >/tmp/mdx-rust-evidence.json
@@ -159,11 +163,11 @@ the fixture has only compiled evidence, and it must leave source files
 unchanged. The evolve apply run should then execute Tier 1 candidates with the
 compiled evidence default.
 
-The v0.8 recipe smoke should include at least contextual error hardening,
+The v0.9 recipe smoke should include at least contextual error hardening,
 boundary error context propagation, private borrow parameter tightening,
-iterator clone cleanup, and `#[must_use]` annotation in a throwaway crate. The
-apply run must show each recipe only lands after isolated validation and final
-validation.
+iterator clone cleanup, `#[must_use]` annotation, and the covered Tier 2
+Option context propagation recipe in a throwaway crate. The apply run must show
+each recipe only lands after isolated validation and final validation.
 
 The evidence smoke should include a measured `Tested` fixture with a
 review-only boundary finding and prove the plan surfaces a Tier 2 plan-only
@@ -171,8 +175,13 @@ candidate without making it executable.
 
 The Tier 2 smoke should include a measured `Covered` fixture and prove that
 repeated private string literal extraction and `len() == 0` to `is_empty()`
-candidates become executable only when the caller requests Tier 2 and
-`--min-evidence covered`.
+candidates, plus Option boundary context propagation, become executable only
+when the caller requests Tier 2 and `--min-evidence covered`.
+
+The runtime smoke should prove `mdx-rust mcp --stdio` can list tools, can run a
+read-only tool, and rejects mutation-capable `evolve` calls with `apply=true`
+unless mutation confirmation is present. `mdx-rust serve` must refuse non-local
+bind addresses.
 
 The hardened evidence smoke should include a measured `Hardened` fixture and
 prove that clone-pressure and long-function review findings appear where a
@@ -197,7 +206,7 @@ does not hang or produce confusing output.
 
 ## Publish Order
 
-Do not publish `v0.8.0` until the candidate commit has passed external pressure
+Do not publish `v0.9.0` until the candidate commit has passed external pressure
 testing.
 
 When approved, publish in dependency order:

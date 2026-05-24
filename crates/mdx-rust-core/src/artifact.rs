@@ -37,7 +37,7 @@ pub fn explain_artifact(path: &Path) -> anyhow::Result<ArtifactExplanation> {
     let recommended_next_actions = artifact_next_actions(&kind, &value);
 
     Ok(ArtifactExplanation {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         artifact_path: path.display().to_string(),
         artifact_kind: kind,
         summary,

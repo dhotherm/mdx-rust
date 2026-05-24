@@ -7,7 +7,7 @@
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.8.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `0.9.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io, but the library API
 //! is intentionally unstable before `1.0`.
 

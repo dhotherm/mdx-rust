@@ -2,6 +2,58 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.9.0 - 2026-05-24
+
+Agent runtime and candidate-evidence release.
+
+This release turns the v0.8 agent-first contract into callable local
+infrastructure. External coding agents can now discover runtime transports,
+call mdx-rust tools over a stdio protocol or localhost HTTP, generate local
+agent instruction packs, and inspect candidate-level evidence status before
+choosing whether to run autonomous evolution.
+
+### Added
+
+- `mdx-rust runtime` for the typed local agent runtime manifest.
+- `mdx-rust mcp --stdio` for line-delimited JSON tool calls over stdin/stdout.
+- `mdx-rust serve --bind 127.0.0.1:3799` for a localhost-only HTTP runtime
+  surface.
+- `mdx-rust agent-pack codex|claude|generic` for generating agent instruction
+  packs that teach external coding agents how to use mdx-rust safely.
+- JSON Schema export for `agent-runtime-manifest` and `agent-pack`.
+- Runtime manifest entries in `mdx-rust agent-contract`.
+- Candidate evidence status on refactor candidates: unmeasured, compiled,
+  tested, covered, mutation-backed, or proven.
+- Coverage and mutation score fields on evidence file profiles, with coverage
+  surfaced on function profiles when measured.
+- A new executable Tier 2 recipe, `option-context-propagation`, which converts
+  simple `Option::ok_or("message")?` boundaries inside `anyhow::Result`
+  functions into `anyhow::Context` calls under covered evidence gates.
+- Runtime tests proving MCP tool listing is machine-parseable and mutation is
+  rejected unless explicitly confirmed.
+
+### Changed
+
+- Agent-facing map, plan, scorecard, hardening, evidence, autopilot, recipe,
+  artifact explanation, agent contract, and runtime artifacts now use schema
+  version `0.9`.
+- The agent contract now advertises runtime, MCP, serve, and agent-pack
+  workflows.
+- Tier 2 recipes now include zero-length cleanup, repeated literal extraction,
+  and Option boundary context propagation.
+- Workspace package version is now `0.9.0`.
+
+### Known Limitations
+
+- The MCP and HTTP runtime surfaces are intentionally local and minimal. They
+  are designed for local coding agents, not remote multi-tenant services.
+- Runtime mutation still routes through the existing autopilot and hardening
+  gates. There is no separate runtime mutation path.
+- Candidate-level coverage is currently propagated from measured workspace
+  evidence when per-function coverage mapping is not available.
+- Broad semantic refactors, public API rewrites, and MIR-backed analysis remain
+  future work.
+
 ## 0.8.0 - 2026-05-23
 
 Agent-first evidence-driven Rust evolution.

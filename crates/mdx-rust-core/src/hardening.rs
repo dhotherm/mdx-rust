@@ -181,7 +181,7 @@ pub fn run_hardening(
     };
 
     let mut run = HardeningRun {
-        schema_version: "0.8".to_string(),
+        schema_version: "0.9".to_string(),
         root: root.display().to_string(),
         target: config
             .target
@@ -436,6 +436,7 @@ fn category_for_finding(finding: &HardeningFinding) -> PolicyCategory {
         | mdx_rust_analysis::HardeningStrategy::IteratorCloned
         | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
         | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn
+        | mdx_rust_analysis::HardeningStrategy::OptionContextPropagation
         | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => {
             PolicyCategory::General
         }
@@ -478,6 +479,7 @@ fn summarize_risk(findings: &[HardeningFinding]) -> HardeningRiskSummary {
             | mdx_rust_analysis::HardeningStrategy::IteratorCloned
             | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
             | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn
+            | mdx_rust_analysis::HardeningStrategy::OptionContextPropagation
             | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => summary.low += 1,
             mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation
             | mdx_rust_analysis::HardeningStrategy::ClonePressureReview
@@ -692,7 +694,7 @@ anyhow = "1"
         let after = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
         assert_eq!(before, after);
         assert_eq!(run.outcome.status, HardeningStatus::Reviewed);
-        assert_eq!(run.schema_version, "0.8");
+        assert_eq!(run.schema_version, "0.9");
         assert!(run.outcome.isolated_validation_passed);
         assert!(!run.changes.is_empty());
     }

@@ -67,7 +67,7 @@ names, artifact globs, and recommended workflows. Agents should consume that
 contract before calling `map`, `plan`, `evidence`, `autopilot`, `evolve`, or
 `apply-plan`.
 
-`mdx-rust scorecard` is the preferred intake surface for agents in `v0.8`.
+`mdx-rust scorecard` is the preferred intake surface for agents in `v0.9`.
 It builds a codebase map, refactor plan, recipe catalog, autonomy readiness
 summary, and suggested next commands into one read-only artifact. The scorecard
 does not approve mutation; it gives agents enough structured context to choose
@@ -151,15 +151,28 @@ Plan-only candidates such as extracting a function, splitting a module, or
 reviewing public API pressure are still human-reviewed design work in `v0.5`.
 Public API-impacting candidates require explicit allowance before execution.
 
-## v0.8 Evidence-Gated Autonomous Evolution
+## v0.9 Evidence-Gated Autonomous Evolution
 
-`v0.8` uses measured evidence to decide how much autonomous work is allowed
+`v0.9` uses measured evidence to decide how much autonomous work is allowed
 without creating a second mutation engine.
 
 The agent-facing contract is explicit: `agent-contract` tells agents which
-commands mutate, `recipes` tells them which recipe tiers and evidence gates
-exist, and `explain` lets them summarize saved artifacts before choosing a next
-step. These commands are read-only and do not approve mutation.
+commands mutate, `runtime` tells agents which local transports and tools are
+available, `recipes` tells them which recipe tiers and evidence gates exist,
+and `explain` lets them summarize saved artifacts before choosing a next step.
+These read-only discovery commands do not approve mutation.
+
+`mdx-rust mcp --stdio` exposes the same local tools through a line-delimited
+JSON protocol for coding agents that prefer a stdio tool runtime.
+`mdx-rust serve --bind 127.0.0.1:3799` exposes the same runtime over localhost
+HTTP. Runtime mutation is intentionally narrow: an `evolve` tool call with
+`apply=true` must also pass an explicit mutation confirmation and then routes
+through the same autopilot, apply-plan, hardening transaction, validation, and
+rollback path as the CLI.
+
+`mdx-rust agent-pack codex|claude|generic` generates instruction files that
+teach external agents how to use the command contract. These files are guidance
+only and do not grant permission to mutate source files.
 
 `mdx-rust evidence` runs bounded local commands, persists command records under
 `.mdx-rust/evidence/`, assigns an evidence grade, and records parsed metrics
@@ -169,8 +182,9 @@ coverage, mutation, and semver checks when the corresponding Cargo tools are
 installed.
 
 Evidence runs also produce file/function profiles. Refactor candidates carry an
-evidence context so a human or agent can see whether the candidate was justified
-by a measured file profile or a broader evidence summary.
+evidence context and candidate evidence status so a human or agent can see
+whether the candidate was justified by a measured file profile or a broader
+evidence summary.
 
 `mdx-rust map` scans the requested workspace, file, or directory and writes a
 codebase map under `.mdx-rust/maps/`. The map includes workspace metadata,
@@ -236,7 +250,7 @@ Evidence grades control proportional aggression:
   for future Tier 3 semantic recipes once those recipes have dedicated
   validation contracts.
 
-The v0.8 executable Tier 1 recipe set is intentionally mechanical:
+The v0.9 executable Tier 1 recipe set is intentionally mechanical:
 
 - contextual error hardening in `anyhow::Result` functions
 - boundary error context propagation for filesystem and environment calls that
@@ -247,10 +261,12 @@ The v0.8 executable Tier 1 recipe set is intentionally mechanical:
   form such as `to_vec()`
 - `#[must_use]` annotations for public value-returning functions
 
-The v0.8 executable Tier 2 recipes are deliberately narrow:
+The v0.9 executable Tier 2 recipes are deliberately narrow:
 
 - repeated private string literal extraction into a file-local constant
 - zero-length checks from `len() == 0` to `is_empty()`
+- Option boundary context propagation from `.ok_or("message")?` to
+  `.context("message")?` inside `anyhow::Result` functions
 
 They only appear in the executable queue when a measured evidence artifact
 reaches `Covered`, the caller requests Tier 2, and the candidate still passes
