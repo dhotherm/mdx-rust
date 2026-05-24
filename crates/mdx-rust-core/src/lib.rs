@@ -6,7 +6,7 @@
 //!
 //! ## Stability contract
 //!
-//! The supported product surface for `0.6.x` is the `mdx-rust` CLI. This crate
+//! The supported product surface for `0.7.x` is the `mdx-rust` CLI. This crate
 //! is published so the CLI can be installed from crates.io and so advanced
 //! users can inspect the internal data structures, but the library API is not
 //! yet stable. Public items may change before `1.0`.
@@ -19,6 +19,8 @@
 pub mod config;
 #[doc(hidden)]
 pub mod eval;
+#[doc(hidden)]
+pub mod evidence;
 #[doc(hidden)]
 pub mod hardening;
 #[doc(hidden)]
@@ -50,6 +52,11 @@ pub use config::Config;
 pub use eval::{
     run_behavior_evals, BehaviorCommand, BehaviorCommandRecord, BehaviorEvalReport,
     BehaviorEvalSpec, EvaluationDataset, EvaluationSample, ScorerMetadata,
+};
+/// Measured evidence artifacts used to gate autonomy. Unstable before `1.0`.
+pub use evidence::{
+    load_latest_evidence, load_latest_evidence_for_root, run_evidence, EvidenceArtifactRef,
+    EvidenceCommandRecord, EvidenceRun, EvidenceRunConfig,
 };
 /// Scoped Rust hardening engine for ordinary Rust modules. Unstable before `1.0`.
 pub use hardening::{

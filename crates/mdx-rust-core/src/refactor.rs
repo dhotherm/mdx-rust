@@ -1,9 +1,10 @@
 //! Plan-first guardrailed refactoring.
 //!
-//! v0.6 keeps auditable plans as the mutation boundary and adds autonomous
-//! orchestration over the safe executable subset.
+//! v0.7 keeps auditable plans as the mutation boundary and adds measured
+//! evidence gates over the safe executable subset.
 
 use crate::eval::stable_hash_hex;
+use crate::evidence::{load_latest_evidence_for_root, EvidenceArtifactRef, EvidenceRun};
 use crate::hardening::{
     run_hardening, workspace_summary, HardeningConfig, HardeningRun, WorkspaceSummary,
 };
@@ -121,6 +122,7 @@ pub struct RefactorPlan {
     pub policy: Option<ProjectPolicy>,
     pub behavior_spec: Option<String>,
     pub evidence: EvidenceSummary,
+    pub measured_evidence: Option<EvidenceArtifactRef>,
     pub impact: RefactorImpactSummary,
     pub source_snapshots: Vec<SourceSnapshot>,
     pub files: Vec<RefactorFileSummary>,
@@ -142,6 +144,7 @@ pub struct CodebaseMap {
     pub policy: Option<ProjectPolicy>,
     pub behavior_spec: Option<String>,
     pub evidence: EvidenceSummary,
+    pub measured_evidence: Option<EvidenceArtifactRef>,
     pub quality: CodebaseQualitySummary,
     pub capability_gates: Vec<CapabilityGate>,
     pub impact: RefactorImpactSummary,
@@ -240,6 +243,7 @@ pub struct AutopilotRun {
     pub quality_before: CodebaseQualitySummary,
     pub quality_after: Option<CodebaseQualitySummary>,
     pub evidence: EvidenceSummary,
+    pub measured_evidence: Option<EvidenceArtifactRef>,
     pub execution_summary: AutopilotExecutionSummary,
     pub passes: Vec<AutopilotPass>,
     pub total_planned_candidates: usize,
@@ -362,6 +366,7 @@ pub enum RefactorRecipe {
     ExtractFunctionCandidate,
     IteratorCloned,
     MustUsePublicReturn,
+    RepeatedStringLiteralConst,
     SecurityBoundaryReview,
     SplitModuleCandidate,
     BoundaryValidationReview,
@@ -461,11 +466,13 @@ pub fn build_refactor_plan(
             max_files: config.max_files,
         },
     )?;
+    let measured_evidence = load_latest_evidence_for_root(artifact_root, &root)?;
     let hardening = analyze_hardening(
         &root,
         HardeningAnalyzeConfig {
             target: config.target.as_deref(),
             max_files: config.max_files,
+            max_recipe_tier: measured_hardening_tier(measured_evidence.as_ref()),
         },
     )?;
     let policy = load_project_policy(&root, config.policy_path.as_deref())?;
@@ -480,6 +487,7 @@ pub fn build_refactor_plan(
         &refactor.files,
         &capability_gates,
         config.behavior_spec_path.is_some(),
+        measured_evidence.as_ref(),
     );
     let impact = summarize_impact(
         &refactor.files,
@@ -505,7 +513,7 @@ pub fn build_refactor_plan(
 
     let plan_id = plan_id(&root, config, &impact, &candidates);
     let mut plan = RefactorPlan {
-        schema_version: "0.6".to_string(),
+        schema_version: "0.7".to_string(),
         plan_id,
         plan_hash: String::new(),
         root: root.display().to_string(),
@@ -517,6 +525,7 @@ pub fn build_refactor_plan(
         policy,
         behavior_spec,
         evidence,
+        measured_evidence: measured_evidence.as_ref().map(EvidenceArtifactRef::from),
         impact,
         source_snapshots,
         files: refactor.files,
@@ -550,11 +559,13 @@ pub fn build_codebase_map(
             max_files: config.max_files,
         },
     )?;
+    let measured_evidence = load_latest_evidence_for_root(artifact_root, &root)?;
     let hardening = analyze_hardening(
         &root,
         HardeningAnalyzeConfig {
             target: config.target.as_deref(),
             max_files: config.max_files,
+            max_recipe_tier: measured_hardening_tier(measured_evidence.as_ref()),
         },
     )?;
     let policy = load_project_policy(&root, config.policy_path.as_deref())?;
@@ -569,6 +580,7 @@ pub fn build_codebase_map(
         &refactor.files,
         &capability_gates,
         config.behavior_spec_path.is_some(),
+        measured_evidence.as_ref(),
     );
     let impact = summarize_impact(
         &refactor.files,
@@ -580,7 +592,7 @@ pub fn build_codebase_map(
     let recommended_actions = recommended_actions(&quality, &impact, &capability_gates, &evidence);
     let map_id = codebase_map_id(&root, config, &quality, &impact);
     let mut map = CodebaseMap {
-        schema_version: "0.6".to_string(),
+        schema_version: "0.7".to_string(),
         map_id,
         map_hash: String::new(),
         root: root.display().to_string(),
@@ -592,6 +604,7 @@ pub fn build_codebase_map(
         policy,
         behavior_spec,
         evidence,
+        measured_evidence: measured_evidence.as_ref().map(EvidenceArtifactRef::from),
         quality,
         capability_gates,
         impact,
@@ -633,7 +646,7 @@ pub fn run_autopilot(
         RefactorApplyMode::Review
     };
     let mut run = AutopilotRun {
-        schema_version: "0.6".to_string(),
+        schema_version: "0.7".to_string(),
         run_id: autopilot_run_id(&root, config, &before_map),
         root: root.display().to_string(),
         target: config
@@ -648,6 +661,7 @@ pub fn run_autopilot(
         quality_before,
         quality_after: None,
         evidence,
+        measured_evidence: before_map.measured_evidence.clone(),
         execution_summary: AutopilotExecutionSummary {
             plans_created: 0,
             executable_candidates_seen: 0,
@@ -805,7 +819,7 @@ pub fn apply_refactor_plan_candidate(
         RefactorApplyMode::Review
     };
     let mut run = RefactorApplyRun {
-        schema_version: "0.6".to_string(),
+        schema_version: "0.7".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -896,6 +910,7 @@ pub fn apply_refactor_plan_candidate(
             behavior_spec_path: plan.behavior_spec.as_ref().map(PathBuf::from),
             apply: config.apply,
             max_files: 1,
+            max_recipe_tier: recipe_tier_number(candidate.tier),
             validation_timeout: config.validation_timeout,
         },
     )?;
@@ -906,10 +921,10 @@ pub fn apply_refactor_plan_candidate(
         } else {
             RefactorApplyStatus::Rejected
         }
-    } else if hardening.changes.is_empty() {
-        RefactorApplyStatus::Rejected
-    } else {
+    } else if hardening.outcome.isolated_validation_passed {
         RefactorApplyStatus::Reviewed
+    } else {
+        RefactorApplyStatus::Rejected
     };
     run.note = format!(
         "executed candidate through hardening transaction; hardening status: {:?}",
@@ -933,7 +948,7 @@ pub fn apply_refactor_plan_batch(
         RefactorApplyMode::Review
     };
     let mut run = RefactorBatchApplyRun {
-        schema_version: "0.6".to_string(),
+        schema_version: "0.7".to_string(),
         root: root.display().to_string(),
         plan_path: config.plan_path.display().to_string(),
         plan_id: plan.plan_id.clone(),
@@ -1038,6 +1053,7 @@ pub fn apply_refactor_plan_batch(
                 behavior_spec_path: plan.behavior_spec.as_ref().map(PathBuf::from),
                 apply: config.apply,
                 max_files: 1,
+                max_recipe_tier: recipe_tier_number(candidate.tier),
                 validation_timeout: config.validation_timeout,
             },
         )?;
@@ -1048,10 +1064,10 @@ pub fn apply_refactor_plan_batch(
             } else {
                 RefactorApplyStatus::Rejected
             }
-        } else if hardening.changes.is_empty() {
-            RefactorApplyStatus::Rejected
-        } else {
+        } else if hardening.outcome.isolated_validation_passed {
             RefactorApplyStatus::Reviewed
+        } else {
+            RefactorApplyStatus::Rejected
         };
         step.note = format!(
             "executed candidate through hardening transaction; hardening status: {:?}",
@@ -1178,6 +1194,7 @@ fn summarize_evidence(
     files: &[RefactorFileSummary],
     gates: &[CapabilityGate],
     has_behavior_spec: bool,
+    measured: Option<&EvidenceRun>,
 ) -> EvidenceSummary {
     let has_tests = files.iter().any(|file| file.has_tests);
     let has_nextest = gates
@@ -1190,17 +1207,20 @@ fn summarize_evidence(
         .iter()
         .any(|gate| gate.id == "mutants" && gate.available);
 
-    let grade = if !workspace.cargo_metadata_available {
+    let inferred_grade = if !workspace.cargo_metadata_available {
         EvidenceGrade::None
     } else if has_tests || has_behavior_spec || has_nextest {
         EvidenceGrade::Tested
     } else {
         EvidenceGrade::Compiled
     };
+    let grade = measured.map(|run| run.grade).unwrap_or(inferred_grade);
     let max_autonomous_tier = max_tier_for_evidence(grade);
-    let analysis_depth = analysis_depth_for_evidence(grade);
+    let analysis_depth = measured
+        .map(|run| run.analysis_depth.clone())
+        .unwrap_or_else(|| analysis_depth_for_evidence(grade));
 
-    let signals = vec![
+    let mut signals = vec![
         EvidenceSignal {
             id: "cargo-metadata".to_string(),
             label: "Cargo metadata".to_string(),
@@ -1227,15 +1247,26 @@ fn summarize_evidence(
             id: "coverage-tool".to_string(),
             label: "Coverage tooling".to_string(),
             present: has_coverage_tool,
-            detail: "cargo-llvm-cov availability is detected, but v0.6 does not run coverage automatically".to_string(),
+            detail: "cargo-llvm-cov availability is detected; run mdx-rust evidence --include-coverage to collect coverage evidence".to_string(),
         },
         EvidenceSignal {
             id: "mutation-tool".to_string(),
             label: "Mutation tooling".to_string(),
             present: has_mutation_tool,
-            detail: "cargo-mutants availability is detected, but v0.6 does not run mutation tests automatically".to_string(),
+            detail: "cargo-mutants availability is detected; run mdx-rust evidence --include-mutation to collect mutation evidence".to_string(),
         },
     ];
+    if let Some(run) = measured {
+        signals.push(EvidenceSignal {
+            id: "measured-evidence".to_string(),
+            label: "Measured evidence artifact".to_string(),
+            present: true,
+            detail: format!(
+                "latest evidence run {} recorded {:?} evidence",
+                run.run_id, run.grade
+            ),
+        });
+    }
 
     let mut unlock_suggestions = Vec::new();
     if grade == EvidenceGrade::None {
@@ -1243,9 +1274,15 @@ fn summarize_evidence(
             "Run mdx-rust from a Cargo workspace before allowing autonomous changes.".to_string(),
         );
     }
-    if grade < EvidenceGrade::Tested {
+    if measured.is_none() && grade < EvidenceGrade::Tested {
         unlock_suggestions.push(
             "Add Rust tests or pass --eval-spec to unlock tested evidence for future recipes."
+                .to_string(),
+        );
+    }
+    if measured.is_none() {
+        unlock_suggestions.push(
+            "Run mdx-rust evidence to replace inferred evidence with measured test results."
                 .to_string(),
         );
     }
@@ -1290,7 +1327,7 @@ fn unlocked_recipe_tiers(grade: EvidenceGrade) -> Vec<String> {
         tiers.push("Tier 2 boundary review candidates".to_string());
     }
     if grade >= EvidenceGrade::Covered {
-        tiers.push("Tier 2 structural candidates in review".to_string());
+        tiers.push("Tier 2 structural mechanical recipes".to_string());
     }
     if grade >= EvidenceGrade::Hardened {
         tiers.push("Tier 3 semantic candidates in review".to_string());
@@ -1304,6 +1341,14 @@ fn max_tier_for_evidence(grade: EvidenceGrade) -> u8 {
         EvidenceGrade::Compiled | EvidenceGrade::Tested => 1,
         EvidenceGrade::Covered => 2,
         EvidenceGrade::Hardened | EvidenceGrade::Proven => 3,
+    }
+}
+
+fn measured_hardening_tier(measured: Option<&EvidenceRun>) -> u8 {
+    if measured.is_some_and(|run| run.grade >= EvidenceGrade::Covered) {
+        2
+    } else {
+        1
     }
 }
 
@@ -1413,7 +1458,7 @@ fn hardening_candidates(
         .filter_map(|finding| {
             let file = finding.file.display().to_string();
             let required_evidence = if finding.patchable {
-                EvidenceGrade::Compiled
+                required_evidence_for_hardening_strategy(&finding.strategy)
             } else {
                 EvidenceGrade::Tested
             };
@@ -1429,7 +1474,11 @@ fn hardening_candidates(
                 recipe,
                 title: finding.title.clone(),
                 rationale: if finding.patchable {
-                    "Patchable Tier 1 mechanical hardening can be applied through the existing isolated validation transaction.".to_string()
+                    if required_evidence >= EvidenceGrade::Covered {
+                        "Patchable Tier 2 structural mechanical refactor can be applied only when measured coverage evidence unlocks it.".to_string()
+                    } else {
+                        "Patchable Tier 1 mechanical hardening can be applied through the existing isolated validation transaction.".to_string()
+                    }
                 } else {
                     "Higher-evidence review candidate surfaced from security or boundary analysis; it remains plan-only until a safe executable recipe exists.".to_string()
                 },
@@ -1445,7 +1494,9 @@ fn hardening_candidates(
                 } else {
                     RefactorCandidateStatus::PlanOnly
                 },
-                tier: if finding.patchable {
+                tier: if required_evidence >= EvidenceGrade::Covered {
+                    RecipeTier::Tier2
+                } else if finding.patchable {
                     RecipeTier::Tier1
                 } else {
                     RecipeTier::Tier2
@@ -1454,7 +1505,7 @@ fn hardening_candidates(
                 evidence_satisfied,
                 public_api_impact: false,
                 apply_command: (finding.patchable && evidence_satisfied)
-                    .then(|| apply_command(&file, config)),
+                    .then(|| apply_command(&file, config, required_evidence)),
                 required_gates: if finding.patchable {
                     required_gates(config.behavior_spec_path.is_some())
                 } else {
@@ -1470,6 +1521,15 @@ fn hardening_candidates(
         .collect()
 }
 
+fn required_evidence_for_hardening_strategy(
+    strategy: &mdx_rust_analysis::HardeningStrategy,
+) -> EvidenceGrade {
+    match strategy {
+        mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => EvidenceGrade::Covered,
+        _ => EvidenceGrade::Compiled,
+    }
+}
+
 fn recipe_for_hardening_strategy(
     strategy: &mdx_rust_analysis::HardeningStrategy,
 ) -> RefactorRecipe {
@@ -1483,6 +1543,9 @@ fn recipe_for_hardening_strategy(
         mdx_rust_analysis::HardeningStrategy::IteratorCloned => RefactorRecipe::IteratorCloned,
         mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => {
             RefactorRecipe::MustUsePublicReturn
+        }
+        mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => {
+            RefactorRecipe::RepeatedStringLiteralConst
         }
         mdx_rust_analysis::HardeningStrategy::HttpSurfaceReview => {
             RefactorRecipe::BoundaryValidationReview
@@ -1623,8 +1686,11 @@ fn required_gates(has_behavior_spec: bool) -> Vec<String> {
     gates
 }
 
-fn apply_command(file: &str, config: &RefactorPlanConfig) -> String {
+fn apply_command(file: &str, config: &RefactorPlanConfig, evidence: EvidenceGrade) -> String {
     let mut command = format!("mdx-rust improve {} --apply", shell_word_str(file));
+    if evidence >= EvidenceGrade::Covered {
+        command.push_str(" --tier 2");
+    }
     if let Some(policy) = &config.policy_path {
         command.push_str(&format!(" --policy {}", shell_word_path(policy)));
     }
@@ -1687,6 +1753,7 @@ fn codebase_map_hash(map: &CodebaseMap) -> String {
     bytes.extend_from_slice(format!("{:?}", map.target).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.quality).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.evidence).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.measured_evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.impact).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.files).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.module_edges).as_bytes());
@@ -1714,6 +1781,7 @@ fn refactor_plan_hash(plan: &RefactorPlan) -> String {
     bytes.extend_from_slice(plan.root.as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.target).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.evidence).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", plan.measured_evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.impact).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.source_snapshots).as_bytes());
     bytes.extend_from_slice(format!("{:?}", plan.module_edges).as_bytes());
@@ -1846,6 +1914,7 @@ fn is_supported_mechanical_recipe(recipe: &RefactorRecipe) -> bool {
             | RefactorRecipe::ErrorContextPropagation
             | RefactorRecipe::IteratorCloned
             | RefactorRecipe::MustUsePublicReturn
+            | RefactorRecipe::RepeatedStringLiteralConst
     )
 }
 
@@ -1869,6 +1938,14 @@ fn count_executable_candidates(
         },
     )
     .len()
+}
+
+fn recipe_tier_number(tier: RecipeTier) -> u8 {
+    match tier {
+        RecipeTier::Tier1 => 1,
+        RecipeTier::Tier2 => 2,
+        RecipeTier::Tier3 => 3,
+    }
 }
 
 fn autopilot_pass_status(status: &RefactorBatchApplyStatus) -> AutopilotPassStatus {
@@ -2151,7 +2228,7 @@ anyhow = "1"
         )
         .unwrap();
 
-        assert_eq!(plan.schema_version, "0.6");
+        assert_eq!(plan.schema_version, "0.7");
         assert!(plan.candidates.iter().any(|candidate| candidate.status
             == RefactorCandidateStatus::ApplyViaImprove
             && candidate
@@ -2209,5 +2286,79 @@ mod tests {
             == RefactorCandidateStatus::PlanOnly
             && candidate.required_evidence == EvidenceGrade::Tested
             && candidate.tier == RecipeTier::Tier2));
+    }
+
+    #[test]
+    fn measured_covered_evidence_unlocks_tier2_executable_recipe() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "covered-plan-fixture"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            r#"pub fn labels() -> Vec<&'static str> {
+    vec![
+        "shared boundary label",
+        "shared boundary label",
+        "shared boundary label",
+    ]
+}
+"#,
+        )
+        .unwrap();
+        let artifact_root = dir.path().join(".mdx-rust");
+        std::fs::create_dir_all(artifact_root.join("evidence")).unwrap();
+        let evidence = crate::evidence::EvidenceRun {
+            schema_version: "0.7".to_string(),
+            run_id: "covered-fixture".to_string(),
+            root: dir.path().canonicalize().unwrap().display().to_string(),
+            target: Some("src/lib.rs".to_string()),
+            grade: EvidenceGrade::Covered,
+            analysis_depth: EvidenceAnalysisDepth::Structural,
+            commands: Vec::new(),
+            unlocked_recipe_tiers: vec!["Tier 2 structural mechanical recipes".to_string()],
+            unlock_suggestions: Vec::new(),
+            note: "fixture evidence".to_string(),
+            artifact_path: Some(
+                artifact_root
+                    .join("evidence/evidence-fixture.json")
+                    .display()
+                    .to_string(),
+            ),
+        };
+        std::fs::write(
+            artifact_root.join("evidence/evidence-fixture.json"),
+            serde_json::to_string_pretty(&evidence).unwrap(),
+        )
+        .unwrap();
+
+        let plan = build_refactor_plan(
+            dir.path(),
+            Some(&artifact_root),
+            &RefactorPlanConfig {
+                target: Some(PathBuf::from("src/lib.rs")),
+                ..RefactorPlanConfig::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(plan.evidence.grade, EvidenceGrade::Covered);
+        assert!(plan.measured_evidence.is_some());
+        assert!(plan.candidates.iter().any(|candidate| candidate.recipe
+            == RefactorRecipe::RepeatedStringLiteralConst
+            && candidate.status == RefactorCandidateStatus::ApplyViaImprove
+            && candidate.required_evidence == EvidenceGrade::Covered
+            && candidate.tier == RecipeTier::Tier2
+            && candidate
+                .apply_command
+                .as_deref()
+                .is_some_and(|command| command.contains("--tier 2"))));
     }
 }

@@ -217,7 +217,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["improve", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.4");
+    assert_eq!(value["schema_version"], "0.7");
     assert_eq!(value["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
 }
@@ -262,7 +262,7 @@ anyhow = "1"
         dir.path(),
     );
 
-    assert_eq!(value["schema_version"], "0.4");
+    assert_eq!(value["schema_version"], "0.7");
     assert_eq!(value["outcome"]["status"], "Applied");
     assert_eq!(value["outcome"]["isolated_validation_passed"], true);
     assert_eq!(value["outcome"]["final_validation_passed"], true);
@@ -304,7 +304,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.6");
+    assert_eq!(value["schema_version"], "0.7");
     assert!(value["plan_id"].as_str().is_some());
     assert_eq!(value["impact"]["patchable_hardening_changes"], 1);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
@@ -345,7 +345,7 @@ anyhow = "1"
 
     let value = assert_machine_pure_json_in(&["map", "src/lib.rs", "--json"], dir.path());
 
-    assert_eq!(value["schema_version"], "0.6");
+    assert_eq!(value["schema_version"], "0.7");
     assert_eq!(value["evidence"]["grade"], "Compiled");
     assert_eq!(value["evidence"]["max_autonomous_tier"], 1);
     assert_eq!(value["quality"]["patchable_findings"], 1);
@@ -411,7 +411,7 @@ pub fn load_root() -> anyhow::Result<String> {
         ],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.6");
+    assert_eq!(reviewed["schema_version"], "0.7");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["budget_exhausted"], false);
     assert_eq!(reviewed["total_executed_candidates"], 2);
@@ -566,7 +566,7 @@ anyhow = "1"
         ],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.6");
+    assert_eq!(reviewed["schema_version"], "0.7");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["hardening_run"]["outcome"]["status"], "Reviewed");
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
@@ -787,7 +787,7 @@ pub fn load_root() -> anyhow::Result<String> {
         &["apply-plan", artifact_path, "--all", "--json"],
         dir.path(),
     );
-    assert_eq!(reviewed["schema_version"], "0.6");
+    assert_eq!(reviewed["schema_version"], "0.7");
     assert_eq!(reviewed["status"], "Reviewed");
     assert_eq!(reviewed["executed_candidates"], 2);
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before_lib);

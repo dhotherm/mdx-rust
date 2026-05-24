@@ -1,6 +1,6 @@
 # Release Readiness
 
-This document is the release checklist for `v0.6.0`.
+This document is the release checklist for `v0.7.0`.
 
 ## Required Automated Gates
 
@@ -22,7 +22,7 @@ dependency is indexed.
 
 `mdx-rust` intentionally uses a moderate dependency tree because it needs Rust
 parsing, CLI ergonomics, async process execution, and optional model-provider
-support. Before `v0.6.0` is published:
+support. Before `v0.7.0` is published:
 
 - No yanked crates should be present.
 - Known RustSec advisories must be fixed or documented with a dated
@@ -51,12 +51,14 @@ mdx-rust schema audit-packet --json >/tmp/mdx-rust-audit-schema.json
 mdx-rust schema hardening-run --json >/tmp/mdx-rust-hardening-schema.json
 mdx-rust schema behavior-eval-report --json >/tmp/mdx-rust-behavior-schema.json
 mdx-rust schema project-policy --json >/tmp/mdx-rust-policy-schema.json
+mdx-rust schema evidence-run --json >/tmp/mdx-rust-evidence-schema.json
 mdx-rust schema refactor-plan --json >/tmp/mdx-rust-refactor-schema.json
 mdx-rust schema refactor-apply-run --json >/tmp/mdx-rust-refactor-apply-schema.json
 mdx-rust schema refactor-batch-apply-run --json >/tmp/mdx-rust-refactor-batch-apply-schema.json
 mdx-rust schema codebase-map --json >/tmp/mdx-rust-codebase-map-schema.json
 mdx-rust schema autopilot-run --json >/tmp/mdx-rust-autopilot-schema.json
 mdx-rust eval --json >/tmp/mdx-rust-eval.json
+mdx-rust evidence --json >/tmp/mdx-rust-evidence.json
 mdx-rust doctor --json >/tmp/mdx-rust-doctor.json
 mdx-rust map --json >/tmp/mdx-rust-map.json
 mdx-rust autopilot --json >/tmp/mdx-rust-autopilot.json
@@ -107,6 +109,7 @@ cargo run -p mdx-rust -- evolve crates/mdx-rust-core/src/refactor.rs --budget 60
 cargo run -p mdx-rust -- schema refactor-plan --json
 cargo run -p mdx-rust -- schema refactor-apply-run --json
 cargo run -p mdx-rust -- schema refactor-batch-apply-run --json
+cargo run -p mdx-rust -- schema evidence-run --json
 cargo run -p mdx-rust -- schema codebase-map --json
 cargo run -p mdx-rust -- schema autopilot-run --json
 ```
@@ -145,15 +148,19 @@ the fixture has only compiled evidence, and it must leave source files
 unchanged. The evolve apply run should then execute Tier 1 candidates with the
 compiled evidence default.
 
-The v0.6 recipe smoke should include at least contextual error hardening,
+The v0.7 recipe smoke should include at least contextual error hardening,
 boundary error context propagation, private borrow parameter tightening,
 iterator clone cleanup, and `#[must_use]` annotation in a throwaway crate. The
 apply run must show each recipe only lands after isolated validation and final
 validation.
 
-The evidence smoke should include a `Tested` fixture with a review-only
-boundary finding and prove the plan surfaces a Tier 2 plan-only candidate
-without making it executable.
+The evidence smoke should include a measured `Tested` fixture with a
+review-only boundary finding and prove the plan surfaces a Tier 2 plan-only
+candidate without making it executable.
+
+The Tier 2 smoke should include a measured `Covered` fixture and prove that a
+repeated private string literal candidate becomes executable only when the
+caller requests Tier 2 and `--min-evidence covered`.
 
 ## Performance Sanity
 
@@ -174,7 +181,7 @@ does not hang or produce confusing output.
 
 ## Publish Order
 
-Do not publish `v0.6.0` until the candidate commit has passed external pressure
+Do not publish `v0.7.0` until the candidate commit has passed external pressure
 testing.
 
 When approved, publish in dependency order:

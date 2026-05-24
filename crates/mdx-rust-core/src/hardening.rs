@@ -25,6 +25,7 @@ pub struct HardeningConfig {
     pub behavior_spec_path: Option<PathBuf>,
     pub apply: bool,
     pub max_files: usize,
+    pub max_recipe_tier: u8,
     pub validation_timeout: Duration,
 }
 
@@ -36,6 +37,7 @@ impl Default for HardeningConfig {
             behavior_spec_path: None,
             apply: false,
             max_files: 100,
+            max_recipe_tier: 1,
             validation_timeout: Duration::from_secs(180),
         }
     }
@@ -139,6 +141,7 @@ pub fn run_hardening(
         HardeningAnalyzeConfig {
             target: config.target.as_deref(),
             max_files: config.max_files,
+            max_recipe_tier: config.max_recipe_tier,
         },
     )?;
     let workspace = workspace_summary(&root);
@@ -174,7 +177,7 @@ pub fn run_hardening(
     };
 
     let mut run = HardeningRun {
-        schema_version: "0.4".to_string(),
+        schema_version: "0.7".to_string(),
         root: root.display().to_string(),
         target: config
             .target
@@ -214,7 +217,7 @@ fn execute_hardening_changes(
         .as_deref()
         .map(|path| resolve_behavior_spec_path(root, path));
 
-    let isolated = create_isolated_workspace(root, "hardening-v0-4")?;
+    let isolated = create_isolated_workspace(root, "hardening-v0-7")?;
     write_changes(&isolated, changes)?;
     let validation = validate_build_detailed_with_budget(&isolated, config.validation_timeout);
     let behavior_evaluation = if validation.passed {
@@ -427,7 +430,10 @@ fn category_for_finding(finding: &HardeningFinding) -> PolicyCategory {
         mdx_rust_analysis::HardeningStrategy::BorrowParameterTightening
         | mdx_rust_analysis::HardeningStrategy::IteratorCloned
         | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
-        | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => PolicyCategory::General,
+        | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn
+        | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => {
+            PolicyCategory::General
+        }
         mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation => {
             PolicyCategory::ErrorContext
         }
@@ -463,7 +469,8 @@ fn summarize_risk(findings: &[HardeningFinding]) -> HardeningRiskSummary {
             mdx_rust_analysis::HardeningStrategy::BorrowParameterTightening
             | mdx_rust_analysis::HardeningStrategy::IteratorCloned
             | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
-            | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => summary.low += 1,
+            | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn
+            | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => summary.low += 1,
             mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation
             | mdx_rust_analysis::HardeningStrategy::ResultUnwrapContext
             | mdx_rust_analysis::HardeningStrategy::EnvAccessReview
@@ -489,7 +496,7 @@ fn summarize_risk(findings: &[HardeningFinding]) -> HardeningRiskSummary {
     if saw_patchable {
         summary
             .top_recommendations
-            .push("Run mdx-rust improve <target> --apply after reviewing the proposed Tier 1 mechanical changes.".to_string());
+            .push("Run mdx-rust improve <target> --apply after reviewing the proposed mechanical changes.".to_string());
     }
     if saw_process {
         summary.top_recommendations.push(
@@ -675,7 +682,7 @@ anyhow = "1"
         let after = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
         assert_eq!(before, after);
         assert_eq!(run.outcome.status, HardeningStatus::Reviewed);
-        assert_eq!(run.schema_version, "0.4");
+        assert_eq!(run.schema_version, "0.7");
         assert!(run.outcome.isolated_validation_passed);
         assert!(!run.changes.is_empty());
     }

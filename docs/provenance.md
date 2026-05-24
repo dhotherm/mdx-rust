@@ -16,7 +16,7 @@ mdx-rust schema audit-packet --json
 
 Other exported schemas include `candidate`, `optimization-run`,
 `hook-decision`, `trace-event`, `hardening-run`, `hardening-finding`,
-`refactor-plan`, `refactor-apply-run`, `refactor-batch-apply-run`,
+`evidence-run`, `refactor-plan`, `refactor-apply-run`, `refactor-batch-apply-run`,
 `codebase-map`, and `autopilot-run`.
 
 ## Required Fields
@@ -87,13 +87,13 @@ and external compliance integrations are future work.
 
 ## Hardening Reports
 
-`v0.4` hardening runs produce separate reports:
+`v0.7` hardening runs produce separate reports:
 
 ```text
 .mdx-rust/hardening/hardening-<mode>-<timestamp>.json
 ```
 
-The hardening report schema version is `"0.4"`.
+The hardening report schema version is `"0.7"`.
 
 Hardening reports record:
 
@@ -125,21 +125,54 @@ mdx-rust schema behavior-eval-report --json
 mdx-rust schema project-policy --json
 ```
 
+## Evidence Runs
+
+`v0.7` evidence runs produce separate reports:
+
+```text
+.mdx-rust/evidence/evidence-<timestamp>-<run-id>.json
+```
+
+The evidence run schema version is `"0.7"`.
+
+Evidence runs record:
+
+- workspace root and optional target
+- measured grade and analysis depth
+- command records for cargo metadata, cargo test, coverage, mutation, and
+  semver checks
+- skipped command reasons when heavier evidence was not requested or the tool
+  was unavailable
+- timeout flags, status code, duration, stdout, and stderr for executed
+  commands
+- unlocked recipe tiers and unlock suggestions
+
+Evidence artifacts are gates for proportional autonomy. They are not proof that
+a candidate is safe. Every executed candidate still needs plan freshness,
+isolated validation, final validation, and rollback evidence.
+
+Print the evidence schema with:
+
+```bash
+mdx-rust schema evidence-run --json
+```
+
 ## Refactor Plans
 
-`v0.6` refactor plans produce separate reports:
+`v0.7` refactor plans produce separate reports:
 
 ```text
 .mdx-rust/plans/refactor-plan-<timestamp>-<plan-id>.json
 ```
 
-The refactor plan schema version is `"0.6"`.
+The refactor plan schema version is `"0.7"`.
 
 Refactor plans record:
 
 - workspace root and target
 - optional policy path and content hash
 - optional behavior eval spec path
+- measured evidence artifact reference when available
 - plan hash and source snapshot hashes
 - file and module scan counts
 - public API pressure
@@ -183,19 +216,20 @@ mdx-rust schema refactor-batch-apply-run --json
 
 ## Codebase Maps And Autopilot Runs
 
-`v0.6` codebase maps produce separate reports:
+`v0.7` codebase maps produce separate reports:
 
 ```text
 .mdx-rust/maps/codebase-map-<timestamp>-<map-id>.json
 ```
 
-The codebase map schema version is `"0.6"`.
+The codebase map schema version is `"0.7"`.
 
 Codebase maps record:
 
 - workspace root and target
 - optional policy path and content hash
 - optional behavior eval spec path
+- measured evidence artifact reference when available
 - evidence grade, analysis depth, evidence signals, unlocked recipe tiers, max
   autonomous tier, and unlock suggestions
 - quality grade and debt score
@@ -213,7 +247,7 @@ Autopilot runs produce separate reports:
 .mdx-rust/autopilot/autopilot-<timestamp>-<run-id>.json
 ```
 
-The autopilot run schema version is `"0.6"`.
+The autopilot run schema version is `"0.7"`.
 
 Autopilot runs record:
 

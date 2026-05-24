@@ -48,7 +48,7 @@ The hardening path is separate from the agent optimizer.
   from the transaction snapshot.
 - A hardening transaction must reject absolute paths, parent-directory escapes,
   and any path outside the workspace root.
-- The `0.4` hardening report schema records findings, change summaries,
+- The `0.7` hardening report schema records findings, change summaries,
   validation command records, final validation command records, policy hash,
   policy-to-finding matches, behavior eval records when supplied, workspace
   metadata, transaction status, and rollback status.
@@ -73,8 +73,8 @@ the user's source tree.
 - `mdx-rust apply-plan` must reject stale source snapshots before executing a
   candidate.
 - `mdx-rust apply-plan` may execute only candidates marked as executable.
-  Today that means contextual error hardening routed through
-  `mdx-rust improve`.
+  Today that means supported Tier 1 and coverage-gated Tier 2 hardening
+  candidates routed through `mdx-rust improve`.
 - `mdx-rust apply-plan` must re-run the appropriate safety pipeline or
   hardening transaction. It must not trust stale plan evidence.
 - `mdx-rust apply-plan --all` may execute a queue only for candidates already
@@ -102,10 +102,14 @@ allowed to move quickly, but it must not create a second mutation path.
 - Each executed candidate must route through `apply-plan --all` and the
   hardening transaction path. Autopilot must not write Rust source files
   directly.
-- v0.6 executable Tier 1 recipes are contextual error hardening, boundary error
+- v0.7 executable Tier 1 recipes are contextual error hardening, boundary error
   context propagation, private borrow parameter tightening, iterator clone
   cleanup, and `#[must_use]` annotation. They are allowed to execute only
   through the same hardening transaction path.
+- v0.7 executable Tier 2 recipes require measured `Covered` evidence, an
+  explicit Tier 2 request, and the same hardening transaction path. The first
+  supported Tier 2 recipe is repeated private string literal extraction into a
+  file-local constant.
 - `Tested` evidence may surface additional boundary-aware Tier 2 review
   candidates, but those candidates remain plan-only until a dedicated
   executable recipe and validation contract exists.
@@ -134,6 +138,9 @@ allowed to move quickly, but it must not create a second mutation path.
 - Evidence grades are execution gates, not proof by themselves. A `Compiled`
   grade means Tier 1 candidates may attempt the compile/clippy-gated hardening
   path; it does not mean a candidate has already passed validation.
+- Measured evidence artifacts can raise the visible grade, but they never
+  replace per-candidate isolated validation, final validation, rollback, or
+  behavior eval gates.
 - Autopilot reports are orchestration evidence only. They must point back to
   the concrete plans, apply-plan reports, hardening reports, validation
   records, and rollback evidence that justified each step.

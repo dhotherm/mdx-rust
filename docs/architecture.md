@@ -139,17 +139,22 @@ Plan-only candidates such as extracting a function, splitting a module, or
 reviewing public API pressure are still human-reviewed design work in `v0.5`.
 Public API-impacting candidates require explicit allowance before execution.
 
-## v0.6 Autonomous Evolution
+## v0.7 Evidence-Gated Autonomous Evolution
 
-`v0.6` adds two higher-level surfaces without creating a second mutation
-engine.
+`v0.7` uses measured evidence to decide how much autonomous work is allowed
+without creating a second mutation engine.
+
+`mdx-rust evidence` runs bounded local commands, persists command records under
+`.mdx-rust/evidence/`, and assigns an evidence grade. By default it measures
+Cargo metadata and `cargo test`. Optional flags can request coverage, mutation,
+and semver checks when the corresponding Cargo tools are installed.
 
 `mdx-rust map` scans the requested workspace, file, or directory and writes a
 codebase map under `.mdx-rust/maps/`. The map includes workspace metadata,
-quality grade, debt score, evidence grade, hardening findings, public API
-pressure, module edges, available optional gates such as `cargo-nextest`,
-`cargo-llvm-cov`, `cargo-mutants`, and `cargo-semver-checks`, and recommended
-next actions.
+quality grade, debt score, inferred or measured evidence grade, hardening
+findings, public API pressure, module edges, available optional gates such as
+`cargo-nextest`, `cargo-llvm-cov`, `cargo-mutants`, and
+`cargo-semver-checks`, and recommended next actions.
 
 `mdx-rust autopilot` coordinates the existing map, plan, apply-plan, and
 hardening paths:
@@ -179,10 +184,12 @@ Evidence grades control proportional aggression:
 - `Tested`: Tier 1 remains executable, analysis depth becomes
   boundary-aware, and plan generation surfaces extra Tier 2 review candidates
   for boundary and security-sensitive findings.
-- `Covered`, `Hardened`, and `Proven`: reserved for future Tier 2 and Tier 3
-  recipes once coverage, mutation, and property evidence are actually run.
+- `Covered`: Tier 2 structural mechanical recipes may execute when the caller
+  explicitly requests Tier 2.
+- `Hardened` and `Proven`: reserved for broader Tier 3 semantic recipes once
+  mutation and stronger proof evidence are actually run.
 
-The v0.6 executable Tier 1 recipe set is intentionally mechanical:
+The v0.7 executable Tier 1 recipe set is intentionally mechanical:
 
 - contextual error hardening in `anyhow::Result` functions
 - boundary error context propagation for filesystem and environment calls that
@@ -192,3 +199,11 @@ The v0.6 executable Tier 1 recipe set is intentionally mechanical:
 - iterator clone cleanup from clone-mapping collection to a simpler validated
   form such as `to_vec()`
 - `#[must_use]` annotations for public value-returning functions
+
+The first v0.7 executable Tier 2 recipe is deliberately narrow:
+
+- repeated private string literal extraction into a file-local constant
+
+It only appears in the executable queue when a measured evidence artifact
+reaches `Covered`, the caller requests Tier 2, and the candidate still passes
+plan freshness, isolated validation, final validation, and rollback gates.

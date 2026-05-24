@@ -75,7 +75,7 @@ Guardrailed Rust refactoring assistant with impact analysis.
 - Versioned refactor plan artifacts with plan hashes, required gates, risk
   summaries, and explicit non-goals.
 
-## v0.6.0 Focus
+## v0.6.0 - Released
 
 Autonomous Rust evolution for safe executable work.
 
@@ -101,21 +101,23 @@ Autonomous Rust evolution for safe executable work.
   or API surfaces.
 - Optional gate detection for nextest, llvm-cov, mutants, and semver checks.
 
-## v0.7.0 Direction
+## v0.7.0 Focus
 
-Measured semantic refactoring after the v0.6 mechanical recipe layer has been
-exercised on real crates.
+Measured evidence-gated autonomy with the first executable Tier 2 recipe.
 
-- Coverage and mutation evidence collection that can lift modules into Tier 2
-  and Tier 3 execution.
-- Narrow multi-file recipe support with full transaction snapshots and rollback
-  evidence.
-- Public API compatibility checks for crates that opt in.
-- Deeper Rust-aware impact analysis before any broader refactor is allowed.
-- First autonomous extraction or module-splitting recipe behind behavior eval,
-  semver, and transaction gates.
-- Agent distribution surfaces: documented skill packs, MCP schema boundaries,
-  and an API-friendly runner over the CLI JSON contract.
+- `mdx-rust evidence` persists measured command evidence under
+  `.mdx-rust/evidence/`.
+- Measured evidence feeds `map`, `plan`, `autopilot`, and `evolve` instead of
+  remaining only an inferred signal.
+- Coverage evidence can unlock Tier 2 executable structural mechanical recipes
+  when the caller explicitly requests Tier 2 and the minimum evidence grade is
+  satisfied.
+- First executable Tier 2 recipe: repeated private string literal extraction
+  into file-local constants.
+- Mutation and semver checks are collected as evidence when requested, but broad
+  Tier 3 semantic refactors remain future work.
+- Agent distribution remains CLI and JSON first; MCP and API surfaces stay
+  future work until the artifact contract has more field time.
 
 ## Current Non-Goals
 

@@ -60,6 +60,28 @@ enum Commands {
         review: bool,
     },
 
+    /// Collect measured evidence that controls autonomous recipe depth
+    Evidence {
+        /// File or directory to associate with the evidence run
+        target: Option<String>,
+
+        /// Run cargo-llvm-cov when available
+        #[arg(long)]
+        include_coverage: bool,
+
+        /// Run cargo-mutants when available
+        #[arg(long)]
+        include_mutation: bool,
+
+        /// Run cargo-semver-checks when available
+        #[arg(long)]
+        include_semver: bool,
+
+        /// Per-command timeout in seconds
+        #[arg(long, default_value = "180")]
+        timeout_seconds: u64,
+    },
+
     /// Inspect what would be bundled, editable scope, and current state
     Doctor {
         /// Optional agent name. Omit to inspect the current Rust workspace.
@@ -90,6 +112,10 @@ enum Commands {
         /// Maximum Rust files to scan
         #[arg(long, default_value = "100")]
         max_files: usize,
+
+        /// Maximum recipe tier to analyze and execute: 1 or 2
+        #[arg(long, default_value = "1", value_parser = ["1", "2", "tier1", "tier2"])]
+        tier: String,
 
         /// Validation timeout in seconds
         #[arg(long, default_value = "180")]
@@ -280,8 +306,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -331,6 +357,25 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Evidence {
+            target,
+            include_coverage,
+            include_mutation,
+            include_semver,
+            timeout_seconds,
+        } => {
+            if let Err(e) = cmd_evidence(EvidenceCommand {
+                target: target.as_deref(),
+                include_coverage,
+                include_mutation,
+                include_semver,
+                timeout_seconds,
+                json: cli.json,
+            }) {
+                emit_error(cli.json, "evidence", &e);
+                std::process::exit(1);
+            }
+        }
         Commands::Doctor { name } => {
             if let Err(e) = cmd_doctor(name.as_deref(), cli.json) {
                 emit_error(cli.json, "doctor", &e);
@@ -344,6 +389,7 @@ fn main() {
             eval_spec,
             apply,
             max_files,
+            tier,
             timeout_seconds,
         } => {
             if let Err(e) = cmd_improve(ImproveCommand {
@@ -353,6 +399,7 @@ fn main() {
                 eval_spec: eval_spec.as_deref(),
                 apply,
                 max_files,
+                tier: &tier,
                 timeout_seconds,
                 json: cli.json,
             }) {
@@ -706,7 +753,68 @@ Cargo.lock
     Ok(())
 }
 
-/// `doctor` command — shows project state using the loaded Config
+/// Evidence command arguments.
+struct EvidenceCommand<'a> {
+    target: Option<&'a str>,
+    include_coverage: bool,
+    include_mutation: bool,
+    include_semver: bool,
+    timeout_seconds: u64,
+    json: bool,
+}
+
+fn cmd_evidence(args: EvidenceCommand<'_>) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let run = mdx_rust_core::run_evidence(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::EvidenceRunConfig {
+            target: args.target.map(std::path::PathBuf::from),
+            include_coverage: args.include_coverage,
+            include_mutation: args.include_mutation,
+            include_semver: args.include_semver,
+            command_timeout: std::time::Duration::from_secs(args.timeout_seconds),
+        },
+    )?;
+
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&run)?);
+        return Ok(());
+    }
+
+    println!("📏 mdx-rust evidence");
+    println!("   Root: {}", run.root);
+    if let Some(target) = &run.target {
+        println!("   Target: {}", target);
+    }
+    println!("   Grade: {:?}", run.grade);
+    println!("   Analysis depth: {:?}", run.analysis_depth);
+    println!("   Note: {}", run.note);
+    for command in &run.commands {
+        let status = if command.skipped {
+            "skipped"
+        } else if command.success {
+            "passed"
+        } else if command.timed_out {
+            "timed out"
+        } else {
+            "failed"
+        };
+        println!("   - {}: {}", command.id, status);
+        if let Some(reason) = &command.skip_reason {
+            println!("     {}", reason);
+        }
+    }
+    if let Some(path) = &run.artifact_path {
+        println!("   Evidence artifact: {}", path);
+    }
+
+    Ok(())
+}
+
+/// `doctor` command shows project state using the loaded Config
 fn cmd_doctor(name: Option<&str>, json: bool) -> anyhow::Result<()> {
     if let Some(name) = name {
         return cmd_agent_doctor(name, json);
@@ -1200,6 +1308,7 @@ struct ImproveCommand<'a> {
     eval_spec: Option<&'a str>,
     apply: bool,
     max_files: usize,
+    tier: &'a str,
     timeout_seconds: u64,
     json: bool,
 }
@@ -1217,6 +1326,7 @@ fn cmd_improve(args: ImproveCommand<'_>) -> anyhow::Result<()> {
             behavior_spec_path: args.eval_spec.map(std::path::PathBuf::from),
             apply: args.apply,
             max_files: args.max_files,
+            max_recipe_tier: parse_recipe_tier_number(args.tier)?,
             validation_timeout: std::time::Duration::from_secs(args.timeout_seconds),
         },
     )?;
@@ -1500,6 +1610,14 @@ fn parse_recipe_tier(value: &str) -> anyhow::Result<mdx_rust_core::RecipeTier> {
     }
 }
 
+fn parse_recipe_tier_number(value: &str) -> anyhow::Result<u8> {
+    Ok(match parse_recipe_tier(value)? {
+        mdx_rust_core::RecipeTier::Tier1 => 1,
+        mdx_rust_core::RecipeTier::Tier2 => 2,
+        mdx_rust_core::RecipeTier::Tier3 => 3,
+    })
+}
+
 fn parse_evidence_grade(value: &str) -> anyhow::Result<mdx_rust_core::EvidenceGrade> {
     match value.to_ascii_lowercase().as_str() {
         "none" => Ok(mdx_rust_core::EvidenceGrade::None),
@@ -1757,6 +1875,7 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         "project-policy" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::ProjectPolicy))?
         }
+        "evidence-run" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::EvidenceRun))?,
         "refactor-plan" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::RefactorPlan))?
         }

@@ -2,6 +2,57 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 0.7.0 - 2026-05-23
+
+Measured evidence-gated autonomy for deeper Rust evolution.
+
+This release makes evidence a real artifact instead of an inferred hint.
+`mdx-rust` can now collect bounded command evidence, feed that evidence into
+maps and plans, and unlock the first narrow Tier 2 executable refactor when a
+target has measured coverage evidence.
+
+### Added
+
+- `mdx-rust evidence [target]` for persisted evidence runs under
+  `.mdx-rust/evidence/`.
+- Evidence command records with status code, timeout flag, duration, stdout,
+  stderr, skipped state, and skip reason.
+- Optional evidence collection flags for coverage, mutation testing, and semver
+  checks when `cargo-llvm-cov`, `cargo-mutants`, and `cargo-semver-checks` are
+  installed.
+- Measured evidence references on codebase maps, refactor plans, and autopilot
+  runs.
+- JSON Schema export for `evidence-run`.
+- Coverage-gated Tier 2 execution for supported structural mechanical recipes.
+- First executable Tier 2 recipe: repeated private string literal extraction
+  into a file-local constant.
+- `mdx-rust improve --tier 2` for directly reviewing or applying supported Tier
+  2 hardening recipes.
+- Tests proving Tier 2 recipes stay disabled at Tier 1 and become executable
+  only when measured `Covered` evidence is present.
+- `just evidence-smoke` for the measured evidence and Tier 2 queue path.
+
+### Changed
+
+- Refactor plan, apply-plan, batch apply, codebase map, autopilot, and hardening
+  artifacts now use schema version `0.7`.
+- `map`, `plan`, `autopilot`, and `evolve` consume the latest evidence artifact
+  when available.
+- Autonomy language in README, safety invariants, provenance docs, architecture
+  docs, release readiness, and roadmap now describes measured evidence as the
+  proportional aggression gate.
+- Workspace package version is now `0.7.0`.
+
+### Known Limitations
+
+- Tier 2 execution is intentionally narrow and still routes through the
+  hardening transaction path.
+- Mutation and semver checks are collected only when explicitly requested.
+- Broad semantic refactors, public API rewrites, and MIR-backed analysis remain
+  future work.
+- The Rust library APIs remain unstable before `1.0`; automate through CLI JSON
+  and versioned artifacts.
+
 ## 0.6.0 - 2026-05-23
 
 Autonomous Rust evolution for scoped low-risk improvements.

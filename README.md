@@ -11,8 +11,8 @@
 `mdx-rust` points at Rust code, finds scoped hardening opportunities, validates
 changes in isolation, checks project policy and behavior evals when supplied,
 and only lands edits that pass Rust gates. It still supports agent optimization,
-but `v0.6` is aimed at autonomous improvement loops for ordinary Rust crates
-and service backends too.
+but `v0.7` is aimed at evidence-gated autonomous improvement loops for ordinary
+Rust crates and service backends too.
 
 The CLI is the supported product surface. The library crates are published for
 installation and inspection, but their APIs remain unstable before `1.0`.
@@ -21,11 +21,12 @@ installation and inspection, but their APIs remain unstable before `1.0`.
 
 `mdx-rust` is an early public beta. It is useful for experimentation and
 dogfooding on Rust agent crates, and it can now run guarded autonomous passes
-against ordinary Rust modules. In plain terms: `v0.6` can tell you where a Rust
-repo looks strong or weak, plan refactor work, execute the safe subset in
-multiple passes, replan after each applied pass, and preserve audit evidence.
-It is not a broad semantic rewrite engine yet, but it is now an autonomous
-Rust evolution loop for scoped, low-risk improvements.
+against ordinary Rust modules. In plain terms: `v0.7` can measure repo
+evidence, tell you where a Rust repo looks strong or weak, plan refactor work,
+execute the safe subset in multiple passes, replan after each applied pass, and
+preserve audit evidence. It is not a broad semantic rewrite engine yet, but it
+is now an autonomous Rust evolution loop for scoped, evidence-backed
+improvements.
 
 Today it supports:
 
@@ -37,6 +38,7 @@ Today it supports:
 - Workspace behavior evals through `.mdx-rust/evals.json`.
 - Optional behavior eval gates for `improve --eval-spec`.
 - Repo doctor risk summaries with prioritized next actions.
+- Measured evidence artifacts through `mdx-rust evidence`.
 - Plan-first refactor impact analysis with public API, module edge, long
   function, large file, and patchable hardening candidates.
 - `apply-plan` execution for approved low-risk refactor candidates, with stale
@@ -53,6 +55,8 @@ Today it supports:
   boundary error context propagation, private borrow parameter tightening,
   iterator clone cleanup, and
   `#[must_use]` annotations for public value-returning functions.
+- One coverage-gated Tier 2 structural mechanical recipe: extracting repeated
+  private string literals into file-local constants.
 - Bounded hardening transactions with all touched files snapshotted and rolled
   back on final validation failure.
 - Isolated validation with `cargo check` and `cargo clippy -- -D warnings`.
@@ -64,13 +68,17 @@ Today it supports:
 - Human CLI output plus machine-parseable `--json` output.
 - Deterministic static audit checks for risky agent surfaces.
 
-## What v0.6 Adds
+## What v0.7 Adds
 
-`v0.6` is the release where mdx-rust starts acting like an autonomous Rust
-evolution engine instead of only a plan-first workflow.
+`v0.7` is the release where mdx-rust starts using measured evidence to decide
+how aggressive it may be.
 
+- Run `mdx-rust evidence` to persist measured test evidence under
+  `.mdx-rust/evidence/`.
+- Add `--include-coverage`, `--include-mutation`, and `--include-semver` when
+  you want heavier proof signals to unlock deeper autonomy.
 - Run `mdx-rust map <target>` to get a repo quality profile, debt score,
-  evidence grade, capability gates, findings, and next actions.
+  measured evidence reference, capability gates, findings, and next actions.
 - Run `mdx-rust plan <target>` to produce a non-mutating refactor plan.
 - Review impact before editing: public items, module edges, file size, long
   functions, policy references, behavior eval references, source snapshots, and
@@ -84,6 +92,8 @@ evolution engine instead of only a plan-first workflow.
   candidates, replan after each applied pass, and stop on any failed gate.
 - Run `mdx-rust evolve <target> --budget 10m --tier 1 --apply` when a coding
   agent wants a direct "do safe work within this budget" command.
+- Run `mdx-rust evolve <target> --budget 10m --tier 2 --min-evidence covered
+  --apply` after measured coverage evidence is available.
 - Get JSON artifacts for maps, plans, apply runs, and autopilot runs so humans
   and agents can audit what happened.
 
@@ -94,7 +104,7 @@ evidence grade and requested tier, and routes every real edit through freshness
 checks, isolated validation, final validation, and the hardening transaction
 path.
 
-The executable Tier 1 recipe set is now deliberately broader than panic cleanup:
+The executable Tier 1 recipe set is deliberately broader than panic cleanup:
 
 - Replace panic-prone `unwrap`/`expect` inside `anyhow::Result` functions with
   contextual errors and `?`.
@@ -107,14 +117,19 @@ The executable Tier 1 recipe set is now deliberately broader than panic cleanup:
 - Add `#[must_use]` to public value-returning functions when the return type is
   not already a common must-use type.
 
+The first executable Tier 2 recipe is intentionally narrow but real:
+
+- Extract a repeated private string literal into a file-local constant only
+  when measured evidence reaches `Covered`, the caller allows Tier 2, and the
+  normal validation and rollback gates pass.
+
 Not yet supported:
 
 - Arbitrary multi-file accepted edits outside the hardening transaction model.
 - Autonomous public API changes or broad semantic rewrites.
 - Direct application of stale plans or plan-only/high-risk candidates.
 - Stable library APIs.
-- Automatic execution of coverage, mutation testing, or full semantic behavior
-  proofs.
+- Full semantic behavior proofs or MIR-backed refactors.
 - External hook runners.
 - Multi-language optimization.
 
@@ -143,7 +158,7 @@ rejected candidates.
 
 The hardening path for ordinary Rust modules is review-first by default:
 `mdx-rust improve` validates candidate changes in an isolated workspace and
-requires `--apply` before touching the real tree. In `v0.6`, passing
+requires `--apply` before touching the real tree. In `v0.7`, passing
 `--eval-spec` also requires the behavior commands in that spec to pass in the
 isolated workspace and again after final application.
 
@@ -170,10 +185,11 @@ at `Compiled`, which unlocks Tier 1 mechanical recipes that still must pass
 `cargo check` and clippy before landing. Tests or a behavior eval spec raise the
 visible grade to `Tested`, switch the analysis depth to boundary-aware, and
 surface extra plan-only review candidates for process execution, unsafe code,
-environment access, filesystem boundaries, and HTTP surfaces. Coverage,
-mutation, and proof-grade gates are reported as unlock paths for later Tier 2
-and Tier 3 recipes; v0.6 detects the tooling but does not run those heavier
-gates automatically.
+environment access, filesystem boundaries, and HTTP surfaces. `mdx-rust
+evidence` can persist measured test, coverage, mutation, and semver command
+outcomes. When the latest evidence artifact reaches `Covered`, Tier 2
+structural mechanical recipes can enter the executable queue if the caller also
+requests Tier 2.
 
 ## Quick Start
 
@@ -215,10 +231,13 @@ mdx-rust init
 mdx-rust doctor
 mdx-rust audit --policy policies/backend-safety.md
 mdx-rust eval --spec .mdx-rust/evals.json
+mdx-rust evidence
+mdx-rust evidence --include-coverage
 mdx-rust map src/api
 mdx-rust autopilot src/api
 mdx-rust autopilot src/api --apply --max-passes 3 --max-candidates 10
 mdx-rust evolve src/api --budget 10m --tier 1 --apply
+mdx-rust evolve src/api --budget 10m --tier 2 --min-evidence covered --apply
 mdx-rust improve src/api/config.rs
 mdx-rust plan src/api
 mdx-rust apply-plan .mdx-rust/plans/refactor-plan-...json --candidate <id>
@@ -248,6 +267,8 @@ mdx-rust doctor my-agent
 mdx-rust audit --policy policies/backend-safety.md
 mdx-rust audit my-agent
 mdx-rust improve src/lib.rs
+mdx-rust evidence
+mdx-rust evidence --include-coverage
 mdx-rust map src/lib.rs
 mdx-rust plan src/lib.rs
 mdx-rust plan src/api --policy policies/backend-safety.md --eval-spec .mdx-rust/evals.json
@@ -266,6 +287,7 @@ mdx-rust schema audit-packet --json
 mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
 mdx-rust schema project-policy --json
+mdx-rust schema evidence-run --json
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
 mdx-rust schema refactor-batch-apply-run --json
@@ -298,7 +320,11 @@ See [docs/provenance.md](./docs/provenance.md) for the schema contract.
 transaction status, rollback status, policy matches, behavior eval outcomes,
 and workspace metadata.
 
-`v0.6` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
+`v0.7` evidence runs are written under `.mdx-rust/evidence/` with command
+records, timeout flags, stdout/stderr captures, evidence grade, analysis depth,
+and unlocked recipe tiers.
+
+`v0.7` refactor plans produce versioned JSON reports under `.mdx-rust/plans/`
 with impact summaries, source snapshot hashes, public API pressure, module
 edges, required gates, policy/eval references, and candidate actions. Plan
 artifacts are evidence for review and orchestration; they are not proof that a
@@ -306,7 +332,7 @@ change has been applied. `apply-plan` reports are also written under
 `.mdx-rust/plans/` and record whether a candidate or execution queue was
 reviewed, applied, rejected, stale, partially applied, or unsupported.
 
-`v0.6` codebase maps are written under `.mdx-rust/maps/` with quality grades,
+`v0.7` codebase maps are written under `.mdx-rust/maps/` with quality grades,
 debt scores, capability gates, findings, and recommended actions. Autopilot
 runs are written under `.mdx-rust/autopilot/` with the quality before/after,
 per-pass plan hashes, apply reports, skipped counts, and final status.
@@ -317,6 +343,7 @@ Print the current JSON Schemas with:
 mdx-rust schema audit-packet --json
 mdx-rust schema hardening-run --json
 mdx-rust schema behavior-eval-report --json
+mdx-rust schema evidence-run --json
 mdx-rust schema refactor-plan --json
 mdx-rust schema refactor-apply-run --json
 mdx-rust schema refactor-batch-apply-run --json
@@ -329,7 +356,7 @@ mdx-rust schema autopilot-run --json
 `mdx-rust`, `mdx-rust-core`, and `mdx-rust-analysis` are all published so the
 CLI can be installed from crates.io.
 
-For `0.6.x`:
+For `0.7.x`:
 
 - The `mdx-rust` CLI is supported.
 - The `mdx-rust-core` and `mdx-rust-analysis` APIs are unstable.
@@ -364,10 +391,10 @@ guessing which checks matter.
 
 ## Status
 
-`v0.6.0` is in development as the first autonomous Rust evolution release. It
-adds codebase maps, multi-pass autopilot orchestration, evidence-gated Tier 1
-recipe execution, and keeps broader semantic refactors behind explicit review
-and future transaction work.
+`v0.7.0` is in development as the first measured-evidence autonomy release. It
+adds evidence artifacts, evidence-fed maps and plans, coverage-gated Tier 2
+execution, and keeps broad semantic refactors behind explicit review and future
+verification work.
 
 ## License
 

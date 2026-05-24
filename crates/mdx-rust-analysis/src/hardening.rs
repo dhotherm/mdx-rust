@@ -34,6 +34,7 @@ pub enum HardeningStrategy {
     IteratorCloned,
     MechanicalTier1Cleanup,
     MustUsePublicReturn,
+    RepeatedStringLiteralConst,
     ResultUnwrapContext,
     ProcessExecutionReview,
     UnsafeReview,
@@ -56,6 +57,7 @@ pub struct HardeningFileChange {
 pub struct HardeningAnalyzeConfig<'a> {
     pub target: Option<&'a Path>,
     pub max_files: usize,
+    pub max_recipe_tier: u8,
 }
 
 pub fn analyze_hardening(
@@ -158,7 +160,8 @@ pub fn analyze_hardening(
             }
         }
 
-        if let Some(change) = build_tier1_mechanical_change(root, file, &content, &function_ranges)?
+        if let Some(change) =
+            build_mechanical_change(root, file, &content, &function_ranges, &config)?
         {
             findings.extend(change.findings);
             changes.push(change.change);
@@ -174,17 +177,18 @@ pub fn analyze_hardening(
     })
 }
 
-struct Tier1MechanicalChange {
+struct MechanicalChange {
     change: HardeningFileChange,
     findings: Vec<HardeningFinding>,
 }
 
-fn build_tier1_mechanical_change(
+fn build_mechanical_change(
     root: &Path,
     file: &Path,
     content: &str,
     function_ranges: &[FunctionRange],
-) -> anyhow::Result<Option<Tier1MechanicalChange>> {
+    config: &HardeningAnalyzeConfig<'_>,
+) -> anyhow::Result<Option<MechanicalChange>> {
     let rel = relative_path(root, file);
     let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
     let mut finding_ids = Vec::new();
@@ -220,6 +224,14 @@ fn build_tier1_mechanical_change(
         &mut finding_ids,
         &mut findings,
     );
+    if config.max_recipe_tier >= 2 {
+        apply_repeated_string_literal_const_recipe(
+            &rel,
+            &mut lines,
+            &mut finding_ids,
+            &mut findings,
+        );
+    }
 
     if finding_ids.is_empty() {
         return Ok(None);
@@ -241,7 +253,7 @@ fn build_tier1_mechanical_change(
         return Ok(None);
     }
 
-    Ok(Some(Tier1MechanicalChange {
+    Ok(Some(MechanicalChange {
         change: HardeningFileChange {
             file: rel,
             old_content: content.to_string(),
@@ -249,7 +261,7 @@ fn build_tier1_mechanical_change(
             strategy: HardeningStrategy::MechanicalTier1Cleanup,
             finding_ids,
             description:
-                "Apply Tier 1 mechanical hardening recipes under compile and clippy validation."
+                "Apply enabled mechanical hardening recipes under compile and clippy validation."
                     .to_string(),
         },
         findings,
@@ -526,6 +538,148 @@ fn apply_borrowed_vec_literal_recipe(
             patchable: true,
         });
     }
+}
+
+fn apply_repeated_string_literal_const_recipe(
+    rel: &Path,
+    lines: &mut Vec<String>,
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    let content = lines.join("\n");
+    let Some((literal, count, first_line)) = repeated_safe_string_literal(&content) else {
+        return;
+    };
+    let const_name = format!("MDX_LITERAL_{}", short_literal_hash(&literal));
+    if content.contains(&const_name) {
+        return;
+    }
+
+    let quoted = format!("\"{}\"", escape_string(&literal));
+    let mut replacement_count = 0usize;
+    for line in lines.iter_mut() {
+        let should_rewrite = !line.trim_start().starts_with("//") && line.contains(&quoted);
+        if should_rewrite {
+            *line = line.replace(&quoted, &const_name);
+            replacement_count += 1;
+        }
+    }
+    if replacement_count < 3 {
+        return;
+    }
+
+    let insert_at = const_insert_index(lines);
+    lines.insert(insert_at, format!("const {const_name}: &str = {quoted};"));
+
+    let id = format!(
+        "repeated-string-literal-const:{}:{first_line}",
+        rel.display()
+    );
+    finding_ids.push(id.clone());
+    findings.push(HardeningFinding {
+        id,
+        title: "Extract repeated string literal".to_string(),
+        description: format!(
+            "Extract repeated private string literal used {count} times into a file-local const under Tier 2 evidence gates."
+        ),
+        file: rel.to_path_buf(),
+        line: first_line,
+        strategy: HardeningStrategy::RepeatedStringLiteralConst,
+        patchable: true,
+    });
+}
+
+fn repeated_safe_string_literal(content: &str) -> Option<(String, usize, usize)> {
+    let mut counts = std::collections::BTreeMap::<String, (usize, usize)>::new();
+    for (line_index, line) in content.lines().enumerate() {
+        if line.trim_start().starts_with("//") || line.trim_start().starts_with("const ") {
+            continue;
+        }
+        for literal in string_literals_in_line(line) {
+            if !is_safe_extractable_literal(&literal) {
+                continue;
+            }
+            let entry = counts.entry(literal).or_insert((0, line_index + 1));
+            entry.0 += 1;
+        }
+    }
+
+    counts
+        .into_iter()
+        .filter(|(_, (count, _))| *count >= 3)
+        .max_by(|left, right| {
+            left.1
+                 .0
+                .cmp(&right.1 .0)
+                .then_with(|| left.0.len().cmp(&right.0.len()))
+        })
+        .map(|(literal, (count, line))| (literal, count, line))
+}
+
+fn string_literals_in_line(line: &str) -> Vec<String> {
+    let mut literals = Vec::new();
+    let mut chars = line.char_indices().peekable();
+    while let Some((_, ch)) = chars.next() {
+        if ch != '"' {
+            continue;
+        }
+        let mut literal = String::new();
+        let mut escaped = false;
+        for (_, next) in chars.by_ref() {
+            if escaped {
+                literal.push(next);
+                escaped = false;
+                continue;
+            }
+            if next == '\\' {
+                escaped = true;
+                continue;
+            }
+            if next == '"' {
+                literals.push(literal);
+                break;
+            }
+            literal.push(next);
+        }
+    }
+    literals
+}
+
+fn is_safe_extractable_literal(value: &str) -> bool {
+    value.len() >= 8
+        && value.len() <= 80
+        && !value.contains('{')
+        && !value.contains('}')
+        && !value.contains('\n')
+        && value.chars().all(|ch| {
+            ch.is_ascii_alphanumeric()
+                || matches!(ch, ' ' | '-' | '_' | '.' | '/' | ':' | ',' | '(' | ')')
+        })
+}
+
+fn const_insert_index(lines: &[String]) -> usize {
+    let mut index = 0usize;
+    while index < lines.len() {
+        let trimmed = lines[index].trim_start();
+        if trimmed.starts_with("#![") || trimmed.starts_with("//!") || trimmed.is_empty() {
+            index += 1;
+            continue;
+        }
+        if trimmed.starts_with("use ") {
+            index += 1;
+            continue;
+        }
+        break;
+    }
+    index
+}
+
+fn short_literal_hash(value: &str) -> String {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    format!("{:08X}", hasher.finish() as u32)
 }
 
 fn replace_map_clone_calls(line: &str) -> String {
@@ -864,6 +1018,7 @@ mod tests {
             HardeningAnalyzeConfig {
                 target: None,
                 max_files: 10,
+                max_recipe_tier: 1,
             },
         )
         .unwrap();
@@ -897,6 +1052,7 @@ mod tests {
             HardeningAnalyzeConfig {
                 target: None,
                 max_files: 10,
+                max_recipe_tier: 1,
             },
         )
         .unwrap();
@@ -934,6 +1090,7 @@ mod tests {
             HardeningAnalyzeConfig {
                 target: None,
                 max_files: 10,
+                max_recipe_tier: 1,
             },
         )
         .unwrap();
@@ -960,6 +1117,7 @@ mod tests {
             HardeningAnalyzeConfig {
                 target: None,
                 max_files: 10,
+                max_recipe_tier: 1,
             },
         )
         .unwrap();
@@ -995,6 +1153,7 @@ mod tests {
             HardeningAnalyzeConfig {
                 target: None,
                 max_files: 10,
+                max_recipe_tier: 1,
             },
         )
         .unwrap();
@@ -1028,6 +1187,7 @@ mod tests {
             HardeningAnalyzeConfig {
                 target: None,
                 max_files: 10,
+                max_recipe_tier: 1,
             },
         )
         .unwrap();
@@ -1039,6 +1199,55 @@ mod tests {
             .finding_ids
             .iter()
             .any(|id| id.contains("iterator-cloned")));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
+    fn tier2_extracts_repeated_private_string_literal_when_enabled() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"fn labels() -> Vec<&'static str> {
+    vec![
+        "shared boundary label",
+        "shared boundary label",
+        "shared boundary label",
+    ]
+}
+"#,
+        )
+        .unwrap();
+
+        let tier1 = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 1,
+            },
+        )
+        .unwrap();
+        assert!(tier1.changes.is_empty());
+
+        let tier2 = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(tier2.changes.len(), 1);
+        let change = &tier2.changes[0];
+        assert!(change.new_content.contains("const MDX_LITERAL_"));
+        assert!(change
+            .finding_ids
+            .iter()
+            .any(|id| id.contains("repeated-string-literal-const")));
         assert!(syn::parse_file(&change.new_content).is_ok());
     }
 
@@ -1062,6 +1271,7 @@ mod tests {
             HardeningAnalyzeConfig {
                 target: None,
                 max_files: 10,
+                max_recipe_tier: 1,
             },
         )
         .unwrap();
