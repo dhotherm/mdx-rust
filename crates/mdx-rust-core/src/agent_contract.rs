@@ -133,6 +133,17 @@ pub fn agent_contract() -> MdxAgentContract {
                 example: "mdx-rust --json perf src/service".to_string(),
             },
             AgentCommandSpec {
+                name: "benchmark".to_string(),
+                purpose:
+                    "Run command-based benchmark specs and persist measured performance evidence."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "benchmark-run".to_string(),
+                example: "mdx-rust --json benchmark --spec .mdx-rust/benchmarks.json"
+                    .to_string(),
+            },
+            AgentCommandSpec {
                 name: "brief".to_string(),
                 purpose:
                     "Build one fused agent briefing with repo context, contracts, performance, scorecard, and recommended next commands."
@@ -254,6 +265,7 @@ pub fn agent_contract() -> MdxAgentContract {
                     "mdx-rust --json noise-filter".to_string(),
                     "mdx-rust --json contracts <target>".to_string(),
                     "mdx-rust --json perf <target>".to_string(),
+                    "mdx-rust --json benchmark --spec .mdx-rust/benchmarks.json".to_string(),
                     "mdx-rust --json brief <target>".to_string(),
                     "mdx-rust --json recipes".to_string(),
                     "mdx-rust --json agent-ready <target>".to_string(),
@@ -290,6 +302,7 @@ pub fn agent_contract() -> MdxAgentContract {
             ".mdx-rust/maps/*.json".to_string(),
             ".mdx-rust/scorecards/*.json".to_string(),
             ".mdx-rust/briefs/*.json".to_string(),
+            ".mdx-rust/benchmarks/*.json".to_string(),
             ".mdx-rust/plans/*.json".to_string(),
             ".mdx-rust/autopilot/*.json".to_string(),
             ".mdx-rust/hardening/*.json".to_string(),
@@ -300,6 +313,8 @@ pub fn agent_contract() -> MdxAgentContract {
                 .to_string(),
             "Treat contract scans as design evidence, not validation proof.".to_string(),
             "Treat performance scans as prioritization evidence, not proof that a refactor is safe."
+                .to_string(),
+            "Treat benchmark runs as measured evidence, not approval to mutate by themselves."
                 .to_string(),
             "Treat plan and map commands as read-only.".to_string(),
             "Respect noise-filter exclusions before default search or context loading.".to_string(),

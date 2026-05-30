@@ -201,7 +201,7 @@ Performance-aware autonomous planning.
 - Future beta work can connect performance findings to benchmark specs and
   evidence-gated refactor plans.
 
-## v1.4 beta Focus - In Progress
+## v1.4 beta Focus - Done
 
 Evidence fusion.
 
@@ -215,6 +215,20 @@ Evidence fusion.
 - `agent-ready` includes contract and performance readiness fields.
 - No new mutation path is added; fusion surfaces are evidence and planning
   artifacts only.
+
+## v1.5 beta Focus - In Progress
+
+Measured performance harness.
+
+- `mdx-rust benchmark --spec .mdx-rust/benchmarks.json --json` runs versioned
+  command specs with warmups, repeated measured runs, timeouts, captured output,
+  and parsed throughput or latency metrics.
+- Benchmark artifacts live under `.mdx-rust/benchmarks/` and can be explained,
+  schema-exported, and consumed by external agents.
+- `agent-contract`, `runtime`, `brief`, and `scorecard` now recommend benchmark
+  collection before performance-oriented refactors.
+- Benchmark runs are read-only measurement evidence. They never grant mutation
+  authority by themselves.
 
 ## Current Non-Goals
 

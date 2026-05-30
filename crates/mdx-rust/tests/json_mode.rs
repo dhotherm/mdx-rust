@@ -146,6 +146,13 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     assert_eq!(performance_run["title"], "PerformanceRun");
     assert!(performance_run["properties"]["findings"].is_object());
 
+    let benchmark_run = assert_machine_pure_json(&["schema", "benchmark-run", "--json"]);
+    assert_eq!(benchmark_run["title"], "BenchmarkRun");
+    assert!(benchmark_run["properties"]["metrics"].is_object());
+
+    let benchmark_spec = assert_machine_pure_json(&["schema", "benchmark-spec", "--json"]);
+    assert_eq!(benchmark_spec["title"], "BenchmarkSpec");
+
     let evolution_brief = assert_machine_pure_json(&["schema", "evolution-brief", "--json"]);
     assert_eq!(evolution_brief["title"], "EvolutionBrief");
     assert!(evolution_brief["properties"]["scorecard"].is_object());
@@ -301,6 +308,12 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .as_array()
         .expect("commands array")
         .iter()
+        .any(|command| command["name"] == "benchmark"
+            && command["primary_schema"] == "benchmark-run"));
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
         .any(
             |command| command["name"] == "brief" && command["primary_schema"] == "evolution-brief"
         ));
@@ -355,6 +368,11 @@ fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
         .expect("tools")
         .iter()
         .any(|tool| tool["name"] == "perf" && tool["read_only"] == true));
+    assert!(runtime["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .any(|tool| tool["name"] == "benchmark" && tool["read_only"] == true));
     assert!(runtime["tools"]
         .as_array()
         .expect("tools")
@@ -1875,4 +1893,59 @@ fn workspace_eval_json_mode_runs_behavior_spec() {
     assert_eq!(value["total"], 1);
     assert_eq!(value["passed"], 1);
     assert_eq!(value["failed"], 0);
+}
+
+#[test]
+fn benchmark_json_mode_runs_specs_and_explains_artifact() {
+    let dir = tempdir().expect("temp dir");
+    let artifact_dir = dir.path().join(".mdx-rust");
+    std::fs::create_dir_all(&artifact_dir).unwrap();
+    let spec = artifact_dir.join("benchmarks.json");
+    std::fs::write(
+        &spec,
+        r#"{
+  "version": "v1",
+  "commands": [
+    {
+      "id": "synthetic-throughput",
+      "command": "sh",
+      "args": ["-c", "printf 'throughput: 4321 ops/sec\\nlatency p95: 7.5 ms\\n'"],
+      "runs": 2,
+      "warmup_runs": 1,
+      "timeout_seconds": 5
+    }
+  ]
+}"#,
+    )
+    .unwrap();
+
+    let value = assert_machine_pure_json_in(
+        &["benchmark", "--spec", ".mdx-rust/benchmarks.json", "--json"],
+        dir.path(),
+    );
+
+    assert_eq!(value["schema_version"], "1.5");
+    assert_eq!(value["status"], "Passed");
+    assert_eq!(value["total_measured_runs"], 2);
+    assert!(value["metrics"]
+        .as_array()
+        .expect("metrics")
+        .iter()
+        .any(|metric| metric["name"] == "throughput" && metric["unit"] == "ops/sec"));
+    let artifact_path = value["artifact_path"]
+        .as_str()
+        .expect("artifact path")
+        .to_string();
+    assert!(std::path::Path::new(&artifact_path).is_file());
+
+    let explanation =
+        assert_machine_pure_json_in(&["explain", &artifact_path, "--json"], dir.path());
+    assert_eq!(explanation["artifact_kind"], "BenchmarkRun");
+    assert!(explanation["recommended_next_actions"]
+        .as_array()
+        .expect("next actions")
+        .iter()
+        .any(|action| action
+            .as_str()
+            .is_some_and(|action| action.contains("measured performance evidence"))));
 }

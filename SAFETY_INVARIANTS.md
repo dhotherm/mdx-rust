@@ -129,10 +129,10 @@ allowed to move quickly, but it must not create a second mutation path.
   `evolve`.
 - `mdx-rust scorecard`, `mdx-rust agent-ready`, `mdx-rust recipes`,
   `mdx-rust runtime`, `mdx-rust repo-map`, `mdx-rust contracts`,
-  `mdx-rust perf`, `mdx-rust noise-filter` without `--write`,
-  `mdx-rust brief`, `mdx-rust agent-pack` without `--write`, and `mdx-rust explain` are
-  read-only agent surfaces. They must never mutate source files or approve
-  mutation by themselves.
+  `mdx-rust perf`, `mdx-rust benchmark`, `mdx-rust noise-filter` without
+  `--write`, `mdx-rust brief`, `mdx-rust agent-pack` without `--write`, and
+  `mdx-rust explain` are read-only agent surfaces. They must never mutate
+  source files or approve mutation by themselves.
 - `mdx-rust mcp --stdio` and `mdx-rust serve` are local runtime wrappers over
   the same command contracts. Runtime mutation-capable tool calls must require
   explicit mutation confirmation and must route through `evolve`, autopilot,
@@ -210,6 +210,11 @@ allowed to move quickly, but it must not create a second mutation path.
   scorecards, contract posture, performance posture, and recommended command
   sequences, but they do not validate, apply, land, accept, or approve source
   changes.
+- Benchmark runs are measurement evidence only. They may execute user-provided
+  commands from a benchmark spec, record output, parse throughput or latency
+  metrics, and persist artifacts. They must never change source files, approve
+  a performance rewrite, or weaken plan, evidence, validation, behavior eval,
+  provenance, or rollback gates.
 - Codebase maps are records only. A `CodebaseMap` means "scanned and
   summarized", not "validated", "applied", "landed", or "accepted".
 - Evidence grades are execution gates, not proof by themselves. A `Compiled`

@@ -16,9 +16,9 @@ mdx-rust schema audit-packet --json
 
 Other exported schemas include `candidate`, `optimization-run`,
 `hook-decision`, `trace-event`, `hardening-run`, `hardening-finding`,
-`evidence-run`, `agent-contract`, `refactor-plan`, `refactor-apply-run`,
-`refactor-batch-apply-run`, `codebase-map`, `evolution-scorecard`, and
-`autopilot-run`.
+`evidence-run`, `agent-contract`, `benchmark-run`, `benchmark-spec`,
+`refactor-plan`, `refactor-apply-run`, `refactor-batch-apply-run`,
+`codebase-map`, `evolution-scorecard`, and `autopilot-run`.
 
 ## Required Fields
 
@@ -177,6 +177,8 @@ mdx-rust schema repo-map --json
 mdx-rust schema noise-filter --json
 mdx-rust schema contract-run --json
 mdx-rust schema performance-run --json
+mdx-rust schema benchmark-spec --json
+mdx-rust schema benchmark-run --json
 mdx-rust schema evolution-brief --json
 mdx-rust schema agent-ready-report --json
 ```
@@ -242,6 +244,17 @@ Evolution briefs are read-only fusion artifacts:
 They bundle repo context, noise filters, contract posture, performance posture,
 and the saved scorecard. The brief is an intake artifact for agents. It is not
 validation evidence and it does not approve mutation.
+
+Benchmark runs are read-only measurement artifacts:
+
+```text
+.mdx-rust/benchmarks/benchmark-run-<run-id>.json
+```
+
+They record the benchmark spec hash, command records, warmup and measured run
+status, timeouts, wall-clock duration, truncated stdout/stderr, parsed metrics,
+and metric summaries. They are performance evidence for humans and agents, not
+permission to mutate source files.
 
 `mdx-rust agent-ready --json` is a compact readiness envelope derived from the
 scorecard. It is not mutation evidence. It points agents at the command

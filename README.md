@@ -67,6 +67,8 @@ Today it supports:
   invariants, safety notes, panic docs, and assertion hints.
 - `perf` read-only scans for static performance pressure such as blocking work
   in async functions, clone pressure, and allocations in loops.
+- `benchmark` command-based measurement runs that persist throughput, latency,
+  wall-clock, stdout/stderr, timeout, and metric-summary evidence.
 - `recipes` machine-readable recipe catalog with tier, evidence, execution, and
   mutation-path contracts.
 - `explain` artifact summaries so coding agents can inspect saved JSON reports
@@ -269,6 +271,21 @@ The fusion phase makes the standalone intake surfaces work together.
   command sequence.
 - `agent-ready` includes contract and performance readiness so external agents
   can explain why a repo is or is not ready for deeper autonomy.
+
+## v1.5 beta Direction
+
+The measurement phase gives performance work a real evidence artifact.
+
+- `mdx-rust benchmark --spec .mdx-rust/benchmarks.json --json` runs a
+  versioned command spec and persists `.mdx-rust/benchmarks/*.json`.
+- Benchmark records include warmups, measured runs, command status, timeouts,
+  truncated stdout/stderr, parsed throughput/latency metrics, and summary
+  statistics.
+- `agent-contract`, `runtime`, `schema`, `explain`, `scorecard`, and `brief`
+  point agents toward benchmarks before performance-oriented refactors.
+- Benchmarks are measured evidence only. They do not approve mutation, and
+  performance changes still need the normal plan, validation, behavior eval,
+  provenance, and rollback gates.
 
 ## Safety Model
 

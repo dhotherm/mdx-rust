@@ -188,13 +188,15 @@ The recommended external-agent loop is:
    files, crate boundaries, and default search exclusions.
 3. `contracts` to inspect documented behavior intent and public contract gaps.
 4. `perf` to inspect static performance pressure before performance refactors.
-5. `brief` for one fused agent intake artifact.
-6. `recipes` to learn recipe tiers and required evidence.
-7. `evidence` to collect or refresh the target's measured grade.
-8. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
+5. `benchmark` to collect measured performance evidence when a benchmark spec
+   exists.
+6. `brief` for one fused agent intake artifact.
+7. `recipes` to learn recipe tiers and required evidence.
+8. `evidence` to collect or refresh the target's measured grade.
+9. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
    security, and capability briefing.
-9. `plan` for a non-mutating candidate queue.
-10. `evolve` in review mode, or `evolve` with explicit mutation confirmation
+10. `plan` for a non-mutating candidate queue.
+11. `evolve` in review mode, or `evolve` with explicit mutation confirmation
    after a human approves autonomous execution.
 
 `mdx-rust agent-pack codex|claude|cursor|aider|goose|generic` generates
@@ -216,6 +218,12 @@ agents and reviewers. They do not prove behavior and do not approve mutation.
 pressure such as blocking work in async functions, clone pressure, allocations
 in loops, and synchronous lock hints. It is prioritization evidence only and
 does not make refactors executable by itself.
+
+`mdx-rust benchmark` is the measured performance surface. It runs a versioned
+command spec with warmups, repeated measured runs, per-command timeouts,
+captured output, parsed throughput or latency metrics, and persisted summary
+artifacts. It is read-only with respect to source files and feeds evidence for
+future performance refactors; it is not an acceptance gate by itself.
 
 `mdx-rust brief` fuses repo-map context, noise filters, contracts,
 performance, and the evolution scorecard into one artifact for agents. It is a

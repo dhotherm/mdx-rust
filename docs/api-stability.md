@@ -20,6 +20,7 @@ For `1.0.x`, the supported product surface is:
 - Versioned contract-run schemas.
 - Versioned performance-run schemas.
 - Versioned evolution-brief schemas.
+- Versioned benchmark-spec and benchmark-run schemas.
 - Versioned recipe catalog schemas.
 - Versioned artifact explanation schemas.
 - Versioned evolution scorecard schemas.
@@ -67,6 +68,7 @@ Automation should prefer:
 - `mdx-rust noise-filter --json`.
 - `mdx-rust contracts <target> --json`.
 - `mdx-rust perf <target> --json`.
+- `mdx-rust benchmark --spec .mdx-rust/benchmarks.json --json`.
 - `mdx-rust brief <target> --json`.
 - `mdx-rust recipes --json`.
 - `mdx-rust explain <artifact> --json`.
@@ -81,6 +83,7 @@ Automation should prefer:
 - Versioned contract-run JSON.
 - Versioned performance-run JSON.
 - Versioned evolution-brief JSON.
+- Versioned benchmark-run JSON.
 - Versioned agent-ready report JSON.
 - Versioned evolution scorecard JSON.
 - Versioned refactor plan JSON.
@@ -101,7 +104,7 @@ CLI automation through `mdx-rust plan --json`, `mdx-rust apply-plan --json`,
 `mdx-rust recipes --json`, `mdx-rust explain <artifact> --json`,
 `mdx-rust scorecard --json`, `mdx-rust repo-map --json`,
 `mdx-rust noise-filter --json`, `mdx-rust contracts --json`,
-`mdx-rust perf --json`, `mdx-rust brief --json`,
+`mdx-rust perf --json`, `mdx-rust benchmark --json`, `mdx-rust brief --json`,
 `mdx-rust agent-pack <agent> --json`, and their
 schema commands:
 
@@ -116,6 +119,8 @@ schema commands:
 - `mdx-rust schema noise-filter --json`
 - `mdx-rust schema contract-run --json`
 - `mdx-rust schema performance-run --json`
+- `mdx-rust schema benchmark-spec --json`
+- `mdx-rust schema benchmark-run --json`
 - `mdx-rust schema evolution-brief --json`
 - `mdx-rust schema agent-ready-report --json`
 - `mdx-rust schema recipe-catalog --json`

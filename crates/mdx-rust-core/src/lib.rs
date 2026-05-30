@@ -22,6 +22,8 @@ pub mod agent_runtime;
 #[doc(hidden)]
 pub mod artifact;
 #[doc(hidden)]
+pub mod benchmark;
+#[doc(hidden)]
 pub mod config;
 #[doc(hidden)]
 pub mod contracts;
@@ -67,6 +69,11 @@ pub use agent_runtime::{
 };
 /// Agent-facing artifact explanation helpers.
 pub use artifact::{explain_artifact, ArtifactExplanation, ArtifactKind};
+/// Command-based benchmark harness for measured performance evidence. Unstable during the v1 beta.
+pub use benchmark::{
+    run_benchmarks, BenchmarkCommand, BenchmarkCommandRecord, BenchmarkMetric,
+    BenchmarkMetricSummary, BenchmarkRun, BenchmarkRunConfig, BenchmarkSpec, BenchmarkStatus,
+};
 /// Configuration loading and defaults used by the CLI.
 pub use config::Config;
 /// Lightweight contract scanning for spec-driven Rust workflows. Unstable during the v1 beta.

@@ -118,6 +118,13 @@ enum Commands {
         max_files: usize,
     },
 
+    /// Run command-based benchmark specs and persist measured performance evidence
+    Benchmark {
+        /// Benchmark spec path, defaults to .mdx-rust/benchmarks.json
+        #[arg(long, default_value = ".mdx-rust/benchmarks.json")]
+        spec: String,
+    },
+
     /// Run the local stdio agent tool protocol
     Mcp {
         /// Use stdin/stdout line-delimited JSON transport
@@ -454,7 +461,7 @@ enum Commands {
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
         /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, repo-map, noise-filter, contract-run, performance-run, evolution-brief, agent-ready-report, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "repo-map", "noise-filter", "contract-run", "performance-run", "evolution-brief", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "repo-map", "noise-filter", "contract-run", "performance-run", "benchmark-spec", "benchmark-run", "evolution-brief", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -547,6 +554,12 @@ fn main() {
         Commands::Perf { target, max_files } => {
             if let Err(e) = cmd_perf(target.as_deref(), max_files, cli.json) {
                 emit_error(cli.json, "perf", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Benchmark { spec } => {
+            if let Err(e) = cmd_benchmark(&spec, cli.json) {
+                emit_error(cli.json, "benchmark", &e);
                 std::process::exit(1);
             }
         }
@@ -1276,6 +1289,49 @@ fn cmd_perf(target: Option<&str>, max_files: usize, json: bool) -> anyhow::Resul
     Ok(())
 }
 
+fn cmd_benchmark(spec: &str, json: bool) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let run = mdx_rust_core::run_benchmarks(
+        &cwd,
+        &mdx_rust_core::BenchmarkRunConfig {
+            spec_path: std::path::PathBuf::from(spec),
+            artifact_root: Some(artifact_root),
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&run)?);
+        return Ok(());
+    }
+
+    println!("⏱️ mdx-rust benchmark");
+    println!("   Spec: {}", run.spec_path);
+    println!(
+        "   Status: {:?} | measured runs: {} | metric summaries: {}",
+        run.status,
+        run.total_measured_runs,
+        run.metrics.len()
+    );
+    for metric in run.metrics.iter().take(12) {
+        println!(
+            "   - {} {} {} mean={} min={} max={} samples={}",
+            metric.command_id,
+            metric.name,
+            metric.unit,
+            metric.mean,
+            metric.min,
+            metric.max,
+            metric.samples
+        );
+    }
+    if let Some(path) = &run.artifact_path {
+        println!("   Artifact: {path}");
+    }
+    Ok(())
+}
+
 fn cmd_mcp(stdio: bool, describe: bool, json: bool) -> anyhow::Result<()> {
     if describe || !stdio {
         return cmd_runtime(json);
@@ -1417,6 +1473,14 @@ fn runtime_tool_call(params: &serde_json::Value) -> anyhow::Result<serde_json::V
             &mdx_rust_core::PerformanceScanConfig {
                 target: json_path_arg(&args, "target"),
                 max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
+            },
+        )?)?),
+        "benchmark" => Ok(serde_json::to_value(mdx_rust_core::run_benchmarks(
+            &cwd,
+            &mdx_rust_core::BenchmarkRunConfig {
+                spec_path: json_path_arg(&args, "spec")
+                    .unwrap_or_else(|| std::path::PathBuf::from(".mdx-rust/benchmarks.json")),
+                artifact_root: Some(artifact_root.clone()),
             },
         )?)?),
         "brief" => Ok(serde_json::to_value(mdx_rust_core::build_evolution_brief(
@@ -2958,6 +3022,12 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         "contract-run" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::ContractRun))?,
         "performance-run" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::PerformanceRun))?
+        }
+        "benchmark-run" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::BenchmarkRun))?
+        }
+        "benchmark-spec" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::BenchmarkSpec))?
         }
         "evolution-brief" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::EvolutionBrief))?

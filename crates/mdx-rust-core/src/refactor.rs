@@ -3116,6 +3116,7 @@ fn evolution_brief_sequence(target: Option<&Path>, scorecard: &EvolutionScorecar
         "mdx-rust --json noise-filter".to_string(),
         format!("mdx-rust --json contracts {target_arg}"),
         format!("mdx-rust --json perf {target_arg}"),
+        "mdx-rust --json benchmark --spec .mdx-rust/benchmarks.json".to_string(),
         format!("mdx-rust --json evidence {target_arg}"),
         format!("mdx-rust --json scorecard {target_arg}"),
     ];
@@ -3133,6 +3134,7 @@ fn scorecard_next_commands(readiness: &AutonomyReadiness, plan: &RefactorPlan) -
     let mut commands = vec![
         format!("mdx-rust --json contracts {target_arg}"),
         format!("mdx-rust --json perf {target_arg}"),
+        "mdx-rust --json benchmark --spec .mdx-rust/benchmarks.json".to_string(),
         format!("mdx-rust --json evidence {target_arg}"),
         format!("mdx-rust --json map {target_arg}"),
         format!("mdx-rust --json plan {target_arg}"),

@@ -19,6 +19,7 @@ pub enum ArtifactKind {
     AgentContract,
     AuditPacket,
     AutopilotRun,
+    BenchmarkRun,
     CodebaseMap,
     EvidenceRun,
     EvolutionBrief,
@@ -54,6 +55,8 @@ fn artifact_kind(value: &serde_json::Value) -> ArtifactKind {
         ArtifactKind::AuditPacket
     } else if value.get("passes").is_some() && value.get("execution_summary").is_some() {
         ArtifactKind::AutopilotRun
+    } else if value.get("run_id").is_some() && value.get("total_measured_runs").is_some() {
+        ArtifactKind::BenchmarkRun
     } else if value.get("brief_id").is_some() {
         ArtifactKind::EvolutionBrief
     } else if value.get("scorecard_id").is_some() {
@@ -131,6 +134,19 @@ fn artifact_summary(kind: &ArtifactKind, value: &serde_json::Value) -> String {
                 .and_then(|value| value.as_u64())
                 .unwrap_or(0)
         ),
+        ArtifactKind::BenchmarkRun => format!(
+            "benchmark run {:?}: {} measured run(s), {} metric summary row(s)",
+            value.get("status").and_then(|value| value.as_str()),
+            value
+                .get("total_measured_runs")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0),
+            value
+                .get("metrics")
+                .and_then(|value| value.as_array())
+                .map(|metrics| metrics.len())
+                .unwrap_or(0)
+        ),
         ArtifactKind::HardeningRun => format!(
             "hardening run {:?} with {} proposed change(s)",
             value
@@ -181,6 +197,12 @@ fn artifact_next_actions(kind: &ArtifactKind, value: &serde_json::Value) -> Vec<
         ArtifactKind::EvolutionBrief => vec![
             "Follow recommended_sequence for agent intake before planning mutation.".to_string(),
             "Use nested scorecard, contract, and performance summaries as evidence, not approval."
+                .to_string(),
+        ],
+        ArtifactKind::BenchmarkRun => vec![
+            "Use benchmark metrics as measured performance evidence before performance-oriented refactors."
+                .to_string(),
+            "Compare benchmark artifacts across branches before claiming a performance improvement."
                 .to_string(),
         ],
         ArtifactKind::RefactorPlan => {
