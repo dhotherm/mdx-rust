@@ -113,18 +113,19 @@ pub use policy::{load_project_policy, PolicyCategory, PolicyRule, PolicySeverity
 /// Plan-first refactor and autonomous orchestration records. Unstable during the v1 beta.
 pub use refactor::{
     apply_refactor_plan_batch, apply_refactor_plan_candidate, build_codebase_map,
-    build_evolution_scorecard, build_refactor_plan, recipe_catalog, run_autopilot,
-    AgentReadyContractRefs, AgentReadyReport, AgentReadyStatus, AutonomyDecision,
+    build_evolution_brief, build_evolution_scorecard, build_refactor_plan, recipe_catalog,
+    run_autopilot, AgentReadyContractRefs, AgentReadyReport, AgentReadyStatus, AutonomyDecision,
     AutonomyReadiness, AutonomyReadinessGrade, AutopilotConfig, AutopilotPass, AutopilotPassStatus,
     AutopilotRun, AutopilotStatus, CandidateAutonomyDecision, CandidateEvidenceContext,
     CandidateEvidenceStatus, CapabilityGate, CodebaseMap, CodebaseMapConfig, CodebaseQualityGrade,
-    CodebaseQualitySummary, EvidenceGrade, EvidenceSignal, EvidenceSummary, EvolutionScorecard,
-    EvolutionScorecardConfig, RecipeCatalog, RecipeSpec, RecipeTier, RefactorApplyConfig,
-    RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus, RefactorBatchApplyConfig,
-    RefactorBatchApplyRun, RefactorBatchApplyStatus, RefactorBatchCandidateRun, RefactorCandidate,
-    RefactorCandidateStatus, RefactorImpactSummary, RefactorPlan, RefactorPlanConfig,
-    RefactorRecipe, RefactorRiskLevel, SecurityPostureSummary, SourceSnapshot, StaleSourceFile,
-    TestCoverageSignal,
+    CodebaseQualitySummary, ContractPostureGrade, ContractPostureSummary, EvidenceGrade,
+    EvidenceSignal, EvidenceSummary, EvolutionBrief, EvolutionBriefConfig, EvolutionScorecard,
+    EvolutionScorecardConfig, PerformancePostureSummary, RecipeCatalog, RecipeSpec, RecipeTier,
+    RefactorApplyConfig, RefactorApplyMode, RefactorApplyRun, RefactorApplyStatus,
+    RefactorBatchApplyConfig, RefactorBatchApplyRun, RefactorBatchApplyStatus,
+    RefactorBatchCandidateRun, RefactorCandidate, RefactorCandidateStatus, RefactorImpactSummary,
+    RefactorPlan, RefactorPlanConfig, RefactorRecipe, RefactorRiskLevel, SecurityPostureSummary,
+    SourceSnapshot, StaleSourceFile, TestCoverageSignal,
 };
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};

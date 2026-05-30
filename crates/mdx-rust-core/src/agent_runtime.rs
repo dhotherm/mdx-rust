@@ -172,6 +172,14 @@ fn runtime_tools() -> Vec<AgentRuntimeTool> {
             "performance-run",
         ),
         runtime_tool(
+            "brief",
+            "Build one fused agent briefing with repo context, contracts, perf, scorecard, and next actions.",
+            true,
+            false,
+            "brief-request",
+            "evolution-brief",
+        ),
+        runtime_tool(
             "scorecard",
             "Build a single target briefing for external agents.",
             true,
@@ -274,8 +282,8 @@ refactor, improve quality, or let an agent make autonomous changes.
 2. Run `mdx-rust --json repo-map <target>` and respect its `noise_filter`.
 3. Run `mdx-rust --json contracts <target>` when changing public behavior.
 4. Run `mdx-rust --json perf <target>` before performance-oriented refactors.
-5. Run `mdx-rust --json scorecard <target>`.
-6. Inspect `readiness`, `next_commands`, `security`, and candidate autonomy decisions.
+5. Run `mdx-rust --json brief <target>` for a fused agent briefing.
+6. Inspect `readiness`, `next_commands`, `security`, contracts, performance, and candidate autonomy decisions.
 
 ## Context Cascade
 

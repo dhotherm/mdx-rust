@@ -201,6 +201,21 @@ Performance-aware autonomous planning.
 - Future beta work can connect performance findings to benchmark specs and
   evidence-gated refactor plans.
 
+## v1.4 beta Focus - In Progress
+
+Evidence fusion.
+
+- `mdx-rust map` and `mdx-rust plan` include contract posture and performance
+  posture summaries.
+- Contract gaps and performance findings become review-only plan candidates so
+  agents can prioritize work without inventing mutation authority.
+- `mdx-rust brief <target> --json` produces a fused agent intake artifact with
+  repo-map context, noise filters, contracts, performance, scorecard, and a
+  recommended sequence.
+- `agent-ready` includes contract and performance readiness fields.
+- No new mutation path is added; fusion surfaces are evidence and planning
+  artifacts only.
+
 ## Current Non-Goals
 
 - Autonomous public API rewrites without explicit gates.

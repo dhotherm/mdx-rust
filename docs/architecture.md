@@ -188,12 +188,13 @@ The recommended external-agent loop is:
    files, crate boundaries, and default search exclusions.
 3. `contracts` to inspect documented behavior intent and public contract gaps.
 4. `perf` to inspect static performance pressure before performance refactors.
-5. `recipes` to learn recipe tiers and required evidence.
-6. `evidence` to collect or refresh the target's measured grade.
-7. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
+5. `brief` for one fused agent intake artifact.
+6. `recipes` to learn recipe tiers and required evidence.
+7. `evidence` to collect or refresh the target's measured grade.
+8. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
    security, and capability briefing.
-8. `plan` for a non-mutating candidate queue.
-9. `evolve` in review mode, or `evolve` with explicit mutation confirmation
+9. `plan` for a non-mutating candidate queue.
+10. `evolve` in review mode, or `evolve` with explicit mutation confirmation
    after a human approves autonomous execution.
 
 `mdx-rust agent-pack codex|claude|cursor|aider|goose|generic` generates
@@ -215,6 +216,11 @@ agents and reviewers. They do not prove behavior and do not approve mutation.
 pressure such as blocking work in async functions, clone pressure, allocations
 in loops, and synchronous lock hints. It is prioritization evidence only and
 does not make refactors executable by itself.
+
+`mdx-rust brief` fuses repo-map context, noise filters, contracts,
+performance, and the evolution scorecard into one artifact for agents. It is a
+briefing surface only; mutation still requires the normal plan, evidence,
+validation, rollback, and explicit approval gates.
 
 `mdx-rust evidence` runs bounded local commands, persists command records under
 `.mdx-rust/evidence/`, assigns an evidence grade, and records parsed metrics

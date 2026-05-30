@@ -189,6 +189,24 @@ enum Commands {
         max_files: usize,
     },
 
+    /// Build one fused agent brief with repo context, contracts, perf, scorecard, and next actions
+    Brief {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Optional policy file to hash and attach to the brief
+        #[arg(long)]
+        policy: Option<String>,
+
+        /// Optional behavior eval spec that future apply commands should pass
+        #[arg(long)]
+        eval_spec: Option<String>,
+
+        /// Maximum Rust files to scan
+        #[arg(long, default_value = "250")]
+        max_files: usize,
+    },
+
     /// Collect measured evidence that controls autonomous recipe depth
     Evidence {
         /// File or directory to associate with the evidence run
@@ -435,8 +453,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, repo-map, noise-filter, contract-run, performance-run, agent-ready-report, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "repo-map", "noise-filter", "contract-run", "performance-run", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, repo-map, noise-filter, contract-run, performance-run, evolution-brief, agent-ready-report, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "repo-map", "noise-filter", "contract-run", "performance-run", "evolution-brief", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -587,6 +605,23 @@ fn main() {
                 cli.json,
             ) {
                 emit_error(cli.json, "scorecard", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Brief {
+            target,
+            policy,
+            eval_spec,
+            max_files,
+        } => {
+            if let Err(e) = cmd_brief(
+                target.as_deref(),
+                policy.as_deref(),
+                eval_spec.as_deref(),
+                max_files,
+                cli.json,
+            ) {
+                emit_error(cli.json, "brief", &e);
                 std::process::exit(1);
             }
         }
@@ -1384,6 +1419,16 @@ fn runtime_tool_call(params: &serde_json::Value) -> anyhow::Result<serde_json::V
                 max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
             },
         )?)?),
+        "brief" => Ok(serde_json::to_value(mdx_rust_core::build_evolution_brief(
+            &cwd,
+            Some(&artifact_root),
+            &mdx_rust_core::EvolutionBriefConfig {
+                target: json_path_arg(&args, "target"),
+                policy_path: json_path_arg(&args, "policy"),
+                behavior_spec_path: json_path_arg(&args, "eval_spec"),
+                max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
+            },
+        )?)?),
         "scorecard" => Ok(serde_json::to_value(
             mdx_rust_core::build_evolution_scorecard(
                 &cwd,
@@ -1668,6 +1713,55 @@ fn cmd_scorecard(
     Ok(())
 }
 
+fn cmd_brief(
+    target: Option<&str>,
+    policy: Option<&str>,
+    eval_spec: Option<&str>,
+    max_files: usize,
+    json: bool,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = Config::load_from_project(&cwd).unwrap_or_default();
+    let artifact_root = cwd.join(&config.artifact_dir);
+    let brief = mdx_rust_core::build_evolution_brief(
+        &cwd,
+        Some(&artifact_root),
+        &mdx_rust_core::EvolutionBriefConfig {
+            target: target.map(std::path::PathBuf::from),
+            policy_path: policy.map(std::path::PathBuf::from),
+            behavior_spec_path: eval_spec.map(std::path::PathBuf::from),
+            max_files,
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&brief)?);
+        return Ok(());
+    }
+
+    println!("🧠 mdx-rust evolution brief");
+    println!("   Brief: {}", brief.brief_id);
+    if let Some(target) = &brief.target {
+        println!("   Target: {target}");
+    }
+    println!(
+        "   Contract posture: {:?} | missing public contracts: {}",
+        brief.contracts.grade, brief.contracts.public_functions_missing_contracts
+    );
+    println!(
+        "   Performance score: {} | findings: {}",
+        brief.performance.score, brief.performance.finding_count
+    );
+    println!("   Recommended sequence:");
+    for command in brief.recommended_sequence.iter().take(10) {
+        println!("   - {command}");
+    }
+    if let Some(path) = &brief.artifact_path {
+        println!("   Artifact: {path}");
+    }
+    Ok(())
+}
+
 fn cmd_agent_ready(
     target: Option<&str>,
     policy: Option<&str>,
@@ -1736,6 +1830,8 @@ fn agent_ready_report_from_scorecard(
         evidence: scorecard.map.evidence.clone(),
         quality: scorecard.map.quality.clone(),
         security: scorecard.map.security.clone(),
+        contracts: scorecard.map.contracts.clone(),
+        performance: scorecard.map.performance.clone(),
         agent_contract: mdx_rust_core::AgentReadyContractRefs {
             discovery: "mdx-rust --json agent-contract".to_string(),
             runtime: "mdx-rust --json runtime".to_string(),
@@ -2862,6 +2958,9 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         "contract-run" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::ContractRun))?,
         "performance-run" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::PerformanceRun))?
+        }
+        "evolution-brief" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::EvolutionBrief))?
         }
         "agent-ready-report" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentReadyReport))?

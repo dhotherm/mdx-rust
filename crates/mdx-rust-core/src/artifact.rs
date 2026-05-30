@@ -21,6 +21,7 @@ pub enum ArtifactKind {
     AutopilotRun,
     CodebaseMap,
     EvidenceRun,
+    EvolutionBrief,
     EvolutionScorecard,
     HardeningRun,
     RefactorApplyRun,
@@ -53,6 +54,8 @@ fn artifact_kind(value: &serde_json::Value) -> ArtifactKind {
         ArtifactKind::AuditPacket
     } else if value.get("passes").is_some() && value.get("execution_summary").is_some() {
         ArtifactKind::AutopilotRun
+    } else if value.get("brief_id").is_some() {
+        ArtifactKind::EvolutionBrief
     } else if value.get("scorecard_id").is_some() {
         ArtifactKind::EvolutionScorecard
     } else if value.get("map_id").is_some() {
@@ -115,6 +118,19 @@ fn artifact_summary(kind: &ArtifactKind, value: &serde_json::Value) -> String {
                 .and_then(|value| value.as_u64())
                 .unwrap_or(0)
         ),
+        ArtifactKind::EvolutionBrief => format!(
+            "evolution brief {:?}: contract {:?}, performance score {}",
+            value
+                .pointer("/scorecard/readiness/grade")
+                .and_then(|value| value.as_str()),
+            value
+                .pointer("/contracts/grade")
+                .and_then(|value| value.as_str()),
+            value
+                .pointer("/performance/score")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0)
+        ),
         ArtifactKind::HardeningRun => format!(
             "hardening run {:?} with {} proposed change(s)",
             value
@@ -161,6 +177,11 @@ fn artifact_next_actions(kind: &ArtifactKind, value: &serde_json::Value) -> Vec<
         ArtifactKind::EvolutionScorecard => vec![
             "Inspect readiness and next_commands before choosing mutation.".to_string(),
             "Only add --apply to suggested commands after explicit human approval.".to_string(),
+        ],
+        ArtifactKind::EvolutionBrief => vec![
+            "Follow recommended_sequence for agent intake before planning mutation.".to_string(),
+            "Use nested scorecard, contract, and performance summaries as evidence, not approval."
+                .to_string(),
         ],
         ArtifactKind::RefactorPlan => {
             let has_executable = value

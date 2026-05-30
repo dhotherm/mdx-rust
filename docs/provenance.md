@@ -177,6 +177,7 @@ mdx-rust schema repo-map --json
 mdx-rust schema noise-filter --json
 mdx-rust schema contract-run --json
 mdx-rust schema performance-run --json
+mdx-rust schema evolution-brief --json
 mdx-rust schema agent-ready-report --json
 ```
 
@@ -231,6 +232,16 @@ Performance runs are read-only prioritization artifacts. They record static
 performance pressure such as blocking work in async functions, clone pressure,
 allocations in loops, and synchronous lock hints. They are not benchmark
 evidence, behavior proofs, or approval to mutate source.
+
+Evolution briefs are read-only fusion artifacts:
+
+```text
+.mdx-rust/briefs/evolution-brief-<timestamp>-<brief-id>.json
+```
+
+They bundle repo context, noise filters, contract posture, performance posture,
+and the saved scorecard. The brief is an intake artifact for agents. It is not
+validation evidence and it does not approve mutation.
 
 `mdx-rust agent-ready --json` is a compact readiness envelope derived from the
 scorecard. It is not mutation evidence. It points agents at the command

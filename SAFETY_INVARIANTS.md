@@ -130,7 +130,7 @@ allowed to move quickly, but it must not create a second mutation path.
 - `mdx-rust scorecard`, `mdx-rust agent-ready`, `mdx-rust recipes`,
   `mdx-rust runtime`, `mdx-rust repo-map`, `mdx-rust contracts`,
   `mdx-rust perf`, `mdx-rust noise-filter` without `--write`,
-  `mdx-rust agent-pack` without `--write`, and `mdx-rust explain` are
+  `mdx-rust brief`, `mdx-rust agent-pack` without `--write`, and `mdx-rust explain` are
   read-only agent surfaces. They must never mutate source files or approve
   mutation by themselves.
 - `mdx-rust mcp --stdio` and `mdx-rust serve` are local runtime wrappers over
@@ -206,6 +206,10 @@ allowed to move quickly, but it must not create a second mutation path.
 - Performance scans are prioritization records only. They may guide benchmark
   work or future plans, but they do not validate, apply, land, accept, or
   approve source changes.
+- Evolution briefs are fused briefing records only. They may bundle repo maps,
+  scorecards, contract posture, performance posture, and recommended command
+  sequences, but they do not validate, apply, land, accept, or approve source
+  changes.
 - Codebase maps are records only. A `CodebaseMap` means "scanned and
   summarized", not "validated", "applied", "landed", or "accepted".
 - Evidence grades are execution gates, not proof by themselves. A `Compiled`

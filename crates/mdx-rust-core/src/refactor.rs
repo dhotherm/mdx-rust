@@ -3,12 +3,19 @@
 //! v1.0 beta keeps auditable plans as the mutation boundary and adds file/function
 //! evidence plus security posture to the safe executable subset.
 
+use crate::contracts::{scan_contracts, ContractRecommendation, ContractRun, ContractScanConfig};
 use crate::eval::stable_hash_hex;
 use crate::evidence::{load_latest_evidence_for_root, EvidenceArtifactRef, EvidenceRun};
 use crate::hardening::{
     run_hardening, workspace_summary, HardeningConfig, HardeningRun, WorkspaceSummary,
 };
+use crate::performance::{
+    scan_performance, PerformanceFinding, PerformanceRun, PerformanceScanConfig,
+};
 use crate::policy::{load_project_policy, ProjectPolicy};
+use crate::repo_context::{
+    build_noise_filter, build_repo_map, NoiseFilter, RepoMap, RepoMapConfig,
+};
 use crate::security::{audit_agent, AuditFinding, AuditSeverity};
 use mdx_rust_analysis::{
     analyze_hardening, analyze_refactor, HardeningAnalyzeConfig, HardeningEvidenceDepth,
@@ -127,6 +134,10 @@ pub struct RefactorPlan {
     #[serde(default)]
     pub security: SecurityPostureSummary,
     #[serde(default)]
+    pub contracts: ContractPostureSummary,
+    #[serde(default)]
+    pub performance: PerformancePostureSummary,
+    #[serde(default)]
     pub autonomy: AutonomyReadiness,
     pub impact: RefactorImpactSummary,
     pub source_snapshots: Vec<SourceSnapshot>,
@@ -152,6 +163,10 @@ pub struct CodebaseMap {
     pub measured_evidence: Option<EvidenceArtifactRef>,
     #[serde(default)]
     pub security: SecurityPostureSummary,
+    #[serde(default)]
+    pub contracts: ContractPostureSummary,
+    #[serde(default)]
+    pub performance: PerformancePostureSummary,
     #[serde(default)]
     pub autonomy: AutonomyReadiness,
     pub quality: CodebaseQualitySummary,
@@ -294,6 +309,64 @@ impl Default for SecurityPostureSummary {
             low: 0,
             info: 0,
             top_findings: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ContractPostureSummary {
+    pub grade: ContractPostureGrade,
+    pub function_count: usize,
+    pub public_function_count: usize,
+    pub functions_with_contracts: usize,
+    pub public_functions_missing_contracts: usize,
+    pub assertion_count: usize,
+    pub top_recommendations: Vec<String>,
+}
+
+impl Default for ContractPostureSummary {
+    fn default() -> Self {
+        Self {
+            grade: ContractPostureGrade::Unknown,
+            function_count: 0,
+            public_function_count: 0,
+            functions_with_contracts: 0,
+            public_functions_missing_contracts: 0,
+            assertion_count: 0,
+            top_recommendations: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum ContractPostureGrade {
+    Strong,
+    Partial,
+    Weak,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PerformancePostureSummary {
+    pub score: u8,
+    pub finding_count: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+    pub top_findings: Vec<String>,
+    pub recommendations: Vec<String>,
+}
+
+impl Default for PerformancePostureSummary {
+    fn default() -> Self {
+        Self {
+            score: 100,
+            finding_count: 0,
+            high: 0,
+            medium: 0,
+            low: 0,
+            top_findings: Vec::new(),
+            recommendations: Vec::new(),
         }
     }
 }
@@ -491,6 +564,7 @@ pub enum RecipeTier {
 pub enum RefactorRecipe {
     BorrowParameterTightening,
     ClonePressureReview,
+    ContractCoverageReview,
     ContextualErrorHardening,
     ErrorContextPropagation,
     ExtractFunctionCandidate,
@@ -504,6 +578,7 @@ pub enum RefactorRecipe {
     SplitModuleCandidate,
     BoundaryValidationReview,
     PublicApiReview,
+    PerformanceHotspotReview,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -567,6 +642,8 @@ pub struct AgentReadyReport {
     pub evidence: EvidenceSummary,
     pub quality: CodebaseQualitySummary,
     pub security: SecurityPostureSummary,
+    pub contracts: ContractPostureSummary,
+    pub performance: PerformancePostureSummary,
     pub agent_contract: AgentReadyContractRefs,
     pub next_commands: Vec<String>,
 }
@@ -582,6 +659,40 @@ pub struct AgentReadyContractRefs {
     pub discovery: String,
     pub runtime: String,
     pub scorecard_artifact: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvolutionBriefConfig {
+    pub target: Option<PathBuf>,
+    pub policy_path: Option<PathBuf>,
+    pub behavior_spec_path: Option<PathBuf>,
+    pub max_files: usize,
+}
+
+impl Default for EvolutionBriefConfig {
+    fn default() -> Self {
+        Self {
+            target: None,
+            policy_path: None,
+            behavior_spec_path: None,
+            max_files: 250,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EvolutionBrief {
+    pub schema_version: String,
+    pub brief_id: String,
+    pub root: String,
+    pub target: Option<String>,
+    pub repo_map: RepoMap,
+    pub noise_filter: NoiseFilter,
+    pub contracts: ContractPostureSummary,
+    pub performance: PerformancePostureSummary,
+    pub scorecard: EvolutionScorecard,
+    pub recommended_sequence: Vec<String>,
+    pub artifact_path: Option<String>,
 }
 
 pub fn recipe_catalog() -> RecipeCatalog {
@@ -691,6 +802,26 @@ pub fn recipe_catalog() -> RecipeCatalog {
                 RefactorRiskLevel::Medium,
                 "plan only",
                 "Identify clone-heavy code that needs semantic review before rewriting.",
+            ),
+            spec!(
+                "contract-coverage-review",
+                RefactorRecipe::ContractCoverageReview,
+                RecipeTier::Tier2,
+                EvidenceGrade::Tested,
+                false,
+                RefactorRiskLevel::Medium,
+                "plan only",
+                "Surface public functions that need explicit behavior contracts before semantic changes.",
+            ),
+            spec!(
+                "performance-hotspot-review",
+                RefactorRecipe::PerformanceHotspotReview,
+                RecipeTier::Tier2,
+                EvidenceGrade::Tested,
+                false,
+                RefactorRiskLevel::Medium,
+                "plan only",
+                "Surface static performance pressure that needs benchmarks before rewrites.",
             ),
             spec!(
                 "extract-function",
@@ -833,6 +964,22 @@ pub fn build_refactor_plan(
     let audit_scope = audit_scope_path(&root, config.target.as_deref());
     let audit = audit_agent(&audit_scope)?;
     let security = security_posture_summary(&audit.findings);
+    let contract_run = scan_contracts(
+        &root,
+        &ContractScanConfig {
+            target: config.target.clone(),
+            max_files: config.max_files,
+        },
+    )?;
+    let contracts = contract_posture_summary(&contract_run);
+    let performance_run = scan_performance(
+        &root,
+        &PerformanceScanConfig {
+            target: config.target.clone(),
+            max_files: config.max_files,
+        },
+    )?;
+    let performance = performance_posture_summary(&performance_run);
     let workspace = workspace_summary(&root);
     let behavior_spec = config
         .behavior_spec_path
@@ -869,6 +1016,16 @@ pub fn build_refactor_plan(
         &evidence,
         measured_evidence.as_ref(),
     ));
+    candidates.extend(contract_candidates(
+        &contract_run,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
+    candidates.extend(performance_candidates(
+        &performance_run,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
     annotate_candidate_autonomy(&mut candidates, &evidence, &security);
     let autonomy = autonomy_readiness(&evidence, &security, &candidates);
     for candidate in &mut candidates {
@@ -900,6 +1057,8 @@ pub fn build_refactor_plan(
         evidence,
         measured_evidence: measured_evidence.as_ref().map(EvidenceArtifactRef::from),
         security,
+        contracts,
+        performance,
         autonomy,
         impact,
         source_snapshots,
@@ -948,6 +1107,22 @@ pub fn build_codebase_map(
     let audit_scope = audit_scope_path(&root, config.target.as_deref());
     let audit = audit_agent(&audit_scope)?;
     let security = security_posture_summary(&audit.findings);
+    let contract_run = scan_contracts(
+        &root,
+        &ContractScanConfig {
+            target: config.target.clone(),
+            max_files: config.max_files,
+        },
+    )?;
+    let contracts = contract_posture_summary(&contract_run);
+    let performance_run = scan_performance(
+        &root,
+        &PerformanceScanConfig {
+            target: config.target.clone(),
+            max_files: config.max_files,
+        },
+    )?;
+    let performance = performance_posture_summary(&performance_run);
     let workspace = workspace_summary(&root);
     let behavior_spec = config
         .behavior_spec_path
@@ -989,11 +1164,28 @@ pub fn build_codebase_map(
         &evidence,
         measured_evidence.as_ref(),
     ));
+    readiness_candidates.extend(contract_candidates(
+        &contract_run,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
+    readiness_candidates.extend(performance_candidates(
+        &performance_run,
+        &evidence,
+        measured_evidence.as_ref(),
+    ));
     annotate_candidate_autonomy(&mut readiness_candidates, &evidence, &security);
     let autonomy = autonomy_readiness(&evidence, &security, &readiness_candidates);
     let quality = summarize_quality(&refactor.files, &hardening.findings, &impact, &security);
-    let recommended_actions =
-        recommended_actions(&quality, &impact, &capability_gates, &evidence, &security);
+    let recommended_actions = recommended_actions(
+        &quality,
+        &impact,
+        &capability_gates,
+        &evidence,
+        &security,
+        &contracts,
+        &performance,
+    );
     let map_id = codebase_map_id(&root, config, &quality, &impact);
     let mut map = CodebaseMap {
         schema_version: "1.0".to_string(),
@@ -1010,6 +1202,8 @@ pub fn build_codebase_map(
         evidence,
         measured_evidence: measured_evidence.as_ref().map(EvidenceArtifactRef::from),
         security,
+        contracts,
+        performance,
         autonomy,
         quality,
         capability_gates,
@@ -1084,6 +1278,61 @@ pub fn build_evolution_scorecard(
     }
 
     Ok(scorecard)
+}
+
+pub fn build_evolution_brief(
+    root: &Path,
+    artifact_root: Option<&Path>,
+    config: &EvolutionBriefConfig,
+) -> anyhow::Result<EvolutionBrief> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let repo_map = build_repo_map(
+        &root,
+        &RepoMapConfig {
+            target: config.target.clone(),
+            max_depth: 3,
+            max_dirs: config.max_files.clamp(20, 250),
+        },
+    )?;
+    let noise_filter = build_noise_filter(&root);
+    let scorecard = build_evolution_scorecard(
+        &root,
+        artifact_root,
+        &EvolutionScorecardConfig {
+            target: config.target.clone(),
+            policy_path: config.policy_path.clone(),
+            behavior_spec_path: config.behavior_spec_path.clone(),
+            max_files: config.max_files,
+        },
+    )?;
+    let contracts = scorecard.map.contracts.clone();
+    let performance = scorecard.map.performance.clone();
+    let recommended_sequence = evolution_brief_sequence(config.target.as_deref(), &scorecard);
+    let brief_id = evolution_brief_id(&root, config, &scorecard);
+    let mut brief = EvolutionBrief {
+        schema_version: "1.0".to_string(),
+        brief_id,
+        root: root.display().to_string(),
+        target: config
+            .target
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        repo_map,
+        noise_filter,
+        contracts,
+        performance,
+        scorecard,
+        recommended_sequence,
+        artifact_path: None,
+    };
+
+    if let Some(artifact_root) = artifact_root {
+        let path = persist_evolution_brief(artifact_root, &brief)?;
+        brief.artifact_path = Some(path.display().to_string());
+        std::fs::write(&path, serde_json::to_string_pretty(&brief)?)?;
+    }
+
+    Ok(brief)
 }
 
 pub fn run_autopilot(
@@ -1827,6 +2076,75 @@ fn security_posture_summary(findings: &[AuditFinding]) -> SecurityPostureSummary
     summary
 }
 
+fn contract_posture_summary(run: &ContractRun) -> ContractPostureSummary {
+    let missing = run.summary.public_functions_missing_contracts;
+    let public = run.summary.public_function_count;
+    let coverage_ratio = if public == 0 {
+        1.0
+    } else {
+        (public.saturating_sub(missing)) as f32 / public as f32
+    };
+    let grade = if run.summary.function_count == 0 {
+        ContractPostureGrade::Unknown
+    } else if missing == 0 {
+        ContractPostureGrade::Strong
+    } else if coverage_ratio >= 0.5 {
+        ContractPostureGrade::Partial
+    } else {
+        ContractPostureGrade::Weak
+    };
+
+    ContractPostureSummary {
+        grade,
+        function_count: run.summary.function_count,
+        public_function_count: public,
+        functions_with_contracts: run.summary.functions_with_contracts,
+        public_functions_missing_contracts: missing,
+        assertion_count: run.summary.assertion_count,
+        top_recommendations: run
+            .recommendations
+            .iter()
+            .take(5)
+            .map(|recommendation| {
+                format!(
+                    "{}:{} {}",
+                    recommendation.file.display(),
+                    recommendation.line,
+                    recommendation.message
+                )
+            })
+            .collect(),
+    }
+}
+
+fn performance_posture_summary(run: &PerformanceRun) -> PerformancePostureSummary {
+    let penalty = run.summary.high.saturating_mul(25)
+        + run.summary.medium.saturating_mul(10)
+        + run.summary.low.saturating_mul(3);
+    PerformancePostureSummary {
+        score: 100usize.saturating_sub(penalty).min(100) as u8,
+        finding_count: run.summary.finding_count,
+        high: run.summary.high,
+        medium: run.summary.medium,
+        low: run.summary.low,
+        top_findings: run
+            .findings
+            .iter()
+            .take(5)
+            .map(|finding| {
+                format!(
+                    "{}:{} [{}] {}",
+                    finding.file.display(),
+                    finding.line,
+                    finding.severity,
+                    finding.title
+                )
+            })
+            .collect(),
+        recommendations: run.recommendations.clone(),
+    }
+}
+
 fn annotate_candidate_autonomy(
     candidates: &mut [RefactorCandidate],
     evidence: &EvidenceSummary,
@@ -2087,6 +2405,8 @@ fn recommended_actions(
     gates: &[CapabilityGate],
     evidence: &EvidenceSummary,
     security: &SecurityPostureSummary,
+    contracts: &ContractPostureSummary,
+    performance: &PerformancePostureSummary,
 ) -> Vec<String> {
     let mut actions = Vec::new();
     if security.high > 0 || security.medium > 0 {
@@ -2109,6 +2429,18 @@ fn recommended_actions(
     if quality.review_only_findings > 0 {
         actions.push(
             "Review security-sensitive findings before enabling broader recipes.".to_string(),
+        );
+    }
+    if contracts.public_functions_missing_contracts > 0 {
+        actions.push(
+            "Run mdx-rust contracts and add explicit behavior contracts before semantic public-function changes."
+                .to_string(),
+        );
+    }
+    if performance.high > 0 || performance.medium > 0 {
+        actions.push(
+            "Run mdx-rust perf and add benchmark evidence before performance-oriented refactors."
+                .to_string(),
         );
     }
     if impact.oversized_files > 0 || impact.oversized_functions > 0 {
@@ -2482,6 +2814,115 @@ fn security_candidates(
         .collect()
 }
 
+fn contract_candidates(
+    run: &ContractRun,
+    evidence: &EvidenceSummary,
+    measured: Option<&EvidenceRun>,
+) -> Vec<RefactorCandidate> {
+    run.recommendations
+        .iter()
+        .take(25)
+        .map(|recommendation| contract_candidate(recommendation, evidence, measured))
+        .collect()
+}
+
+fn contract_candidate(
+    recommendation: &ContractRecommendation,
+    evidence: &EvidenceSummary,
+    measured: Option<&EvidenceRun>,
+) -> RefactorCandidate {
+    let file = recommendation.file.display().to_string();
+    let required_evidence = EvidenceGrade::Tested;
+    RefactorCandidate {
+        id: format!(
+            "plan-contract-{}-{}",
+            sanitize_id(&file),
+            recommendation.line
+        ),
+        candidate_hash: String::new(),
+        recipe: RefactorRecipe::ContractCoverageReview,
+        title: "Add explicit behavior contract before semantic change".to_string(),
+        rationale: recommendation.message.clone(),
+        file: file.clone(),
+        line: recommendation.line,
+        risk: RefactorRiskLevel::Medium,
+        status: RefactorCandidateStatus::PlanOnly,
+        tier: RecipeTier::Tier2,
+        required_evidence,
+        evidence_satisfied: evidence.grade >= required_evidence,
+        evidence_context: candidate_evidence_context(&file, evidence, measured),
+        autonomy: CandidateAutonomyDecision::default(),
+        public_api_impact: true,
+        apply_command: None,
+        required_gates: vec![
+            "human review of intended behavior".to_string(),
+            "contract docs or property tests before semantic refactor".to_string(),
+            "existing validation and behavior gates must remain passing".to_string(),
+        ],
+    }
+}
+
+fn performance_candidates(
+    run: &PerformanceRun,
+    evidence: &EvidenceSummary,
+    measured: Option<&EvidenceRun>,
+) -> Vec<RefactorCandidate> {
+    run.findings
+        .iter()
+        .take(25)
+        .map(|finding| performance_candidate(finding, evidence, measured))
+        .collect()
+}
+
+fn performance_candidate(
+    finding: &PerformanceFinding,
+    evidence: &EvidenceSummary,
+    measured: Option<&EvidenceRun>,
+) -> RefactorCandidate {
+    let file = finding.file.display().to_string();
+    let required_evidence = if finding.severity == "high" {
+        EvidenceGrade::Covered
+    } else {
+        EvidenceGrade::Tested
+    };
+    let risk = match finding.severity.as_str() {
+        "high" => RefactorRiskLevel::High,
+        "medium" => RefactorRiskLevel::Medium,
+        _ => RefactorRiskLevel::Low,
+    };
+    RefactorCandidate {
+        id: format!(
+            "plan-perf-{}-{}-{}",
+            sanitize_id(&file),
+            sanitize_id(&finding.category),
+            finding.line
+        ),
+        candidate_hash: String::new(),
+        recipe: RefactorRecipe::PerformanceHotspotReview,
+        title: finding.title.clone(),
+        rationale: format!(
+            "{} Recommendation: {}",
+            finding.evidence, finding.recommendation
+        ),
+        file: file.clone(),
+        line: finding.line,
+        risk,
+        status: RefactorCandidateStatus::PlanOnly,
+        tier: RecipeTier::Tier2,
+        required_evidence,
+        evidence_satisfied: evidence.grade >= required_evidence,
+        evidence_context: candidate_evidence_context(&file, evidence, measured),
+        autonomy: CandidateAutonomyDecision::default(),
+        public_api_impact: false,
+        apply_command: None,
+        required_gates: vec![
+            "benchmark or behavior eval before performance rewrite".to_string(),
+            "human review of semantic equivalence".to_string(),
+            "future executable recipe must route through hardening transactions".to_string(),
+        ],
+    }
+}
+
 fn candidate_evidence_context(
     file: &str,
     evidence: &EvidenceSummary,
@@ -2608,6 +3049,8 @@ fn codebase_map_hash(map: &CodebaseMap) -> String {
     bytes.extend_from_slice(format!("{:?}", map.target).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.quality).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.security).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.contracts).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", map.performance).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.measured_evidence).as_bytes());
     bytes.extend_from_slice(format!("{:?}", map.impact).as_bytes());
@@ -2644,6 +3087,42 @@ fn evolution_scorecard_id(
     stable_hash_hex(&bytes)
 }
 
+fn evolution_brief_id(
+    root: &Path,
+    config: &EvolutionBriefConfig,
+    scorecard: &EvolutionScorecard,
+) -> String {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(root.display().to_string().as_bytes());
+    bytes.extend_from_slice(format!("{:?}", config.target).as_bytes());
+    bytes.extend_from_slice(scorecard.scorecard_id.as_bytes());
+    bytes.extend_from_slice(format!("{:?}", scorecard.map.contracts).as_bytes());
+    bytes.extend_from_slice(format!("{:?}", scorecard.map.performance).as_bytes());
+    stable_hash_hex(&bytes)
+}
+
+fn evolution_brief_sequence(target: Option<&Path>, scorecard: &EvolutionScorecard) -> Vec<String> {
+    let target = target
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<target>".to_string());
+    let target_arg = if target == "<target>" {
+        target
+    } else {
+        shell_quote_argument(&target)
+    };
+    let mut sequence = vec![
+        "mdx-rust --json agent-contract".to_string(),
+        format!("mdx-rust --json repo-map {target_arg}"),
+        "mdx-rust --json noise-filter".to_string(),
+        format!("mdx-rust --json contracts {target_arg}"),
+        format!("mdx-rust --json perf {target_arg}"),
+        format!("mdx-rust --json evidence {target_arg}"),
+        format!("mdx-rust --json scorecard {target_arg}"),
+    ];
+    sequence.extend(scorecard.next_commands.iter().cloned());
+    sequence
+}
+
 fn scorecard_next_commands(readiness: &AutonomyReadiness, plan: &RefactorPlan) -> Vec<String> {
     let target = plan.target.as_deref().unwrap_or("<target>");
     let target_arg = if target == "<target>" {
@@ -2652,6 +3131,8 @@ fn scorecard_next_commands(readiness: &AutonomyReadiness, plan: &RefactorPlan) -
         shell_quote_argument(target)
     };
     let mut commands = vec![
+        format!("mdx-rust --json contracts {target_arg}"),
+        format!("mdx-rust --json perf {target_arg}"),
         format!("mdx-rust --json evidence {target_arg}"),
         format!("mdx-rust --json map {target_arg}"),
         format!("mdx-rust --json plan {target_arg}"),
@@ -3132,6 +3613,22 @@ fn persist_evolution_scorecard(
     Ok(dir.join(format!(
         "evolution-scorecard-{millis}-{}.json",
         sanitize_id(&scorecard.scorecard_id)
+    )))
+}
+
+fn persist_evolution_brief(
+    artifact_root: &Path,
+    brief: &EvolutionBrief,
+) -> anyhow::Result<PathBuf> {
+    let dir = artifact_root.join("briefs");
+    std::fs::create_dir_all(&dir)?;
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    Ok(dir.join(format!(
+        "evolution-brief-{millis}-{}.json",
+        sanitize_id(&brief.brief_id)
     )))
 }
 

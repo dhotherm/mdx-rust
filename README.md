@@ -73,6 +73,8 @@ Today it supports:
   and choose safe next actions.
 - `scorecard` agent briefings that combine map, plan, recipes, autonomy
   readiness, and next commands into one artifact.
+- `brief` fused agent intake artifacts that combine repo context, noise
+  filters, contracts, performance posture, scorecard, and recommended sequence.
 - File/function evidence profiles that attach evidence context to plan
   candidates instead of relying only on repo-level grades.
 - Per-candidate autonomy decisions that explain whether a candidate is allowed,
@@ -252,6 +254,21 @@ performance pressure before they propose risky rewrites.
 - Performance findings do not make any candidate executable by themselves.
   Mutation still requires the normal plan, evidence, validation, behavior eval,
   and rollback gates.
+
+## v1.4 beta Direction
+
+The fusion phase makes the standalone intake surfaces work together.
+
+- `mdx-rust map` and `mdx-rust plan` now carry contract and performance posture
+  summaries alongside evidence, quality, security, and autonomy.
+- Contract gaps and performance pressure become plan candidates, but remain
+  review-only until a dedicated executable recipe and validation contract
+  exists.
+- `mdx-rust brief <target> --json` produces one agent-ready artifact with repo
+  map, noise filters, contracts, performance, scorecard, and a recommended
+  command sequence.
+- `agent-ready` includes contract and performance readiness so external agents
+  can explain why a repo is or is not ready for deeper autonomy.
 
 ## Safety Model
 

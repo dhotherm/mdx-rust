@@ -146,6 +146,10 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     assert_eq!(performance_run["title"], "PerformanceRun");
     assert!(performance_run["properties"]["findings"].is_object());
 
+    let evolution_brief = assert_machine_pure_json(&["schema", "evolution-brief", "--json"]);
+    assert_eq!(evolution_brief["title"], "EvolutionBrief");
+    assert!(evolution_brief["properties"]["scorecard"].is_object());
+
     let agent_ready = assert_machine_pure_json(&["schema", "agent-ready-report", "--json"]);
     assert_eq!(agent_ready["title"], "AgentReadyReport");
 
@@ -297,6 +301,13 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .as_array()
         .expect("commands array")
         .iter()
+        .any(
+            |command| command["name"] == "brief" && command["primary_schema"] == "evolution-brief"
+        ));
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
         .any(|command| command["name"] == "explain"
             && command["primary_schema"] == "artifact-explanation"));
     assert!(value["safety_rules"]
@@ -344,6 +355,11 @@ fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
         .expect("tools")
         .iter()
         .any(|tool| tool["name"] == "perf" && tool["read_only"] == true));
+    assert!(runtime["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .any(|tool| tool["name"] == "brief" && tool["read_only"] == true));
     let evolve_tool = runtime["tools"]
         .as_array()
         .expect("tools")
@@ -828,6 +844,12 @@ anyhow = "1"
         .any(|command| command
             .as_str()
             .is_some_and(|command| command.contains("evolve"))));
+    assert!(
+        value["map"]["contracts"]["public_functions_missing_contracts"]
+            .as_u64()
+            .is_some()
+    );
+    assert!(value["map"]["performance"]["score"].as_u64().is_some());
     assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
     let artifact_path = value["artifact_path"]
         .as_str()
@@ -836,6 +858,69 @@ anyhow = "1"
     let explanation =
         assert_machine_pure_json_in(&["explain", artifact_path, "--json"], dir.path());
     assert_eq!(explanation["artifact_kind"], "EvolutionScorecard");
+}
+
+#[test]
+fn brief_json_mode_fuses_context_contract_perf_and_scorecard() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-brief-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("AGENTS.md"), "agent rules").unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load(value: String) -> anyhow::Result<String> {
+    let content = std::fs::read_to_string(value).unwrap();
+    Ok(content)
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let value = assert_machine_pure_json_in(&["brief", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(value["schema_version"], "1.0");
+    assert!(value["brief_id"].as_str().is_some());
+    assert!(value["repo_map"]["noise_filter"]["rules"]
+        .as_array()
+        .expect("noise rules")
+        .iter()
+        .any(|rule| rule["pattern"] == "target/"));
+    assert!(value["contracts"]["public_functions_missing_contracts"]
+        .as_u64()
+        .is_some());
+    assert!(value["performance"]["score"].as_u64().is_some());
+    assert!(value["scorecard"]["map"]["contracts"]["grade"]
+        .as_str()
+        .is_some());
+    assert!(value["recommended_sequence"]
+        .as_array()
+        .expect("sequence")
+        .iter()
+        .any(|command| command
+            .as_str()
+            .is_some_and(|command| command.contains("contracts"))));
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+    let artifact_path = value["artifact_path"]
+        .as_str()
+        .expect("brief should persist artifact");
+    assert!(std::path::Path::new(artifact_path).exists());
+    let explanation =
+        assert_machine_pure_json_in(&["explain", artifact_path, "--json"], dir.path());
+    assert_eq!(explanation["artifact_kind"], "EvolutionBrief");
 }
 
 #[test]
