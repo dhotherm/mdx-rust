@@ -1798,9 +1798,19 @@ fn security_posture_summary(findings: &[AuditFinding]) -> SecurityPostureSummary
         + summary.medium.saturating_mul(12)
         + summary.low.saturating_mul(5);
     summary.score = 100usize.saturating_sub(penalty).min(100) as u8;
-    summary.top_findings = findings
+    let mut top_findings = findings
         .iter()
         .filter(|finding| finding.severity != AuditSeverity::Info)
+        .collect::<Vec<_>>();
+    top_findings.sort_by(|left, right| {
+        right
+            .severity
+            .cmp(&left.severity)
+            .then_with(|| left.file.cmp(&right.file))
+            .then_with(|| left.line.cmp(&right.line))
+    });
+    summary.top_findings = top_findings
+        .into_iter()
         .take(5)
         .map(|finding| {
             let file = finding.file.as_deref().unwrap_or("<workspace>");
@@ -3309,5 +3319,34 @@ edition = "2021"
             && candidate.status == RefactorCandidateStatus::ApplyViaImprove
             && candidate.required_evidence == EvidenceGrade::Covered
             && candidate.tier == RecipeTier::Tier2));
+    }
+
+    #[test]
+    fn security_summary_prioritizes_high_severity_top_findings() {
+        let findings = vec![
+            AuditFinding {
+                id: "low".to_string(),
+                severity: AuditSeverity::Low,
+                title: "Low first".to_string(),
+                description: "low".to_string(),
+                file: Some("src/a.rs".to_string()),
+                line: Some(1),
+            },
+            AuditFinding {
+                id: "high".to_string(),
+                severity: AuditSeverity::High,
+                title: "High second".to_string(),
+                description: "high".to_string(),
+                file: Some("src/b.rs".to_string()),
+                line: Some(2),
+            },
+        ];
+
+        let summary = security_posture_summary(&findings);
+
+        assert!(summary
+            .top_findings
+            .first()
+            .is_some_and(|finding| finding.starts_with("High: High second")));
     }
 }

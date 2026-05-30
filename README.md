@@ -547,6 +547,10 @@ recipe catalog export, artifact explanations, scorecards, security posture in
 maps/plans, and a stronger covered Tier 2 recipe set while keeping broad
 semantic refactors behind explicit review and future verification work.
 
+The next beta phase is focused on real-repo adoption: lower-noise readiness
+signals, clearer next commands, better external-agent guidance, and scanner
+precision before broader autonomous refactoring scope.
+
 ## License
 
 MIT

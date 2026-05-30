@@ -60,14 +60,27 @@ pub fn audit_agent(root: &Path) -> anyhow::Result<SecurityAuditReport> {
 
     for file in files {
         let content = std::fs::read_to_string(&file)?;
+        let mut cfg_test_pending = false;
+        let mut in_cfg_test_region = false;
         for (index, line) in content.lines().enumerate() {
             let line_no = index + 1;
-            let trimmed = line.trim();
+            let code_line = line_without_comments_or_strings(line);
+            let trimmed = code_line.trim();
+            let literal_line = line_without_comments(line);
+            if trimmed == "#[cfg(test)]" {
+                cfg_test_pending = true;
+            } else if cfg_test_pending && trimmed.starts_with("mod tests") {
+                in_cfg_test_region = true;
+                cfg_test_pending = false;
+            } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                cfg_test_pending = false;
+            }
+            let test_context = in_cfg_test_region || is_test_path(&file);
 
             if trimmed.contains("Command::new(") || trimmed.contains("std::process::Command") {
                 findings.push(finding(
                     "unexpected-code-execution",
-                    AuditSeverity::High,
+                    contextual_severity(test_context, AuditSeverity::High),
                     "Process execution surface",
                     "Agent code starts external processes. Review command inputs, allowlists, and sandbox boundaries.",
                     &file,
@@ -78,7 +91,7 @@ pub fn audit_agent(root: &Path) -> anyhow::Result<SecurityAuditReport> {
             if trimmed.contains("unsafe ") || trimmed == "unsafe" || trimmed.contains("unsafe{") {
                 findings.push(finding(
                     "unsafe-code",
-                    AuditSeverity::Medium,
+                    contextual_severity(test_context, AuditSeverity::Medium),
                     "Unsafe Rust block",
                     "Unsafe code increases the blast radius of agent-driven changes and should have a clear justification.",
                     &file,
@@ -86,10 +99,10 @@ pub fn audit_agent(root: &Path) -> anyhow::Result<SecurityAuditReport> {
                 ));
             }
 
-            if contains_secret_literal(trimmed) {
+            if contains_secret_literal(literal_line.trim()) {
                 findings.push(finding(
                     "secret-literal",
-                    AuditSeverity::High,
+                    contextual_severity(test_context, AuditSeverity::High),
                     "Potential secret literal",
                     "A likely secret or token appears in source. Move secrets to environment or a managed secret store.",
                     &file,
@@ -100,7 +113,7 @@ pub fn audit_agent(root: &Path) -> anyhow::Result<SecurityAuditReport> {
             if trimmed.contains("MCP") || trimmed.contains("mcp") || trimmed.contains("A2A") {
                 findings.push(finding(
                     "agent-interop-surface",
-                    AuditSeverity::Low,
+                    contextual_severity(test_context, AuditSeverity::Low),
                     "Agent interop surface",
                     "MCP or A2A-style integration should validate tool schemas and trust boundaries before live execution.",
                     &file,
@@ -195,11 +208,79 @@ fn contains_secret_literal(line: &str) -> bool {
         return false;
     }
 
-    let lower = line.to_lowercase();
-    let has_secret_name = ["api_key", "apikey", "secret", "token", "password"]
-        .iter()
-        .any(|needle| lower.contains(needle));
-    has_secret_name && line.contains('"') && line.contains('=')
+    let Some((left, _right)) = line.split_once('=') else {
+        return false;
+    };
+    line.contains('"')
+        && left
+            .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+            .any(is_secret_identifier)
+}
+
+fn contextual_severity(test_context: bool, severity: AuditSeverity) -> AuditSeverity {
+    if !test_context {
+        return severity;
+    }
+
+    match severity {
+        AuditSeverity::High => AuditSeverity::Low,
+        AuditSeverity::Medium => AuditSeverity::Low,
+        other => other,
+    }
+}
+
+fn is_secret_identifier(identifier: &str) -> bool {
+    matches!(
+        identifier,
+        "api_key" | "apikey" | "secret" | "token" | "password"
+    ) || identifier.ends_with("_api_key")
+        || identifier.ends_with("_secret")
+        || identifier.ends_with("_token")
+        || identifier.ends_with("_password")
+}
+
+fn is_test_path(file: &Path) -> bool {
+    file.components()
+        .any(|component| component.as_os_str() == "tests")
+        || file.file_name().is_some_and(|name| {
+            let name = name.to_string_lossy();
+            name.ends_with("_test.rs") || name == "test.rs"
+        })
+}
+
+fn line_without_comments_or_strings(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        if !in_string && ch == '/' && chars.peek().is_some_and(|next| *next == '/') {
+            break;
+        }
+
+        if ch == '"' && !escaped {
+            in_string = !in_string;
+            out.push(' ');
+        } else if in_string {
+            out.push(' ');
+        } else {
+            out.push(ch);
+        }
+
+        escaped = in_string && ch == '\\' && !escaped;
+        if ch != '\\' {
+            escaped = false;
+        }
+    }
+
+    out
+}
+
+fn line_without_comments(line: &str) -> &str {
+    line.split_once("//")
+        .map(|(before_comment, _)| before_comment)
+        .unwrap_or(line)
 }
 
 #[cfg(test)]
@@ -256,5 +337,63 @@ mod tests {
             .findings
             .iter()
             .any(|finding| finding.id == "secret-literal"));
+    }
+
+    #[test]
+    fn audit_does_not_flag_risky_patterns_inside_strings_or_comments() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"
+            fn describe() -> &'static str {
+                // std::process::Command::new("ignored")
+                "unsafe std::process::Command::new(\"sh\") MCP"
+            }
+            "#,
+        )
+        .unwrap();
+
+        let report = audit_agent(dir.path()).unwrap();
+
+        assert!(!report
+            .findings
+            .iter()
+            .any(|finding| finding.id == "unexpected-code-execution"));
+        assert!(!report
+            .findings
+            .iter()
+            .any(|finding| finding.id == "unsafe-code"));
+        assert!(!report
+            .findings
+            .iter()
+            .any(|finding| finding.id == "agent-interop-surface"));
+    }
+
+    #[test]
+    fn audit_downgrades_process_execution_in_test_files() {
+        let dir = tempdir().unwrap();
+        let tests = dir.path().join("tests");
+        std::fs::create_dir_all(&tests).unwrap();
+        std::fs::write(
+            tests.join("cli.rs"),
+            r#"
+            #[test]
+            fn runs_cli() {
+                let _ = std::process::Command::new("cargo");
+            }
+            "#,
+        )
+        .unwrap();
+
+        let report = audit_agent(dir.path()).unwrap();
+        let finding = report
+            .findings
+            .iter()
+            .find(|finding| finding.id == "unexpected-code-execution")
+            .expect("process execution finding");
+
+        assert_eq!(finding.severity, AuditSeverity::Low);
     }
 }

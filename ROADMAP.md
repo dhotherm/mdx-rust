@@ -145,6 +145,24 @@ Local agent runtime and candidate-evidence autonomy.
   through evolve, autopilot, apply-plan, hardening transactions, validation,
   and rollback.
 
+## v1.1 beta Focus - In Progress
+
+Real-repo adoption and signal quality.
+
+- Dogfood mdx-rust against mdx-rust itself and larger Rust backends before
+  adding new broad refactoring promises.
+- Reduce noisy security and readiness findings so `agent-ready`, `scorecard`,
+  and `map` are useful on real workspaces with tests, fixtures, and detector
+  code.
+- Keep beta positioning explicit while improving first-run guidance and
+  recommended next commands for both humans and external coding agents.
+- Improve static scanner precision before increasing autonomous recipe scope.
+- Make top risks and recommended actions prioritize true production callsites
+  over examples, comments, string literals, and test harness code.
+- Preserve the v1 contract: CLI JSON, schemas, local runtimes, and agent packs
+  are the supported automation surface; Rust library APIs remain unstable
+  during beta.
+
 ## Current Non-Goals
 
 - Autonomous public API rewrites without explicit gates.
