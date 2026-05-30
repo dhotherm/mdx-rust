@@ -44,6 +44,8 @@ pub mod refactor;
 #[doc(hidden)]
 pub mod registry;
 #[doc(hidden)]
+pub mod repo_context;
+#[doc(hidden)]
 pub mod runner;
 #[doc(hidden)]
 pub mod safety_pipeline;
@@ -113,6 +115,11 @@ pub use refactor::{
 };
 /// Agent registry types used by CLI commands.
 pub use registry::{AgentContract, RegisteredAgent, Registry};
+/// Agent-first repository context and noise filter artifacts. Unstable during the v1 beta.
+pub use repo_context::{
+    build_noise_filter, build_repo_map, noise_filter_markdown, NoiseFilter, NoiseFilterRule,
+    RepoMap, RepoMapConfig, RepoMapDirectory, RepoMapKeyFile, RepoMapSummary,
+};
 /// Agent runner result and trace events. These are unstable during the v1 beta.
 pub use runner::{run_agent, AgentRunResult, TraceEvent};
 /// Candidate safety pipeline. Direct use is unstable during the v1 beta.

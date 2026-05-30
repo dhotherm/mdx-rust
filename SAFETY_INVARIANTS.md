@@ -128,9 +128,10 @@ allowed to move quickly, but it must not create a second mutation path.
   candidates must not be queued by `apply-plan --all`, `autopilot`, or
   `evolve`.
 - `mdx-rust scorecard`, `mdx-rust agent-ready`, `mdx-rust recipes`,
-  `mdx-rust runtime`, `mdx-rust agent-pack` without `--write`, and
-  `mdx-rust explain` are read-only agent surfaces. They must never mutate
-  source files or approve mutation by themselves.
+  `mdx-rust runtime`, `mdx-rust repo-map`, `mdx-rust noise-filter` without
+  `--write`, `mdx-rust agent-pack` without `--write`, and `mdx-rust explain`
+  are read-only agent surfaces. They must never mutate source files or approve
+  mutation by themselves.
 - `mdx-rust mcp --stdio` and `mdx-rust serve` are local runtime wrappers over
   the same command contracts. Runtime mutation-capable tool calls must require
   explicit mutation confirmation and must route through `evolve`, autopilot,
@@ -161,6 +162,9 @@ allowed to move quickly, but it must not create a second mutation path.
   service rate limiting, tenant isolation, or internet-facing abuse protection.
 - `mdx-rust agent-pack --write` may write instruction files only. It must not
   write Rust source files, plans, evidence, or approval artifacts.
+- `mdx-rust noise-filter --write` may write agent-pack noise filter guidance
+  under `.mdx-rust/agent-pack/` only. It must not write Rust source files,
+  plans, evidence, policies, approval artifacts, or validation artifacts.
 - `mdx-rust scorecard` may embed maps, plans, recipe catalogs, autonomy
   readiness, and suggested commands, but it is briefing evidence only. It does
   not validate, apply, land, or accept changes.
@@ -192,6 +196,9 @@ allowed to move quickly, but it must not create a second mutation path.
   "applied", "landed", or "accepted".
 - Runtime manifests and agent packs are records or instruction files only. They
   do not validate, apply, land, accept, or approve source changes.
+- Repo maps and noise filters are orientation records only. They may guide what
+  an agent reads or ignores, but they do not validate, apply, land, accept, or
+  approve source changes.
 - Codebase maps are records only. A `CodebaseMap` means "scanned and
   summarized", not "validated", "applied", "landed", or "accepted".
 - Evidence grades are execution gates, not proof by themselves. A `Compiled`

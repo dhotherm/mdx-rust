@@ -77,6 +77,27 @@ enum Commands {
         write: bool,
     },
 
+    /// Build an agent-oriented repository map and context guide
+    RepoMap {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Maximum directory depth to include
+        #[arg(long, default_value = "3")]
+        max_depth: usize,
+
+        /// Maximum directories to list
+        #[arg(long, default_value = "80")]
+        max_dirs: usize,
+    },
+
+    /// Print or write default noise filters for coding agents
+    NoiseFilter {
+        /// Write .mdx-rust/agent-pack/noise-filter artifacts
+        #[arg(long)]
+        write: bool,
+    },
+
     /// Run the local stdio agent tool protocol
     Mcp {
         /// Use stdin/stdout line-delimited JSON transport
@@ -394,8 +415,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, agent-ready-report, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, repo-map, noise-filter, agent-ready-report, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "repo-map", "noise-filter", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -460,6 +481,22 @@ fn main() {
         Commands::AgentPack { target, write } => {
             if let Err(e) = cmd_agent_pack(&target, write, cli.json) {
                 emit_error(cli.json, "agent-pack", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::RepoMap {
+            target,
+            max_depth,
+            max_dirs,
+        } => {
+            if let Err(e) = cmd_repo_map(target.as_deref(), max_depth, max_dirs, cli.json) {
+                emit_error(cli.json, "repo-map", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::NoiseFilter { write } => {
+            if let Err(e) = cmd_noise_filter(write, cli.json) {
+                emit_error(cli.json, "noise-filter", &e);
                 std::process::exit(1);
             }
         }
@@ -1015,6 +1052,93 @@ fn cmd_agent_pack(target: &str, write: bool, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cmd_repo_map(
+    target: Option<&str>,
+    max_depth: usize,
+    max_dirs: usize,
+    json: bool,
+) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let map = mdx_rust_core::build_repo_map(
+        &cwd,
+        &mdx_rust_core::RepoMapConfig {
+            target: target.map(std::path::PathBuf::from),
+            max_depth,
+            max_dirs,
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&map)?);
+        return Ok(());
+    }
+
+    println!("🧭 mdx-rust repo map");
+    println!("   Target: {}", map.target.display());
+    println!(
+        "   Directories: {} | Rust files: {} | crates: {}",
+        map.summary.total_directories_listed,
+        map.summary.total_rust_files,
+        map.summary.detected_crates
+    );
+    println!("   Agent intake:");
+    for step in &map.agent_intake {
+        println!("   - {step}");
+    }
+    println!("   Top directories:");
+    for dir in map.directories.iter().take(12) {
+        println!(
+            "   - {} ({}) rust_files={}",
+            dir.path.display(),
+            dir.role,
+            dir.rust_files
+        );
+    }
+    Ok(())
+}
+
+fn cmd_noise_filter(write: bool, json: bool) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let filter = mdx_rust_core::build_noise_filter(&cwd);
+    let mut written = Vec::new();
+
+    if write {
+        let json_path = cwd.join(".mdx-rust/agent-pack/noise-filter.json");
+        let md_path = cwd.join(".mdx-rust/agent-pack/noise-filter.md");
+        if let Some(parent) = json_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&json_path, serde_json::to_string_pretty(&filter)?)?;
+        std::fs::write(&md_path, mdx_rust_core::noise_filter_markdown(&filter))?;
+        written.push(json_path.display().to_string());
+        written.push(md_path.display().to_string());
+    }
+
+    if json {
+        let mut value = serde_json::to_value(&filter)?;
+        value["written_files"] = serde_json::json!(written);
+        println!("{}", serde_json::to_string_pretty(&value)?);
+        return Ok(());
+    }
+
+    println!("🧹 mdx-rust noise filter");
+    for rule in &filter.rules {
+        println!(
+            "   - {}: {} ({})",
+            rule.pattern, rule.reason, rule.default_action
+        );
+    }
+    if write {
+        println!("   Written files:");
+        for path in written {
+            println!("   - {path}");
+        }
+    } else {
+        println!("   Review mode only. Re-run with --write to create agent-pack artifacts.");
+    }
+    Ok(())
+}
+
 fn cmd_mcp(stdio: bool, describe: bool, json: bool) -> anyhow::Result<()> {
     if describe || !stdio {
         return cmd_runtime(json);
@@ -1133,6 +1257,17 @@ fn runtime_tool_call(params: &serde_json::Value) -> anyhow::Result<serde_json::V
             mdx_rust_core::agent_runtime_manifest(),
         )?),
         "recipes" => Ok(serde_json::to_value(mdx_rust_core::recipe_catalog())?),
+        "repo-map" => Ok(serde_json::to_value(mdx_rust_core::build_repo_map(
+            &cwd,
+            &mdx_rust_core::RepoMapConfig {
+                target: json_path_arg(&args, "target"),
+                max_depth: json_usize_arg(&args, "max_depth").unwrap_or(3),
+                max_dirs: json_usize_arg(&args, "max_dirs").unwrap_or(80),
+            },
+        )?)?),
+        "noise-filter" => Ok(serde_json::to_value(mdx_rust_core::build_noise_filter(
+            &cwd,
+        ))?),
         "scorecard" => Ok(serde_json::to_value(
             mdx_rust_core::build_evolution_scorecard(
                 &cwd,
@@ -2606,6 +2741,8 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentRuntimeManifest))?
         }
         "agent-pack" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentPack))?,
+        "repo-map" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::RepoMap))?,
+        "noise-filter" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::NoiseFilter))?,
         "agent-ready-report" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentReadyReport))?
         }

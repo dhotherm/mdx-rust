@@ -93,6 +93,26 @@ pub fn agent_contract() -> MdxAgentContract {
                 example: "mdx-rust --json agent-pack codex".to_string(),
             },
             AgentCommandSpec {
+                name: "repo-map".to_string(),
+                purpose:
+                    "Build an agent-oriented repository map with instruction files, key directories, and noise filters."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "repo-map".to_string(),
+                example: "mdx-rust --json repo-map src".to_string(),
+            },
+            AgentCommandSpec {
+                name: "noise-filter".to_string(),
+                purpose:
+                    "Print or write default search exclusions for coding agents working in this repository."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "noise-filter".to_string(),
+                example: "mdx-rust --json noise-filter".to_string(),
+            },
+            AgentCommandSpec {
                 name: "recipes".to_string(),
                 purpose:
                     "List recipe tiers, required evidence, and executable mutation paths."
@@ -200,6 +220,8 @@ pub fn agent_contract() -> MdxAgentContract {
                 steps: vec![
                     "mdx-rust --json agent-contract".to_string(),
                     "mdx-rust --json runtime".to_string(),
+                    "mdx-rust --json repo-map <target>".to_string(),
+                    "mdx-rust --json noise-filter".to_string(),
                     "mdx-rust --json recipes".to_string(),
                     "mdx-rust --json agent-ready <target>".to_string(),
                     "mdx-rust --json scorecard <target>".to_string(),
@@ -240,7 +262,10 @@ pub fn agent_contract() -> MdxAgentContract {
             ".mdx-rust/agent-pack/*".to_string(),
         ],
         safety_rules: vec![
+            "Treat repo-map and noise-filter as orientation surfaces, not proof that mutation is safe."
+                .to_string(),
             "Treat plan and map commands as read-only.".to_string(),
+            "Respect noise-filter exclusions before default search or context loading.".to_string(),
             "Never add --apply unless the user explicitly asked for mutation.".to_string(),
             "Runtime evolve calls with apply=true must also include confirm_mutation=true.".to_string(),
             "Do not bypass min-evidence or tier restrictions.".to_string(),

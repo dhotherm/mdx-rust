@@ -151,6 +151,14 @@ Real-repo adoption and signal quality.
 
 - Dogfood mdx-rust against mdx-rust itself and larger Rust backends before
   adding new broad refactoring promises.
+- `mdx-rust repo-map <target> --json` provides an agent-oriented orientation
+  artifact with key files, instruction files, directory roles, crate
+  boundaries, noise filters, and safe intake commands.
+- `mdx-rust noise-filter --json|--write` gives coding agents a shared default
+  filter for generated/build output before they search large workspaces.
+- Agent packs include context-cascade guidance so Codex, Claude, Cursor, Aider,
+  and Goose-style tools load root instructions, local docs, target source, and
+  generated artifacts in the right order.
 - Reduce noisy security and readiness findings so `agent-ready`, `scorecard`,
   and `map` are useful on real workspaces with tests, fixtures, and detector
   code.

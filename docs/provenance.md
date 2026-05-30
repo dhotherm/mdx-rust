@@ -173,6 +173,8 @@ mdx-rust runtime --json
 mdx-rust schema agent-contract --json
 mdx-rust schema agent-runtime-manifest --json
 mdx-rust schema agent-pack --json
+mdx-rust schema repo-map --json
+mdx-rust schema noise-filter --json
 mdx-rust schema agent-ready-report --json
 ```
 
@@ -211,6 +213,12 @@ the saved artifacts remain the source of truth.
 Agent packs are instruction artifacts. They can be written into a repo for
 Codex, Claude, Cursor, Aider, Goose-style, or generic agents, but they are not
 approval artifacts and they do not validate or apply source changes.
+
+Repo maps and noise filters are orientation artifacts. They tell agents which
+instructions, directories, crate boundaries, and generated paths to inspect or
+ignore before planning. `repo-map` and `noise-filter` do not validate, approve,
+or apply source changes. `noise-filter --write` may only write instruction
+artifacts under `.mdx-rust/agent-pack/`.
 
 `mdx-rust agent-ready --json` is a compact readiness envelope derived from the
 scorecard. It is not mutation evidence. It points agents at the command

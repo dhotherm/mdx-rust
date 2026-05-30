@@ -61,6 +61,8 @@ Today it supports:
   go/no-go briefing before autonomous work.
 - `agent-pack` generation for Codex, Claude, Cursor, Aider, Goose-style, and
   generic coding agent instruction files.
+- `repo-map` and `noise-filter` orientation artifacts so agents can load the
+  right context and avoid generated/build noise before planning.
 - `recipes` machine-readable recipe catalog with tier, evidence, execution, and
   mutation-path contracts.
 - `explain` artifact summaries so coding agents can inspect saved JSON reports
@@ -196,6 +198,28 @@ Not yet supported:
 - External hook runners.
 - Multi-language optimization.
 
+## v1.1 beta Direction
+
+The next beta phase is about real-repo adoption and agent context engineering.
+Before an external agent plans or evolves a target, it should be able to answer
+"where am I, what should I ignore, and which instructions matter here?"
+
+- Run `mdx-rust repo-map <target> --json` to get key files, instruction files,
+  directory roles, crate boundaries, default noise filters, and safe intake
+  steps for an agent.
+- Run `mdx-rust noise-filter --json` to get default exclusions for generated
+  and build artifacts such as `target/`, `.git/`, coverage output, and
+  `.mdx-rust/` reports.
+- Run `mdx-rust noise-filter --write` to create `.mdx-rust/agent-pack/`
+  guidance files that agents can load before searching a large repo.
+- Agent packs now describe a context cascade: root instructions, local package
+  docs, target source, and only then generated mdx-rust artifacts referenced by
+  `artifact_path`.
+
+These surfaces are read-only orientation aids. They do not approve mutation,
+weaken evidence gates, or replace scorecards, plans, validation, rollback, or
+human approval for `--apply`.
+
 ## Safety Model
 
 The acceptance contract is the center of the project:
@@ -276,6 +300,8 @@ mdx-rust --json schema agent-contract
 A safe agent workflow for a normal Rust backend looks like this:
 
 ```bash
+mdx-rust --json repo-map src/service
+mdx-rust --json noise-filter
 mdx-rust --json evidence src/service --include-coverage
 mdx-rust --json map src/service
 mdx-rust --json plan src/service
@@ -304,7 +330,8 @@ protection.
 
 For runtime callers, the safe integration pattern is:
 
-1. Discover: call `agent-contract`, `runtime`, and `recipes`.
+1. Discover: call `agent-contract`, `runtime`, `repo-map`, `noise-filter`, and
+   `recipes`.
 2. Measure: call `evidence` for the target, adding coverage or mutation flags
    only when those tools are installed and the budget allows it.
 3. Brief: call `scorecard` or `map` to understand quality, security, evidence,

@@ -184,18 +184,25 @@ before source files are touched.
 The recommended external-agent loop is:
 
 1. `agent-contract` and `runtime` for command and transport discovery.
-2. `recipes` to learn recipe tiers and required evidence.
-3. `evidence` to collect or refresh the target's measured grade.
-4. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
+2. `repo-map` and `noise-filter` to understand the workspace, instruction
+   files, crate boundaries, and default search exclusions.
+3. `recipes` to learn recipe tiers and required evidence.
+4. `evidence` to collect or refresh the target's measured grade.
+5. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
    security, and capability briefing.
-5. `plan` for a non-mutating candidate queue.
-6. `evolve` in review mode, or `evolve` with explicit mutation confirmation
+6. `plan` for a non-mutating candidate queue.
+7. `evolve` in review mode, or `evolve` with explicit mutation confirmation
    after a human approves autonomous execution.
 
 `mdx-rust agent-pack codex|claude|cursor|aider|goose|generic` generates
 instruction files that teach external agents how to use the command contract.
 These files are guidance only and do not grant permission to mutate source
 files.
+
+`mdx-rust repo-map` and `mdx-rust noise-filter` are context-engineering
+surfaces for agents working in large repositories. They are read-only unless
+`noise-filter --write` writes instruction files under `.mdx-rust/agent-pack/`.
+They do not alter planning, validation, evidence, rollback, or mutation rules.
 
 `mdx-rust evidence` runs bounded local commands, persists command records under
 `.mdx-rust/evidence/`, assigns an evidence grade, and records parsed metrics

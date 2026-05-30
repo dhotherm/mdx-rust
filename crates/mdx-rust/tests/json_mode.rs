@@ -130,6 +130,14 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     let agent_pack = assert_machine_pure_json(&["schema", "agent-pack", "--json"]);
     assert_eq!(agent_pack["title"], "AgentPack");
 
+    let repo_map = assert_machine_pure_json(&["schema", "repo-map", "--json"]);
+    assert_eq!(repo_map["title"], "RepoMap");
+    assert!(repo_map["properties"]["noise_filter"].is_object());
+
+    let noise_filter = assert_machine_pure_json(&["schema", "noise-filter", "--json"]);
+    assert_eq!(noise_filter["title"], "NoiseFilter");
+    assert!(noise_filter["properties"]["rules"].is_object());
+
     let agent_ready = assert_machine_pure_json(&["schema", "agent-ready-report", "--json"]);
     assert_eq!(agent_ready["title"], "AgentReadyReport");
 
@@ -255,6 +263,17 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .as_array()
         .expect("commands array")
         .iter()
+        .any(|command| command["name"] == "repo-map" && command["primary_schema"] == "repo-map"));
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
+        .any(|command| command["name"] == "noise-filter"
+            && command["primary_schema"] == "noise-filter"));
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
         .any(|command| command["name"] == "explain"
             && command["primary_schema"] == "artifact-explanation"));
     assert!(value["safety_rules"]
@@ -282,6 +301,16 @@ fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
         .expect("tools")
         .iter()
         .any(|tool| tool["name"] == "evolve" && tool["mutation_capable"] == true));
+    assert!(runtime["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .any(|tool| tool["name"] == "repo-map" && tool["read_only"] == true));
+    assert!(runtime["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .any(|tool| tool["name"] == "noise-filter" && tool["read_only"] == true));
     let evolve_tool = runtime["tools"]
         .as_array()
         .expect("tools")
@@ -304,6 +333,13 @@ fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
         .any(|file| file["path"]
             .as_str()
             .is_some_and(|path| path.contains(".codex/skills"))));
+    assert!(pack["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .any(|file| file["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("repo-map"))));
     assert_eq!(
         pack["written_files"]
             .as_array()
@@ -321,6 +357,82 @@ fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
         .any(|file| file["path"]
             .as_str()
             .is_some_and(|path| path.contains(".cursor/rules"))));
+}
+
+#[test]
+fn repo_map_and_noise_filter_json_mode_are_machine_parseable_and_non_mutating() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[workspace]
+members = ["crates/app"]
+"#,
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("AGENTS.md"), "agent rules").unwrap();
+    std::fs::create_dir_all(dir.path().join("crates/app/src")).unwrap();
+    std::fs::write(dir.path().join("crates/app/Cargo.toml"), "[package]\n").unwrap();
+    std::fs::write(
+        dir.path().join("crates/app/src/lib.rs"),
+        "pub fn app() {}\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("target/debug")).unwrap();
+
+    let map = assert_machine_pure_json_in(&["repo-map", "--json"], dir.path());
+
+    assert_eq!(map["schema_version"], "1.0");
+    assert!(
+        map["summary"]["detected_crates"]
+            .as_u64()
+            .unwrap_or_default()
+            >= 1
+    );
+    assert!(map["instruction_files"]
+        .as_array()
+        .expect("instruction files")
+        .iter()
+        .any(|file| file["path"] == "AGENTS.md"));
+    assert!(map["noise_filter"]["rules"]
+        .as_array()
+        .expect("noise rules")
+        .iter()
+        .any(|rule| rule["pattern"] == "target/"));
+    assert!(!dir
+        .path()
+        .join(".mdx-rust/agent-pack/noise-filter.json")
+        .exists());
+
+    let filter = assert_machine_pure_json_in(&["noise-filter", "--json"], dir.path());
+    assert_eq!(filter["schema_version"], "1.0");
+    assert!(filter["written_files"]
+        .as_array()
+        .expect("written files")
+        .is_empty());
+
+    let written = assert_machine_pure_json_in(&["noise-filter", "--write", "--json"], dir.path());
+    assert_eq!(
+        written["written_files"]
+            .as_array()
+            .expect("written files")
+            .len(),
+        2
+    );
+    assert!(dir
+        .path()
+        .join(".mdx-rust/agent-pack/noise-filter.json")
+        .exists());
+    assert!(!dir.path().join("src").exists());
+
+    let file_map =
+        assert_machine_pure_json_in(&["repo-map", "crates/app/src/lib.rs", "--json"], dir.path());
+    assert!(file_map["warnings"]
+        .as_array()
+        .expect("warnings")
+        .iter()
+        .any(|warning| warning
+            .as_str()
+            .is_some_and(|warning| warning.contains("target is a file"))));
 }
 
 #[test]

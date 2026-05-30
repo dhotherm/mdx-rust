@@ -140,6 +140,22 @@ fn runtime_tools() -> Vec<AgentRuntimeTool> {
             "recipe-catalog",
         ),
         runtime_tool(
+            "repo-map",
+            "Build an agent-oriented repository map and context guide.",
+            true,
+            false,
+            "repo-map-request",
+            "repo-map",
+        ),
+        runtime_tool(
+            "noise-filter",
+            "Return default context exclusions for coding agents.",
+            true,
+            false,
+            "noise-filter-request",
+            "noise-filter",
+        ),
+        runtime_tool(
             "scorecard",
             "Build a single target briefing for external agents.",
             true,
@@ -239,8 +255,16 @@ refactor, improve quality, or let an agent make autonomous changes.
 ## Required Intake
 
 1. Run `mdx-rust --json agent-contract`.
-2. Run `mdx-rust --json scorecard <target>`.
-3. Inspect `readiness`, `next_commands`, `security`, and candidate autonomy decisions.
+2. Run `mdx-rust --json repo-map <target>` and respect its `noise_filter`.
+3. Run `mdx-rust --json scorecard <target>`.
+4. Inspect `readiness`, `next_commands`, `security`, and candidate autonomy decisions.
+
+## Context Cascade
+
+Load context in this order: root agent instructions, local package docs, target
+source, then generated mdx-rust artifacts only when referenced by artifact_path.
+Do not start broad searches until `repo-map` and `noise-filter` have narrowed
+the workspace.
 
 ## Mutation Rule
 
