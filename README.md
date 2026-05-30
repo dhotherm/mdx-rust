@@ -91,6 +91,8 @@ Today it supports:
   repeated private string literals into file-local constants, replacing
   zero-length checks with `is_empty()`, and converting simple Option
   boundaries to `anyhow::Context`.
+- One Hardened-evidence Tier 3 guarded semantic recipe that collapses simple
+  `match Option` error boundaries into `anyhow::Context`.
 - Hardened evidence analysis that surfaces deeper clone-pressure and long
   function review candidates, with lower structural planning thresholds than
   low-evidence targets.
@@ -286,6 +288,20 @@ The measurement phase gives performance work a real evidence artifact.
 - Benchmarks are measured evidence only. They do not approve mutation, and
   performance changes still need the normal plan, validation, behavior eval,
   provenance, and rollback gates.
+
+## v1.6 beta Direction
+
+The guarded semantic phase starts allowing narrow semantic cleanup where the
+evidence bar is higher.
+
+- Tier 3 now includes `option-match-context-propagation`, which rewrites simple
+  `match Option` error boundaries into `anyhow::Context`.
+- The recipe only runs under Hardened evidence in autonomous planning, or when
+  a human explicitly asks for `improve --tier 3`.
+- The rewrite is still AST-validated, isolated, compile/clippy/test-gated,
+  optionally behavior-eval-gated, and transactionally rolled back on failure.
+- Broad extract-function, split-module, ownership-changing, and public API
+  refactors remain plan-first until stronger semantic proof exists.
 
 ## Safety Model
 

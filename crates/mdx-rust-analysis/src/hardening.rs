@@ -37,6 +37,7 @@ pub enum HardeningStrategy {
     LongFunctionReview,
     MechanicalTier1Cleanup,
     MustUsePublicReturn,
+    OptionMatchContextPropagation,
     OptionContextPropagation,
     RepeatedStringLiteralConst,
     ResultUnwrapContext,
@@ -261,6 +262,15 @@ fn build_mechanical_change(
             &mut findings,
         );
     }
+    if config.max_recipe_tier >= 3 && config.evidence_depth >= HardeningEvidenceDepth::Hardened {
+        apply_option_match_context_recipe(
+            &rel,
+            &mut lines,
+            function_ranges,
+            &mut finding_ids,
+            &mut findings,
+        );
+    }
 
     if finding_ids.is_empty() {
         return Ok(None);
@@ -276,6 +286,7 @@ fn build_mechanical_change(
             HardeningStrategy::ErrorContextPropagation
                 | HardeningStrategy::ResultUnwrapContext
                 | HardeningStrategy::OptionContextPropagation
+                | HardeningStrategy::OptionMatchContextPropagation
         )
     }) {
         new_content = ensure_anyhow_context_import(&new_content);
@@ -714,6 +725,115 @@ fn replace_ok_or_string_with_context(line: &str) -> Option<String> {
     output.push_str(&format!(".context(\"{}\")?", escape_string(message)));
     output.push_str(suffix);
     Some(output)
+}
+
+fn apply_option_match_context_recipe(
+    rel: &Path,
+    lines: &mut Vec<String>,
+    function_ranges: &[FunctionRange],
+    finding_ids: &mut Vec<String>,
+    findings: &mut Vec<HardeningFinding>,
+) {
+    for range in function_ranges {
+        if !range.returns_anyhow_result {
+            continue;
+        }
+
+        let mut line_index = range.start_line.saturating_sub(1);
+        let mut upper = range.end_line.min(lines.len());
+        while line_index + 3 < lines.len() && line_index < upper {
+            let Some(rewrite) = option_match_context_rewrite(lines, line_index) else {
+                line_index += 1;
+                continue;
+            };
+
+            lines[line_index] = rewrite;
+            lines.drain(line_index + 1..=line_index + 3);
+            upper = upper.saturating_sub(3).min(lines.len());
+            let line = line_index + 1;
+            let id = format!("option-match-context-propagation:{}:{line}", rel.display());
+            finding_ids.push(id.clone());
+            findings.push(HardeningFinding {
+                id,
+                title: "Collapse Option match into Context boundary".to_string(),
+                description: "Rewrite a simple Option match error boundary to anyhow Context so the function keeps the same failure semantics with a smaller control-flow surface.".to_string(),
+                file: rel.to_path_buf(),
+                line,
+                strategy: HardeningStrategy::OptionMatchContextPropagation,
+                patchable: true,
+            });
+            line_index += 1;
+        }
+    }
+}
+
+fn option_match_context_rewrite(lines: &[String], line_index: usize) -> Option<String> {
+    let first = lines.get(line_index)?;
+    let second = lines.get(line_index + 1)?;
+    let third = lines.get(line_index + 2)?;
+    let fourth = lines.get(line_index + 3)?;
+
+    let first_trimmed = first.trim();
+    let rest = first_trimmed.strip_prefix("let ")?;
+    let (binding, match_expr) = rest.split_once(" = match ")?;
+    let expr = match_expr.strip_suffix('{')?.trim();
+    if !is_simple_binding(binding.trim()) || !is_safe_match_expr(expr) {
+        return None;
+    }
+
+    let second_trimmed = second.trim().trim_end_matches(',');
+    let some = second_trimmed.strip_prefix("Some(")?;
+    let (some_binding, some_rhs) = some.split_once(") => ")?;
+    if !is_simple_binding(some_binding.trim()) || some_binding.trim() != some_rhs.trim() {
+        return None;
+    }
+
+    let third_trimmed = third.trim().trim_end_matches(',');
+    let message = third_trimmed
+        .strip_prefix("None => return Err(anyhow::anyhow!(\"")
+        .and_then(|tail| tail.strip_suffix("\"))"))
+        .or_else(|| {
+            third_trimmed
+                .strip_prefix("None => return Err(anyhow!(\"")
+                .and_then(|tail| tail.strip_suffix("\"))"))
+        })?;
+    if message.is_empty() || message.contains('\\') || message.contains('"') {
+        return None;
+    }
+
+    if fourth.trim() != "};" {
+        return None;
+    }
+
+    let indent = first
+        .chars()
+        .take_while(|ch| ch.is_whitespace())
+        .collect::<String>();
+    Some(format!(
+        "{indent}let {} = {}.context(\"{}\")?;",
+        binding.trim(),
+        expr,
+        escape_string(message)
+    ))
+}
+
+fn is_simple_binding(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn is_safe_match_expr(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains('{')
+        && !value.contains(';')
+        && !value.contains("match ")
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '(' | ')' | '&' | ' '))
 }
 
 fn apply_repeated_string_literal_const_recipe(
@@ -1580,6 +1700,60 @@ pub fn load(path: &str) -> anyhow::Result<String> {
             .finding_ids
             .iter()
             .any(|id| id.contains("option-context-propagation")));
+        assert!(syn::parse_file(&change.new_content).is_ok());
+    }
+
+    #[test]
+    fn tier3_rewrites_option_match_to_context_when_hardened() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"pub fn load(value: Option<String>) -> anyhow::Result<String> {
+    let value = match value {
+        Some(found) => found,
+        None => return Err(anyhow::anyhow!("missing value")),
+    };
+    Ok(value)
+}
+"#,
+        )
+        .unwrap();
+
+        let covered = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 3,
+                evidence_depth: HardeningEvidenceDepth::Covered,
+            },
+        )
+        .unwrap();
+        assert!(covered.changes.is_empty());
+
+        let hardened = analyze_hardening(
+            dir.path(),
+            HardeningAnalyzeConfig {
+                target: None,
+                max_files: 10,
+                max_recipe_tier: 3,
+                evidence_depth: HardeningEvidenceDepth::Hardened,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(hardened.changes.len(), 1);
+        let change = &hardened.changes[0];
+        assert!(change.new_content.contains("use anyhow::Context;"));
+        assert!(change
+            .new_content
+            .contains("let value = value.context(\"missing value\")?;"));
+        assert!(change
+            .finding_ids
+            .iter()
+            .any(|id| id.contains("option-match-context-propagation")));
         assert!(syn::parse_file(&change.new_content).is_ok());
     }
 

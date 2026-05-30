@@ -308,9 +308,8 @@ Evidence grades control proportional aggression:
 - `Covered`: Tier 2 structural mechanical recipes may execute when the caller
   explicitly requests Tier 2.
 - `Hardened` and `Proven`: unlock deeper clone-pressure and long-function
-  review findings, lower structural planning thresholds, and prepare the queue
-  for future Tier 3 semantic recipes once those recipes have dedicated
-  validation contracts.
+  review findings, lower structural planning thresholds, and allow narrow Tier
+  3 guarded semantic recipes with dedicated validation contracts.
 
 The v1.0 beta executable Tier 1 recipe set is intentionally mechanical:
 
@@ -333,3 +332,14 @@ The v1.0 beta executable Tier 2 recipes are deliberately narrow:
 They only appear in the executable queue when a measured evidence artifact
 reaches `Covered`, the caller requests Tier 2, and the candidate still passes
 plan freshness, isolated validation, final validation, and rollback gates.
+
+The v1.6 beta Tier 3 executable recipe is narrower still:
+
+- simple `match Option` error boundaries collapse into `anyhow::Context`
+  inside `anyhow::Result` functions
+
+It only appears in autonomous executable queues with `Hardened` or `Proven`
+evidence and an explicit Tier 3 request. Humans can also inspect it through
+`improve --tier 3`, but it still passes through the same hardening transaction,
+parse validation, isolated validation, final validation, behavior evals when
+configured, and rollback gates.

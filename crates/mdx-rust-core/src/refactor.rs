@@ -572,6 +572,7 @@ pub enum RefactorRecipe {
     LenCheckIsEmpty,
     LongFunctionReview,
     MustUsePublicReturn,
+    OptionMatchContextPropagation,
     OptionContextPropagation,
     RepeatedStringLiteralConst,
     SecurityBoundaryReview,
@@ -802,6 +803,16 @@ pub fn recipe_catalog() -> RecipeCatalog {
                 RefactorRiskLevel::Medium,
                 "plan only",
                 "Identify clone-heavy code that needs semantic review before rewriting.",
+            ),
+            spec!(
+                "option-match-context-propagation",
+                RefactorRecipe::OptionMatchContextPropagation,
+                RecipeTier::Tier3,
+                EvidenceGrade::Hardened,
+                true,
+                RefactorRiskLevel::Low,
+                "hardening transaction with hardened evidence",
+                "Collapse simple Option match error boundaries into anyhow Context under hardened evidence gates.",
             ),
             spec!(
                 "contract-coverage-review",
@@ -2571,6 +2582,9 @@ fn required_evidence_for_hardening_strategy(
         | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => {
             EvidenceGrade::Covered
         }
+        mdx_rust_analysis::HardeningStrategy::OptionMatchContextPropagation => {
+            EvidenceGrade::Hardened
+        }
         mdx_rust_analysis::HardeningStrategy::ClonePressureReview
         | mdx_rust_analysis::HardeningStrategy::LongFunctionReview => EvidenceGrade::Hardened,
         mdx_rust_analysis::HardeningStrategy::EnvAccessReview
@@ -2596,6 +2610,9 @@ fn recipe_for_hardening_strategy(
         mdx_rust_analysis::HardeningStrategy::LenCheckIsEmpty => RefactorRecipe::LenCheckIsEmpty,
         mdx_rust_analysis::HardeningStrategy::OptionContextPropagation => {
             RefactorRecipe::OptionContextPropagation
+        }
+        mdx_rust_analysis::HardeningStrategy::OptionMatchContextPropagation => {
+            RefactorRecipe::OptionMatchContextPropagation
         }
         mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn => {
             RefactorRecipe::MustUsePublicReturn
@@ -3329,6 +3346,7 @@ fn is_supported_mechanical_recipe(recipe: &RefactorRecipe) -> bool {
             | RefactorRecipe::IteratorCloned
             | RefactorRecipe::LenCheckIsEmpty
             | RefactorRecipe::MustUsePublicReturn
+            | RefactorRecipe::OptionMatchContextPropagation
             | RefactorRecipe::OptionContextPropagation
             | RefactorRecipe::RepeatedStringLiteralConst
     )

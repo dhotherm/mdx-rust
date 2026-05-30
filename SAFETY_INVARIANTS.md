@@ -73,8 +73,9 @@ the user's source tree.
 - `mdx-rust apply-plan` must reject stale source snapshots before executing a
   candidate.
 - `mdx-rust apply-plan` may execute only candidates marked as executable.
-  Today that means supported Tier 1 and coverage-gated Tier 2 hardening
-  candidates routed through `mdx-rust improve`.
+  Today that means supported Tier 1, coverage-gated Tier 2, and
+  hardened-evidence Tier 3 hardening candidates routed through
+  `mdx-rust improve`.
 - `mdx-rust apply-plan` must re-run the appropriate safety pipeline or
   hardening transaction. It must not trust stale plan evidence.
 - `mdx-rust apply-plan --all` may execute a queue only for candidates already
@@ -112,9 +113,10 @@ allowed to move quickly, but it must not create a second mutation path.
   file-local constant, `len() == 0` to `is_empty()` cleanup, and simple
   Option boundary context propagation inside `anyhow::Result` functions.
 - v1.0 beta `Hardened` and `Proven` evidence may unlock deeper analysis findings,
-  such as clone-pressure review and long-function review. These findings are
-  planning evidence only unless a dedicated executable recipe marks them
-  executable and routes them through the same hardening transaction path.
+  such as clone-pressure review and long-function review, plus narrow Tier 3
+  guarded semantic recipes. Findings are planning evidence only unless a
+  dedicated executable recipe marks them executable and routes them through the
+  same hardening transaction path.
 - v1.0 beta evidence artifacts may include file/function profiles. Candidate
   evidence context is explanatory and may only narrow or justify a queue; it
   must not override the plan evidence grade or required recipe evidence.
@@ -220,6 +222,11 @@ allowed to move quickly, but it must not create a second mutation path.
 - Evidence grades are execution gates, not proof by themselves. A `Compiled`
   grade means Tier 1 candidates may attempt the compile/clippy-gated hardening
   path; it does not mean a candidate has already passed validation.
+- A `Hardened` or `Proven` grade may unlock narrow Tier 3 guarded semantic
+  recipes. Tier 3 recipes are not a bypass around the hardening transaction:
+  they must be parse-validated, evidence gated for autonomous planning, and
+  rejected or rolled back through the same isolated validation, behavior eval,
+  final validation, provenance, and rollback path as Tier 1 and Tier 2 recipes.
 - Measured evidence artifacts can raise the visible grade, but they never
   replace per-candidate isolated validation, final validation, rollback, or
   behavior eval gates.

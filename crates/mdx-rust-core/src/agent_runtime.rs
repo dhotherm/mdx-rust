@@ -313,6 +313,7 @@ Runtime `evolve` calls with `apply=true` must also include
 - Review only: `mdx-rust --json evolve <target> --budget 10m --tier 2 --min-evidence covered`
 - Apply Tier 1: `mdx-rust --json evolve <target> --budget 10m --tier 1 --apply`
 - Apply Tier 2: `mdx-rust --json evidence <target> --include-coverage`, then `mdx-rust --json evolve <target> --budget 10m --tier 2 --min-evidence covered --apply`
+- Apply Tier 3: require Hardened evidence, then `mdx-rust --json evolve <target> --budget 10m --tier 3 --min-evidence hardened --apply`
 - Local HTTP: `mdx-rust serve --bind 127.0.0.1:3799 --token <token>`
 
 ## Reporting

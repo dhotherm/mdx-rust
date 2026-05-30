@@ -440,7 +440,8 @@ fn category_for_finding(finding: &HardeningFinding) -> PolicyCategory {
         | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => {
             PolicyCategory::General
         }
-        mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation => {
+        mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation
+        | mdx_rust_analysis::HardeningStrategy::OptionMatchContextPropagation => {
             PolicyCategory::ErrorContext
         }
         mdx_rust_analysis::HardeningStrategy::ClonePressureReview
@@ -479,6 +480,7 @@ fn summarize_risk(findings: &[HardeningFinding]) -> HardeningRiskSummary {
             | mdx_rust_analysis::HardeningStrategy::IteratorCloned
             | mdx_rust_analysis::HardeningStrategy::MechanicalTier1Cleanup
             | mdx_rust_analysis::HardeningStrategy::MustUsePublicReturn
+            | mdx_rust_analysis::HardeningStrategy::OptionMatchContextPropagation
             | mdx_rust_analysis::HardeningStrategy::OptionContextPropagation
             | mdx_rust_analysis::HardeningStrategy::RepeatedStringLiteralConst => summary.low += 1,
             mdx_rust_analysis::HardeningStrategy::ErrorContextPropagation

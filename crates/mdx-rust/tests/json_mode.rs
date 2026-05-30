@@ -1286,6 +1286,63 @@ anyhow = "1"
 }
 
 #[test]
+fn improve_tier3_json_mode_applies_guarded_semantic_option_match() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-improve-tier3-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub fn load(value: Option<String>) -> anyhow::Result<String> {
+    let value = match value {
+        Some(found) => found,
+        None => return Err(anyhow::anyhow!("missing value")),
+    };
+    Ok(value)
+}
+"#,
+    )
+    .unwrap();
+
+    let value = assert_machine_pure_json_in(
+        &[
+            "improve",
+            "src/lib.rs",
+            "--tier",
+            "3",
+            "--apply",
+            "--timeout-seconds",
+            "90",
+            "--json",
+        ],
+        dir.path(),
+    );
+
+    assert_eq!(value["outcome"]["status"], "Applied");
+    assert!(value["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .any(|finding| finding["strategy"] == "OptionMatchContextPropagation"));
+    let after = std::fs::read_to_string(&lib).unwrap();
+    assert!(after.contains("use anyhow::Context;"));
+    assert!(after.contains("let value = value.context(\"missing value\")?;"));
+    assert!(!after.contains("match value"));
+}
+
+#[test]
 fn plan_json_mode_writes_refactor_plan_without_applying() {
     let dir = tempdir().expect("temp dir");
     std::fs::write(
@@ -1347,6 +1404,81 @@ anyhow = "1"
         .any(|action| action
             .as_str()
             .is_some_and(|action| action.contains("apply-plan"))));
+}
+
+#[test]
+fn plan_json_mode_unlocks_tier3_semantic_recipe_only_with_hardened_evidence() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"[package]
+name = "json-plan-tier3-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+"#,
+    )
+    .unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("lib.rs"),
+        r#"pub fn load(value: Option<String>) -> anyhow::Result<String> {
+    let value = match value {
+        Some(found) => found,
+        None => return Err(anyhow::anyhow!("missing value")),
+    };
+    Ok(value)
+}
+"#,
+    )
+    .unwrap();
+
+    let low_evidence_plan =
+        assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
+    assert!(!low_evidence_plan["candidates"]
+        .as_array()
+        .expect("candidates")
+        .iter()
+        .any(|candidate| candidate["recipe"] == "OptionMatchContextPropagation"));
+
+    let evidence_dir = dir.path().join(".mdx-rust/evidence");
+    std::fs::create_dir_all(&evidence_dir).unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::write(
+        evidence_dir.join("evidence-hardened.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "schema_version": "1.0",
+            "run_id": "fixture-hardened",
+            "root": root.display().to_string(),
+            "target": "src/lib.rs",
+            "grade": "Hardened",
+            "analysis_depth": "Structural",
+            "metrics": [],
+            "file_profiles": [],
+            "commands": [],
+            "unlocked_recipe_tiers": ["tier1", "tier2", "tier3"],
+            "unlock_suggestions": [],
+            "note": "fixture evidence",
+            "artifact_path": null
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let hardened_plan = assert_machine_pure_json_in(&["plan", "src/lib.rs", "--json"], dir.path());
+    let candidate = hardened_plan["candidates"]
+        .as_array()
+        .expect("candidates")
+        .iter()
+        .find(|candidate| candidate["recipe"] == "OptionMatchContextPropagation")
+        .expect("tier3 candidate");
+    assert_eq!(candidate["tier"], "Tier3");
+    assert_eq!(candidate["required_evidence"], "Hardened");
+    assert_eq!(candidate["status"], "ApplyViaImprove");
+    assert_eq!(candidate["autonomy"]["decision"], "Allowed");
 }
 
 #[test]

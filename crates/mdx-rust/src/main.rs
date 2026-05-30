@@ -267,8 +267,8 @@ enum Commands {
         #[arg(long, default_value = "100")]
         max_files: usize,
 
-        /// Maximum recipe tier to analyze and execute: 1 or 2
-        #[arg(long, default_value = "1", value_parser = ["1", "2", "tier1", "tier2"])]
+        /// Maximum recipe tier to analyze and execute: 1, 2, or 3
+        #[arg(long, default_value = "1", value_parser = ["1", "2", "3", "tier1", "tier2", "tier3"])]
         tier: String,
 
         /// Validation timeout in seconds

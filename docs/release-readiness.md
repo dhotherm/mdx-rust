@@ -189,6 +189,12 @@ repeated private string literal extraction and `len() == 0` to `is_empty()`
 candidates, plus Option boundary context propagation, become executable only
 when the caller requests Tier 2 and `--min-evidence covered`.
 
+The Tier 3 smoke should include a measured `Hardened` fixture and prove that a
+simple Option match context propagation candidate becomes executable only when
+the caller requests Tier 3 and `--min-evidence hardened`. Direct
+`improve --tier 3` smoke may review or apply the same recipe, but it must still
+validate and roll back through the hardening transaction path.
+
 The runtime smoke should prove `mdx-rust mcp --stdio` can list tools, can run a
 read-only tool, and rejects mutation-capable `evolve` calls with `apply=true`
 unless mutation confirmation is present. `mdx-rust serve` must refuse non-local

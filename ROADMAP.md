@@ -216,7 +216,7 @@ Evidence fusion.
 - No new mutation path is added; fusion surfaces are evidence and planning
   artifacts only.
 
-## v1.5 beta Focus - In Progress
+## v1.5 beta Focus - Done
 
 Measured performance harness.
 
@@ -229,6 +229,20 @@ Measured performance harness.
   collection before performance-oriented refactors.
 - Benchmark runs are read-only measurement evidence. They never grant mutation
   authority by themselves.
+
+## v1.6 beta Focus - In Progress
+
+Guarded semantic refactors.
+
+- Add the first executable Tier 3 semantic recipe:
+  `option-match-context-propagation`.
+- Require Hardened evidence for autonomous planning of this recipe, while still
+  allowing explicit human `improve --tier 3` review or apply.
+- Route the recipe through the existing hardening transaction, parse validation,
+  isolated validation, optional behavior eval, final validation, and rollback
+  path.
+- Keep broad extract-function, split-module, ownership-changing, and public API
+  refactors plan-first.
 
 ## Current Non-Goals
 
