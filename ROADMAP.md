@@ -145,7 +145,7 @@ Local agent runtime and candidate-evidence autonomy.
   through evolve, autopilot, apply-plan, hardening transactions, validation,
   and rollback.
 
-## v1.1 beta Focus - In Progress
+## v1.1 beta Focus - Done
 
 Real-repo adoption and signal quality.
 
@@ -171,7 +171,7 @@ Real-repo adoption and signal quality.
   are the supported automation surface; Rust library APIs remain unstable
   during beta.
 
-## v1.2 beta Focus - In Progress
+## v1.2 beta Focus - Done
 
 Lightweight contracts and spec-driven agent workflows.
 
@@ -187,7 +187,7 @@ Lightweight contracts and spec-driven agent workflows.
   but mutation stays behind the existing evidence, plan, validation, and
   rollback gates.
 
-## v1.3 beta Focus - In Progress
+## v1.3 beta Focus - Done
 
 Performance-aware autonomous planning.
 
@@ -230,7 +230,7 @@ Measured performance harness.
 - Benchmark runs are read-only measurement evidence. They never grant mutation
   authority by themselves.
 
-## v1.6 beta Focus - In Progress
+## v1.6 beta Focus - Done
 
 Guarded semantic refactors.
 

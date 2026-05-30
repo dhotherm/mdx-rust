@@ -21,7 +21,7 @@ tokio.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 toml.workspace = true
-mdx-rust-analysis = { path = "../mdx-rust-analysis", version = "1.0.0" }
+mdx-rust-analysis = { path = "../mdx-rust-analysis", version = "1.6.0" }
 rig.workspace = true
 
 [dev-dependencies]

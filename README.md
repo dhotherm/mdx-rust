@@ -109,8 +109,8 @@ Today it supports:
 
 ## What v1.0 beta Adds
 
-`v1.0 beta` turns the v0.9 runtime into a firmer agent contract. The package is
-versioned as `1.0.0`, but the project remains explicitly beta while the CLI and
+`v1 beta` turns the v0.9 runtime into a firmer agent contract. The package is
+currently versioned as `1.6.0`, but the project remains explicitly beta while the CLI and
 JSON artifacts get real-world use.
 
 Evidence is no longer only a repo-level grade: it profiles files and functions,

@@ -2,6 +2,51 @@
 
 All notable public changes to `mdx-rust` are documented here.
 
+## 1.6.0 - 2026-05-30
+
+v1 beta autonomous-evolution release.
+
+This release keeps the project in beta while adding the v1.1 through v1.6
+adoption, contract, performance, fusion, measurement, and guarded semantic
+refactor work.
+
+### Added
+
+- `mdx-rust repo-map` and `mdx-rust noise-filter` for agent-oriented context
+  loading and generated/build noise avoidance.
+- `mdx-rust contracts` for lightweight precondition, postcondition, invariant,
+  safety, panic, and assertion-signal scanning.
+- `mdx-rust perf` for read-only static performance pressure scanning.
+- `mdx-rust brief` for a fused agent intake artifact combining repo context,
+  noise filters, contract posture, performance posture, scorecard, and next
+  commands.
+- `mdx-rust benchmark` for versioned command-based benchmark specs with
+  warmups, measured runs, timeouts, captured output, parsed metrics, summaries,
+  schemas, and explainable artifacts.
+- Hardened-evidence Tier 3 `option-match-context-propagation`, a narrow
+  guarded semantic recipe that collapses simple `match Option` error
+  boundaries into `anyhow::Context`.
+
+### Changed
+
+- Workspace package version is now `1.6.0`.
+- Maps, plans, scorecards, agent-ready reports, agent contracts, runtime
+  manifests, and agent packs now advertise the new context, contract,
+  performance, benchmark, brief, and Tier 3 surfaces.
+- Contract gaps and performance findings now flow into review-only plan
+  candidates, so agents can prioritize work without gaining mutation authority.
+- Tier 3 guarded semantic recipes remain behind Hardened evidence for
+  autonomous planning and still route through the hardening transaction,
+  isolated validation, optional behavior eval, final validation, provenance,
+  and rollback path.
+
+### Known Limitations
+
+- v1.6.0 remains explicitly beta.
+- Broad extract-function, split-module, ownership-changing, public API, and
+  MIR-backed refactors remain plan-first or future work.
+- Benchmark results are measured evidence, not mutation approval.
+
 ## 1.0.0 - 2026-05-24
 
 v1 beta trust-contract release.
