@@ -26,7 +26,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 thiserror = "1"
 tempfile = "3"
-toml = "0.8"
+toml = "1.1"
 ignore = "0.4"
 proptest = "1"
 rig = { package = "rig-core", version = "0.10" }
