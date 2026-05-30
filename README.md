@@ -63,6 +63,10 @@ Today it supports:
   generic coding agent instruction files.
 - `repo-map` and `noise-filter` orientation artifacts so agents can load the
   right context and avoid generated/build noise before planning.
+- `contracts` read-only scans for documented preconditions, postconditions,
+  invariants, safety notes, panic docs, and assertion hints.
+- `perf` read-only scans for static performance pressure such as blocking work
+  in async functions, clone pressure, and allocations in loops.
 - `recipes` machine-readable recipe catalog with tier, evidence, execution, and
   mutation-path contracts.
 - `explain` artifact summaries so coding agents can inspect saved JSON reports
@@ -220,6 +224,35 @@ These surfaces are read-only orientation aids. They do not approve mutation,
 weaken evidence gates, or replace scorecards, plans, validation, rollback, or
 human approval for `--apply`.
 
+## v1.2 beta Direction
+
+The following beta slice brings lightweight spec-driven development into the
+agent workflow. Instead of trusting an LLM to infer intended behavior from code
+alone, `mdx-rust contracts` makes design intent visible and machine-readable.
+
+- Run `mdx-rust contracts <target> --json` to scan Rust functions for
+  `Requires:`, `Ensures:`, `Invariant:`, `Safety:`, and `Panics:` docs plus
+  nearby assertion hints.
+- Public functions with no visible contract docs or assertion hints are reported
+  as recommendations, not automatic rewrites.
+- Contract scans are design evidence. They can guide tests, reviews, policies,
+  and future property-test work, but they do not replace validation or approve
+  mutation.
+
+## v1.3 beta Direction
+
+The performance lane starts with static signals rather than automatic
+micro-optimizing. `mdx-rust perf` gives agents a prioritized map of likely
+performance pressure before they propose risky rewrites.
+
+- Run `mdx-rust perf <target> --json` to find blocking operations inside async
+  functions, clone pressure, allocations in loops, and synchronous lock hints.
+- Findings are prioritization evidence only. They should guide benchmark work,
+  evidence collection, and plan-first refactors.
+- Performance findings do not make any candidate executable by themselves.
+  Mutation still requires the normal plan, evidence, validation, behavior eval,
+  and rollback gates.
+
 ## Safety Model
 
 The acceptance contract is the center of the project:
@@ -302,6 +335,8 @@ A safe agent workflow for a normal Rust backend looks like this:
 ```bash
 mdx-rust --json repo-map src/service
 mdx-rust --json noise-filter
+mdx-rust --json contracts src/service
+mdx-rust --json perf src/service
 mdx-rust --json evidence src/service --include-coverage
 mdx-rust --json map src/service
 mdx-rust --json plan src/service
@@ -330,8 +365,8 @@ protection.
 
 For runtime callers, the safe integration pattern is:
 
-1. Discover: call `agent-contract`, `runtime`, `repo-map`, `noise-filter`, and
-   `recipes`.
+1. Discover: call `agent-contract`, `runtime`, `repo-map`, `noise-filter`,
+   `contracts`, `perf`, and `recipes`.
 2. Measure: call `evidence` for the target, adding coverage or mutation flags
    only when those tools are installed and the budget allows it.
 3. Brief: call `scorecard` or `map` to understand quality, security, evidence,

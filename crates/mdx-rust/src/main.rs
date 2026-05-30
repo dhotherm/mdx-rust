@@ -98,6 +98,26 @@ enum Commands {
         write: bool,
     },
 
+    /// Scan Rust functions for lightweight contract and invariant coverage
+    Contracts {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Maximum Rust files to scan
+        #[arg(long, default_value = "250")]
+        max_files: usize,
+    },
+
+    /// Scan Rust code for static performance pressure signals
+    Perf {
+        /// File or directory to inspect (defaults to current workspace)
+        target: Option<String>,
+
+        /// Maximum Rust files to scan
+        #[arg(long, default_value = "250")]
+        max_files: usize,
+    },
+
     /// Run the local stdio agent tool protocol
     Mcp {
         /// Use stdin/stdout line-delimited JSON transport
@@ -415,8 +435,8 @@ enum Commands {
 
     /// Print JSON Schema for machine-readable mdx-rust artifacts
     Schema {
-        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, repo-map, noise-filter, agent-ready-report, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
-        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "repo-map", "noise-filter", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
+        /// Schema to print: agent-contract, agent-runtime-manifest, agent-pack, repo-map, noise-filter, contract-run, performance-run, agent-ready-report, artifact-explanation, audit-packet, candidate, optimization-run, hook-decision, trace-event, hardening-run, hardening-finding, behavior-eval-report, project-policy, evidence-run, recipe-catalog, evolution-scorecard, refactor-plan, refactor-apply-run, refactor-batch-apply-run, codebase-map, autopilot-run
+        #[arg(value_parser = ["agent-contract", "agent-runtime-manifest", "agent-pack", "repo-map", "noise-filter", "contract-run", "performance-run", "agent-ready-report", "artifact-explanation", "audit-packet", "candidate", "optimization-run", "hook-decision", "trace-event", "hardening-run", "hardening-finding", "behavior-eval-report", "project-policy", "evidence-run", "recipe-catalog", "evolution-scorecard", "refactor-plan", "refactor-apply-run", "refactor-batch-apply-run", "codebase-map", "autopilot-run"])]
         kind: String,
     },
 
@@ -497,6 +517,18 @@ fn main() {
         Commands::NoiseFilter { write } => {
             if let Err(e) = cmd_noise_filter(write, cli.json) {
                 emit_error(cli.json, "noise-filter", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Contracts { target, max_files } => {
+            if let Err(e) = cmd_contracts(target.as_deref(), max_files, cli.json) {
+                emit_error(cli.json, "contracts", &e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Perf { target, max_files } => {
+            if let Err(e) = cmd_perf(target.as_deref(), max_files, cli.json) {
+                emit_error(cli.json, "perf", &e);
                 std::process::exit(1);
             }
         }
@@ -1139,6 +1171,76 @@ fn cmd_noise_filter(write: bool, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cmd_contracts(target: Option<&str>, max_files: usize, json: bool) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let run = mdx_rust_core::scan_contracts(
+        &cwd,
+        &mdx_rust_core::ContractScanConfig {
+            target: target.map(std::path::PathBuf::from),
+            max_files,
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&run)?);
+        return Ok(());
+    }
+
+    println!("📐 mdx-rust contracts");
+    println!("   Target: {}", run.target.display());
+    println!(
+        "   Functions: {} | public: {} | missing public contracts: {}",
+        run.summary.function_count,
+        run.summary.public_function_count,
+        run.summary.public_functions_missing_contracts
+    );
+    println!("   Recommendations:");
+    for recommendation in run.recommendations.iter().take(12) {
+        println!(
+            "   - {}:{} [{}] {}",
+            recommendation.file.display(),
+            recommendation.line,
+            recommendation.severity,
+            recommendation.message
+        );
+    }
+    Ok(())
+}
+
+fn cmd_perf(target: Option<&str>, max_files: usize, json: bool) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let run = mdx_rust_core::scan_performance(
+        &cwd,
+        &mdx_rust_core::PerformanceScanConfig {
+            target: target.map(std::path::PathBuf::from),
+            max_files,
+        },
+    )?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&run)?);
+        return Ok(());
+    }
+
+    println!("⚡ mdx-rust performance signals");
+    println!("   Target: {}", run.target.display());
+    println!(
+        "   Findings: {} | high: {} | medium: {} | low: {}",
+        run.summary.finding_count, run.summary.high, run.summary.medium, run.summary.low
+    );
+    for finding in run.findings.iter().take(12) {
+        println!(
+            "   - {}:{} [{}] {} - {}",
+            finding.file.display(),
+            finding.line,
+            finding.severity,
+            finding.category,
+            finding.title
+        );
+    }
+    Ok(())
+}
+
 fn cmd_mcp(stdio: bool, describe: bool, json: bool) -> anyhow::Result<()> {
     if describe || !stdio {
         return cmd_runtime(json);
@@ -1268,6 +1370,20 @@ fn runtime_tool_call(params: &serde_json::Value) -> anyhow::Result<serde_json::V
         "noise-filter" => Ok(serde_json::to_value(mdx_rust_core::build_noise_filter(
             &cwd,
         ))?),
+        "contracts" => Ok(serde_json::to_value(mdx_rust_core::scan_contracts(
+            &cwd,
+            &mdx_rust_core::ContractScanConfig {
+                target: json_path_arg(&args, "target"),
+                max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
+            },
+        )?)?),
+        "perf" => Ok(serde_json::to_value(mdx_rust_core::scan_performance(
+            &cwd,
+            &mdx_rust_core::PerformanceScanConfig {
+                target: json_path_arg(&args, "target"),
+                max_files: json_usize_arg(&args, "max_files").unwrap_or(250),
+            },
+        )?)?),
         "scorecard" => Ok(serde_json::to_value(
             mdx_rust_core::build_evolution_scorecard(
                 &cwd,
@@ -2743,6 +2859,10 @@ fn cmd_schema(kind: &str, json: bool) -> anyhow::Result<()> {
         "agent-pack" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentPack))?,
         "repo-map" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::RepoMap))?,
         "noise-filter" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::NoiseFilter))?,
+        "contract-run" => serde_json::to_value(schemars::schema_for!(mdx_rust_core::ContractRun))?,
+        "performance-run" => {
+            serde_json::to_value(schemars::schema_for!(mdx_rust_core::PerformanceRun))?
+        }
         "agent-ready-report" => {
             serde_json::to_value(schemars::schema_for!(mdx_rust_core::AgentReadyReport))?
         }

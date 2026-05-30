@@ -156,6 +156,22 @@ fn runtime_tools() -> Vec<AgentRuntimeTool> {
             "noise-filter",
         ),
         runtime_tool(
+            "contracts",
+            "Scan Rust functions for lightweight contract coverage.",
+            true,
+            false,
+            "contracts-request",
+            "contract-run",
+        ),
+        runtime_tool(
+            "perf",
+            "Scan Rust code for static performance pressure.",
+            true,
+            false,
+            "perf-request",
+            "performance-run",
+        ),
+        runtime_tool(
             "scorecard",
             "Build a single target briefing for external agents.",
             true,
@@ -256,8 +272,10 @@ refactor, improve quality, or let an agent make autonomous changes.
 
 1. Run `mdx-rust --json agent-contract`.
 2. Run `mdx-rust --json repo-map <target>` and respect its `noise_filter`.
-3. Run `mdx-rust --json scorecard <target>`.
-4. Inspect `readiness`, `next_commands`, `security`, and candidate autonomy decisions.
+3. Run `mdx-rust --json contracts <target>` when changing public behavior.
+4. Run `mdx-rust --json perf <target>` before performance-oriented refactors.
+5. Run `mdx-rust --json scorecard <target>`.
+6. Inspect `readiness`, `next_commands`, `security`, and candidate autonomy decisions.
 
 ## Context Cascade
 

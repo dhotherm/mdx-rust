@@ -24,6 +24,8 @@ pub mod artifact;
 #[doc(hidden)]
 pub mod config;
 #[doc(hidden)]
+pub mod contracts;
+#[doc(hidden)]
 pub mod eval;
 #[doc(hidden)]
 pub mod evidence;
@@ -37,6 +39,8 @@ pub mod ledger;
 pub mod llm;
 #[doc(hidden)]
 pub mod optimizer;
+#[doc(hidden)]
+pub mod performance;
 #[doc(hidden)]
 pub mod policy;
 #[doc(hidden)]
@@ -65,6 +69,11 @@ pub use agent_runtime::{
 pub use artifact::{explain_artifact, ArtifactExplanation, ArtifactKind};
 /// Configuration loading and defaults used by the CLI.
 pub use config::Config;
+/// Lightweight contract scanning for spec-driven Rust workflows. Unstable during the v1 beta.
+pub use contracts::{
+    scan_contracts, ContractFunction, ContractGrade, ContractRecommendation, ContractRun,
+    ContractScanConfig, ContractSummary,
+};
 /// Dataset and scorer metadata used by optimizer reports.
 pub use eval::{
     run_behavior_evals, BehaviorCommand, BehaviorCommandRecord, BehaviorEvalReport,
@@ -94,6 +103,10 @@ pub use ledger::{
 pub use optimizer::{
     mechanical_score, run_optimization, AcceptedEditSummary, AuditPacket, AuditProvenance,
     Candidate, EditStrategy, ModelProvenance, OptimizationRun, OptimizeConfig, ScoreProvenance,
+};
+/// Read-only performance signal scanning. Unstable during the v1 beta.
+pub use performance::{
+    scan_performance, PerformanceFinding, PerformanceRun, PerformanceScanConfig, PerformanceSummary,
 };
 /// Structured project policy records used by v0.4 hardening reports.
 pub use policy::{load_project_policy, PolicyCategory, PolicyRule, PolicySeverity, ProjectPolicy};

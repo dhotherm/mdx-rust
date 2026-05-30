@@ -138,6 +138,14 @@ fn schema_json_mode_outputs_machine_parseable_schema() {
     assert_eq!(noise_filter["title"], "NoiseFilter");
     assert!(noise_filter["properties"]["rules"].is_object());
 
+    let contract_run = assert_machine_pure_json(&["schema", "contract-run", "--json"]);
+    assert_eq!(contract_run["title"], "ContractRun");
+    assert!(contract_run["properties"]["functions"].is_object());
+
+    let performance_run = assert_machine_pure_json(&["schema", "performance-run", "--json"]);
+    assert_eq!(performance_run["title"], "PerformanceRun");
+    assert!(performance_run["properties"]["findings"].is_object());
+
     let agent_ready = assert_machine_pure_json(&["schema", "agent-ready-report", "--json"]);
     assert_eq!(agent_ready["title"], "AgentReadyReport");
 
@@ -274,6 +282,21 @@ fn agent_contract_json_mode_is_machine_parseable() {
         .as_array()
         .expect("commands array")
         .iter()
+        .any(
+            |command| command["name"] == "contracts" && command["primary_schema"] == "contract-run"
+        ));
+    assert!(
+        value["commands"]
+            .as_array()
+            .expect("commands array")
+            .iter()
+            .any(|command| command["name"] == "perf"
+                && command["primary_schema"] == "performance-run")
+    );
+    assert!(value["commands"]
+        .as_array()
+        .expect("commands array")
+        .iter()
         .any(|command| command["name"] == "explain"
             && command["primary_schema"] == "artifact-explanation"));
     assert!(value["safety_rules"]
@@ -311,6 +334,16 @@ fn runtime_and_agent_pack_json_mode_are_machine_parseable() {
         .expect("tools")
         .iter()
         .any(|tool| tool["name"] == "noise-filter" && tool["read_only"] == true));
+    assert!(runtime["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .any(|tool| tool["name"] == "contracts" && tool["read_only"] == true));
+    assert!(runtime["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .any(|tool| tool["name"] == "perf" && tool["read_only"] == true));
     let evolve_tool = runtime["tools"]
         .as_array()
         .expect("tools")
@@ -433,6 +466,89 @@ members = ["crates/app"]
         .any(|warning| warning
             .as_str()
             .is_some_and(|warning| warning.contains("target is a file"))));
+}
+
+#[test]
+fn contracts_json_mode_surfaces_spec_gaps_without_mutating() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    let lib = dir.path().join("src/lib.rs");
+    std::fs::write(
+        &lib,
+        r#"/// Requires: input is non-empty
+/// Ensures: returns trimmed content
+pub fn normalize(input: &str) -> String {
+    debug_assert!(!input.is_empty());
+    input.trim().to_string()
+}
+
+pub fn undocumented(value: usize) -> usize {
+    value + 1
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let run = assert_machine_pure_json_in(&["contracts", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(run["schema_version"], "1.0");
+    assert_eq!(run["summary"]["function_count"], 2);
+    assert_eq!(run["summary"]["public_functions_missing_contracts"], 1);
+    assert!(run["functions"]
+        .as_array()
+        .expect("functions")
+        .iter()
+        .any(|function| function["name"] == "normalize" && function["contract_grade"] == "Strong"));
+    assert!(run["recommendations"]
+        .as_array()
+        .expect("recommendations")
+        .iter()
+        .any(|recommendation| recommendation["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("undocumented"))));
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
+}
+
+#[test]
+fn perf_json_mode_surfaces_static_performance_pressure_without_mutating() {
+    let dir = tempdir().expect("temp dir");
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    let lib = dir.path().join("src/lib.rs");
+    std::fs::write(
+        &lib,
+        r#"pub async fn load() -> String {
+    let text = std::fs::read_to_string("config.toml").unwrap();
+    text
+}
+
+pub fn copy(values: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for value in values {
+        out.push(value.clone().to_string());
+    }
+    out
+}
+"#,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&lib).unwrap();
+
+    let run = assert_machine_pure_json_in(&["perf", "src/lib.rs", "--json"], dir.path());
+
+    assert_eq!(run["schema_version"], "1.0");
+    assert_eq!(run["summary"]["high"], 1);
+    assert!(run["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .any(|finding| finding["category"] == "blocking-in-async"));
+    assert!(run["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .any(|finding| finding["category"] == "clone-pressure"));
+    assert_eq!(std::fs::read_to_string(&lib).unwrap(), before);
 }
 
 #[test]

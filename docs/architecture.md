@@ -186,12 +186,14 @@ The recommended external-agent loop is:
 1. `agent-contract` and `runtime` for command and transport discovery.
 2. `repo-map` and `noise-filter` to understand the workspace, instruction
    files, crate boundaries, and default search exclusions.
-3. `recipes` to learn recipe tiers and required evidence.
-4. `evidence` to collect or refresh the target's measured grade.
-5. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
+3. `contracts` to inspect documented behavior intent and public contract gaps.
+4. `perf` to inspect static performance pressure before performance refactors.
+5. `recipes` to learn recipe tiers and required evidence.
+6. `evidence` to collect or refresh the target's measured grade.
+7. `agent-ready`, `scorecard`, or `map` for the current readiness, quality,
    security, and capability briefing.
-6. `plan` for a non-mutating candidate queue.
-7. `evolve` in review mode, or `evolve` with explicit mutation confirmation
+8. `plan` for a non-mutating candidate queue.
+9. `evolve` in review mode, or `evolve` with explicit mutation confirmation
    after a human approves autonomous execution.
 
 `mdx-rust agent-pack codex|claude|cursor|aider|goose|generic` generates
@@ -203,6 +205,16 @@ files.
 surfaces for agents working in large repositories. They are read-only unless
 `noise-filter --write` writes instruction files under `.mdx-rust/agent-pack/`.
 They do not alter planning, validation, evidence, rollback, or mutation rules.
+
+`mdx-rust contracts` is a read-only spec-oriented analysis surface. It looks for
+documented preconditions, postconditions, invariants, safety notes, panic docs,
+and assertion hints around Rust functions. Contract runs are design evidence for
+agents and reviewers. They do not prove behavior and do not approve mutation.
+
+`mdx-rust perf` is a read-only performance signal surface. It looks for static
+pressure such as blocking work in async functions, clone pressure, allocations
+in loops, and synchronous lock hints. It is prioritization evidence only and
+does not make refactors executable by itself.
 
 `mdx-rust evidence` runs bounded local commands, persists command records under
 `.mdx-rust/evidence/`, assigns an evidence grade, and records parsed metrics

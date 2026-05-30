@@ -113,6 +113,26 @@ pub fn agent_contract() -> MdxAgentContract {
                 example: "mdx-rust --json noise-filter".to_string(),
             },
             AgentCommandSpec {
+                name: "contracts".to_string(),
+                purpose:
+                    "Scan Rust functions for documented preconditions, postconditions, invariants, safety notes, panic docs, and assertion hints."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "contract-run".to_string(),
+                example: "mdx-rust --json contracts src/service".to_string(),
+            },
+            AgentCommandSpec {
+                name: "perf".to_string(),
+                purpose:
+                    "Scan Rust code for static performance pressure such as clone pressure, allocation in loops, and blocking operations in async functions."
+                        .to_string(),
+                mutates_source: false,
+                required_flags_for_mutation: Vec::new(),
+                primary_schema: "performance-run".to_string(),
+                example: "mdx-rust --json perf src/service".to_string(),
+            },
+            AgentCommandSpec {
                 name: "recipes".to_string(),
                 purpose:
                     "List recipe tiers, required evidence, and executable mutation paths."
@@ -222,6 +242,8 @@ pub fn agent_contract() -> MdxAgentContract {
                     "mdx-rust --json runtime".to_string(),
                     "mdx-rust --json repo-map <target>".to_string(),
                     "mdx-rust --json noise-filter".to_string(),
+                    "mdx-rust --json contracts <target>".to_string(),
+                    "mdx-rust --json perf <target>".to_string(),
                     "mdx-rust --json recipes".to_string(),
                     "mdx-rust --json agent-ready <target>".to_string(),
                     "mdx-rust --json scorecard <target>".to_string(),
@@ -263,6 +285,9 @@ pub fn agent_contract() -> MdxAgentContract {
         ],
         safety_rules: vec![
             "Treat repo-map and noise-filter as orientation surfaces, not proof that mutation is safe."
+                .to_string(),
+            "Treat contract scans as design evidence, not validation proof.".to_string(),
+            "Treat performance scans as prioritization evidence, not proof that a refactor is safe."
                 .to_string(),
             "Treat plan and map commands as read-only.".to_string(),
             "Respect noise-filter exclusions before default search or context loading.".to_string(),

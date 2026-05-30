@@ -175,6 +175,8 @@ mdx-rust schema agent-runtime-manifest --json
 mdx-rust schema agent-pack --json
 mdx-rust schema repo-map --json
 mdx-rust schema noise-filter --json
+mdx-rust schema contract-run --json
+mdx-rust schema performance-run --json
 mdx-rust schema agent-ready-report --json
 ```
 
@@ -219,6 +221,16 @@ instructions, directories, crate boundaries, and generated paths to inspect or
 ignore before planning. `repo-map` and `noise-filter` do not validate, approve,
 or apply source changes. `noise-filter --write` may only write instruction
 artifacts under `.mdx-rust/agent-pack/`.
+
+Contract runs are read-only spec artifacts. They record documented function
+intent and assertion hints, then recommend where public functions have no
+visible contract. They are useful planning evidence, but they are not behavior
+proofs and they do not approve source mutation.
+
+Performance runs are read-only prioritization artifacts. They record static
+performance pressure such as blocking work in async functions, clone pressure,
+allocations in loops, and synchronous lock hints. They are not benchmark
+evidence, behavior proofs, or approval to mutate source.
 
 `mdx-rust agent-ready --json` is a compact readiness envelope derived from the
 scorecard. It is not mutation evidence. It points agents at the command

@@ -171,6 +171,36 @@ Real-repo adoption and signal quality.
   are the supported automation surface; Rust library APIs remain unstable
   during beta.
 
+## v1.2 beta Focus - In Progress
+
+Lightweight contracts and spec-driven agent workflows.
+
+- `mdx-rust contracts <target> --json` scans Rust functions for documented
+  `Requires:`, `Ensures:`, `Invariant:`, `Safety:`, and `Panics:` sections plus
+  assertion hints.
+- Contract runs are read-only design evidence that agents can use before
+  proposing behavior changes, property tests, or policy updates.
+- Public functions without visible contracts are surfaced as recommendations,
+  not automatic rewrites.
+- The agent contract and runtime advertise contract scans as a safe intake step.
+- Future beta work can connect contract gaps to generated property-test plans,
+  but mutation stays behind the existing evidence, plan, validation, and
+  rollback gates.
+
+## v1.3 beta Focus - In Progress
+
+Performance-aware autonomous planning.
+
+- `mdx-rust perf <target> --json` scans for static performance pressure such as
+  blocking operations in async functions, clone pressure, allocations in loops,
+  and synchronous lock hints.
+- Performance runs are prioritization evidence for agents and humans. They do
+  not make any candidate executable by themselves.
+- The first performance lane is intentionally read-only so future benchmark
+  harnesses and refactor recipes can be added without bypassing safety gates.
+- Future beta work can connect performance findings to benchmark specs and
+  evidence-gated refactor plans.
+
 ## Current Non-Goals
 
 - Autonomous public API rewrites without explicit gates.

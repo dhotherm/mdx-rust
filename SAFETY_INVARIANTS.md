@@ -128,9 +128,10 @@ allowed to move quickly, but it must not create a second mutation path.
   candidates must not be queued by `apply-plan --all`, `autopilot`, or
   `evolve`.
 - `mdx-rust scorecard`, `mdx-rust agent-ready`, `mdx-rust recipes`,
-  `mdx-rust runtime`, `mdx-rust repo-map`, `mdx-rust noise-filter` without
-  `--write`, `mdx-rust agent-pack` without `--write`, and `mdx-rust explain`
-  are read-only agent surfaces. They must never mutate source files or approve
+  `mdx-rust runtime`, `mdx-rust repo-map`, `mdx-rust contracts`,
+  `mdx-rust perf`, `mdx-rust noise-filter` without `--write`,
+  `mdx-rust agent-pack` without `--write`, and `mdx-rust explain` are
+  read-only agent surfaces. They must never mutate source files or approve
   mutation by themselves.
 - `mdx-rust mcp --stdio` and `mdx-rust serve` are local runtime wrappers over
   the same command contracts. Runtime mutation-capable tool calls must require
@@ -198,6 +199,12 @@ allowed to move quickly, but it must not create a second mutation path.
   do not validate, apply, land, accept, or approve source changes.
 - Repo maps and noise filters are orientation records only. They may guide what
   an agent reads or ignores, but they do not validate, apply, land, accept, or
+  approve source changes.
+- Contract scans are design records only. They may guide reviews, policies, or
+  future tests, but they do not validate, apply, land, accept, or approve source
+  changes.
+- Performance scans are prioritization records only. They may guide benchmark
+  work or future plans, but they do not validate, apply, land, accept, or
   approve source changes.
 - Codebase maps are records only. A `CodebaseMap` means "scanned and
   summarized", not "validated", "applied", "landed", or "accepted".
